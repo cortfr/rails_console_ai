@@ -436,7 +436,32 @@ module ConsoleAgent
     end
 
     def context
-      @context ||= context_builder.build
+      base = @context_base ||= context_builder.build
+      vars = binding_variable_summary
+      vars ? "#{base}\n\n#{vars}" : base
+    end
+
+    # Summarize local and instance variables from the user's console session
+    # so the LLM knows what's available to reference in generated code.
+    def binding_variable_summary
+      parts = []
+
+      locals = @binding_context.local_variables.reject { |v| v.to_s.start_with?('_') }
+      locals.first(20).each do |var|
+        val = @binding_context.local_variable_get(var) rescue nil
+        parts << "#{var} (#{val.class})"
+      end
+
+      ivars = (@binding_context.eval("instance_variables") rescue [])
+      ivars.reject { |v| v.to_s =~ /\A@_/ }.first(20).each do |var|
+        val = @binding_context.eval(var.to_s) rescue nil
+        parts << "#{var} (#{val.class})"
+      end
+
+      return nil if parts.empty?
+      "The user's console session has these variables available: #{parts.join(', ')}. You can reference them directly in code."
+    rescue
+      nil
     end
 
     def init_system_prompt(existing_guide)

@@ -254,19 +254,19 @@ module ConsoleAgent
     end
 
     def __console_agent_binding
+      # Try Pry first (pry-rails replaces IRB but IRB may still be loaded)
+      if defined?(Pry)
+        pry_inst = ObjectSpace.each_object(Pry).find { |p|
+          p.respond_to?(:binding_stack) && !p.binding_stack.empty?
+        } rescue nil
+        return pry_inst.current_binding if pry_inst
+      end
+
       # Try IRB workspace binding
       if defined?(IRB) && IRB.respond_to?(:CurrentContext)
         ctx = IRB.CurrentContext rescue nil
         if ctx && ctx.respond_to?(:workspace) && ctx.workspace.respond_to?(:binding)
           return ctx.workspace.binding
-        end
-      end
-
-      # Try Pry binding
-      if defined?(Pry) && respond_to?(:pry_instance, true)
-        pry_inst = pry_instance rescue nil
-        if pry_inst && pry_inst.respond_to?(:current_binding)
-          return pry_inst.current_binding
         end
       end
 
