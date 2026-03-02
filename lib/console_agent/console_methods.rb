@@ -130,6 +130,10 @@ module ConsoleAgent
       nil
     end
 
+    def ai_setup
+      ConsoleAgent.setup!
+    end
+
     def ai_init
       require 'console_agent/context_builder'
       require 'console_agent/providers/base'
@@ -153,6 +157,7 @@ module ConsoleAgent
         $stderr.puts "\e[33m  ai_sessions  - list recent sessions\e[0m"
         $stderr.puts "\e[33m  ai_resume    - resume a session by name or id\e[0m"
         $stderr.puts "\e[33m  ai_name      - name a session: ai_name 42, \"my_label\"\e[0m"
+        $stderr.puts "\e[33m  ai_setup     - install session logging table\e[0m"
         $stderr.puts "\e[33m  ai_status    - show current configuration\e[0m"
         $stderr.puts "\e[33m  ai_memories  - show recent memories (ai_memories(n) for last n)\e[0m"
         return nil

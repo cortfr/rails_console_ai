@@ -122,12 +122,21 @@ RSpec.describe ConsoleAgent::ConsoleMethods do
     end
   end
 
+  describe '#ai_setup' do
+    it 'delegates to ConsoleAgent.setup!' do
+      allow(ConsoleAgent).to receive(:setup!)
+      instance.ai_setup
+      expect(ConsoleAgent).to have_received(:setup!)
+    end
+  end
+
   describe '#ai (help text)' do
     it 'includes session management commands in help' do
       output = capture_stderr { instance.ai }
       expect(output).to include('ai_sessions')
       expect(output).to include('ai_resume')
       expect(output).to include('ai_name')
+      expect(output).to include('ai_setup')
     end
   end
 end
