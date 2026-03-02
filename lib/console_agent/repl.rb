@@ -216,6 +216,7 @@ module ConsoleAgent
       @last_interactive_output = nil
       @last_interactive_result = nil
       @last_interactive_executed = false
+      @compact_warned = false
     end
 
     def interactive_loop
@@ -223,7 +224,7 @@ module ConsoleAgent
       name_display = @interactive_session_name ? " (#{@interactive_session_name})" : ""
       # Write banner to real stdout (bypass TeeIO) so it doesn't accumulate on resume
       @interactive_old_stdout.puts "\e[36mConsoleAgent interactive mode#{name_display}. Type 'exit' or 'quit' to leave.\e[0m"
-      @interactive_old_stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab or /auto to toggle) | > code to run directly | /usage | /name <label>\e[0m"
+      @interactive_old_stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab or /auto to toggle) | > code to run directly | /usage | /compact | /name <label>\e[0m"
 
       # Bind Shift-Tab to insert /auto command and submit
       if Readline.respond_to?(:parse_and_bind)
@@ -254,6 +255,11 @@ module ConsoleAgent
           ConsoleAgent.configuration.debug = !ConsoleAgent.configuration.debug
           mode = ConsoleAgent.configuration.debug ? 'ON' : 'OFF'
           @interactive_old_stdout.puts "\e[36m  Debug: #{mode}\e[0m"
+          next
+        end
+
+        if input == '/compact'
+          compact_history
           next
         end
 
@@ -333,6 +339,8 @@ module ConsoleAgent
 
         # Update with the AI response, tokens, and any execution results
         log_interactive_turn
+
+        warn_if_history_large
       end
 
       $stdout = @interactive_old_stdout
@@ -848,6 +856,64 @@ module ConsoleAgent
       return if @total_input_tokens == 0 && @total_output_tokens == 0
 
       $stdout.puts "\e[2m[session totals — in: #{@total_input_tokens} | out: #{@total_output_tokens} | total: #{@total_input_tokens + @total_output_tokens}]\e[0m"
+    end
+
+    def warn_if_history_large
+      chars = @history.sum { |m| m[:content].to_s.length }
+      return if chars < 50_000 || @compact_warned
+
+      @compact_warned = true
+      $stdout.puts "\e[33m  Conversation is getting large (~#{format_tokens(chars)} chars). Consider running /compact to reduce context size.\e[0m"
+    end
+
+    def compact_history
+      if @history.length < 6
+        $stdout.puts "\e[33m  History too short to compact (#{@history.length} messages). Need at least 6.\e[0m"
+        return
+      end
+
+      before_chars = @history.sum { |m| m[:content].to_s.length }
+      before_count = @history.length
+
+      $stdout.puts "\e[2m  Compacting #{before_count} messages (~#{format_tokens(before_chars)} chars)...\e[0m"
+
+      system_prompt = <<~PROMPT
+        You are a conversation summarizer. The user will provide a conversation history from a Rails console AI assistant session.
+
+        Produce a concise summary that captures:
+        - What the user has been working on and their goals
+        - Key findings and data discovered (include specific values, IDs, record counts)
+        - Current state: what worked, what failed, where things stand
+        - Important variable names, model names, or table names referenced
+        - Any code that was executed and its results
+
+        Be concise but preserve all information that would be needed to continue the conversation naturally.
+        Do NOT include any preamble — just output the summary directly.
+      PROMPT
+
+      history_text = @history.map { |m| "#{m[:role]}: #{m[:content]}" }.join("\n\n")
+      messages = [{ role: :user, content: "Summarize this conversation history:\n\n#{history_text}" }]
+
+      begin
+        result = provider.chat(messages, system_prompt: system_prompt)
+        track_usage(result)
+
+        summary = result.text.to_s.strip
+        if summary.empty?
+          $stdout.puts "\e[33m  Compaction failed: empty summary returned.\e[0m"
+          return
+        end
+
+        @history = [{ role: :user, content: "CONVERSATION SUMMARY (compacted):\n#{summary}" }]
+        @compact_warned = false
+
+        after_chars = @history.first[:content].length
+        $stdout.puts "\e[36m  Compacted: #{before_count} messages -> 1 summary (~#{format_tokens(before_chars)} -> ~#{format_tokens(after_chars)} chars)\e[0m"
+        summary.each_line { |line| $stdout.puts "\e[2m  #{line.rstrip}\e[0m" }
+        display_usage(result)
+      rescue => e
+        $stdout.puts "\e[31m  Compaction failed: #{e.message}\e[0m"
+      end
     end
 
     def display_exit_info

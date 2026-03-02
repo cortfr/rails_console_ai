@@ -300,6 +300,163 @@ RSpec.describe ConsoleAgent::Repl do
     end
   end
 
+  describe '/compact command' do
+    before do
+      allow(Readline).to receive(:respond_to?).with(:parse_and_bind).and_return(false)
+    end
+
+    def build_history(count)
+      messages = []
+      count.times do |i|
+        messages << { role: :user, content: "Question #{i + 1}" }
+        messages << { role: :assistant, content: "Answer #{i + 1}" }
+      end
+      messages
+    end
+
+    it 'sends history to LLM and replaces with summary' do
+      summary_result = chat_result("User was exploring users table and found 42 records.", input_tokens: 200, output_tokens: 80)
+      allow(mock_provider).to receive(:chat).and_return(summary_result)
+
+      readline_count = 0
+      allow(Readline).to receive(:readline) do
+        readline_count += 1
+        case readline_count
+        when 1
+          # Seed history after init_interactive_state has run
+          repl.instance_variable_set(:@history, build_history(4))
+          '/compact'
+        when 2 then nil
+        end
+      end
+
+      output = capture_stdout { repl.interactive }
+
+      expect(mock_provider).to have_received(:chat).once
+      history = repl.instance_variable_get(:@history)
+      expect(history.length).to eq(1)
+      expect(history.first[:role]).to eq(:user)
+      expect(history.first[:content]).to include('CONVERSATION SUMMARY')
+      expect(history.first[:content]).to include('42 records')
+      # Summary is displayed to the user
+      expect(output).to include('42 records')
+    end
+
+    it 'skips compaction when history is too short' do
+      readline_count = 0
+      allow(Readline).to receive(:readline) do
+        readline_count += 1
+        case readline_count
+        when 1 then '/compact'
+        when 2 then nil
+        end
+      end
+
+      output = capture_stdout { repl.interactive }
+
+      expect(output).to include('too short to compact')
+    end
+
+    it 'tracks tokens from the compaction call' do
+      summary_result = chat_result("Summary of conversation.", input_tokens: 300, output_tokens: 100)
+      allow(mock_provider).to receive(:chat).and_return(summary_result)
+
+      readline_count = 0
+      allow(Readline).to receive(:readline) do
+        readline_count += 1
+        case readline_count
+        when 1
+          repl.instance_variable_set(:@history, build_history(4))
+          '/compact'
+        when 2 then '/usage'
+        when 3 then nil
+        end
+      end
+
+      output = capture_stdout { repl.interactive }
+
+      # Token counts should include the compaction call
+      expect(output).to include('in: 300')
+      expect(output).to include('out: 100')
+    end
+
+    it 'warns when history gets large' do
+      readline_count = 0
+      allow(Readline).to receive(:readline) do
+        readline_count += 1
+        case readline_count
+        when 1
+          # Seed history with large content after init
+          big_history = (1..20).flat_map do |i|
+            [
+              { role: :user, content: "Question #{i} " + ("x" * 2000) },
+              { role: :assistant, content: "Answer #{i} " + ("y" * 2000) }
+            ]
+          end
+          repl.instance_variable_set(:@history, big_history)
+          'tell me more'
+        when 2 then nil
+        end
+      end
+
+      stub_no_tools(chat_result("Sure, here you go."))
+
+      output = capture_stdout { repl.interactive }
+
+      expect(output).to include('Consider running /compact')
+    end
+
+    it 'only warns once per session' do
+      stub_no_tools(chat_result("Response."))
+
+      readline_count = 0
+      allow(Readline).to receive(:readline) do
+        readline_count += 1
+        case readline_count
+        when 1
+          big_history = (1..20).flat_map do |i|
+            [
+              { role: :user, content: "Q#{i} " + ("x" * 2000) },
+              { role: :assistant, content: "A#{i} " + ("y" * 2000) }
+            ]
+          end
+          repl.instance_variable_set(:@history, big_history)
+          'query one'
+        when 2 then 'query two'
+        when 3 then nil
+        end
+      end
+
+      output = capture_stdout { repl.interactive }
+
+      # Should only appear once despite two turns with large history
+      expect(output.scan(/Consider running \/compact/).length).to eq(1)
+    end
+
+    it 'handles compaction errors gracefully' do
+      allow(mock_provider).to receive(:chat).and_raise(StandardError, 'API timeout')
+
+      readline_count = 0
+      allow(Readline).to receive(:readline) do
+        readline_count += 1
+        case readline_count
+        when 1
+          repl.instance_variable_set(:@history, build_history(4))
+          '/compact'
+        when 2 then nil
+        end
+      end
+
+      output = capture_stdout { repl.interactive }
+
+      expect(output).to include('Compaction failed')
+      expect(output).to include('API timeout')
+      # History should be unchanged
+      history = repl.instance_variable_get(:@history)
+      expect(history.length).to eq(8)
+    end
+  end
+
   describe '#resume' do
     let(:mock_session) do
       double('Session',
