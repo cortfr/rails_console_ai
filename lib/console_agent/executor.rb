@@ -84,7 +84,7 @@ module ConsoleAgent
       result = binding_context.eval(code, "(console_agent)", 1)
 
       $stdout = old_stdout
-      $stdout.puts colorize("=> #{result.inspect}", :green)
+      display_result(result)
 
       @last_output = captured_output.string
       result
@@ -162,6 +162,32 @@ module ConsoleAgent
     end
 
     private
+
+    MAX_DISPLAY_LINES = 10
+    MAX_DISPLAY_CHARS = 2000
+
+    def display_result(result)
+      full = "=> #{result.inspect}"
+      lines = full.lines
+      total_lines = lines.length
+      total_chars = full.length
+
+      if total_lines <= MAX_DISPLAY_LINES && total_chars <= MAX_DISPLAY_CHARS
+        $stdout.puts colorize(full, :green)
+      else
+        # Truncate by lines first, then by chars
+        truncated = lines.first(MAX_DISPLAY_LINES).join
+        truncated = truncated[0, MAX_DISPLAY_CHARS] if truncated.length > MAX_DISPLAY_CHARS
+        $stdout.puts colorize(truncated, :green)
+
+        omitted_lines = [total_lines - MAX_DISPLAY_LINES, 0].max
+        omitted_chars = [total_chars - truncated.length, 0].max
+        parts = []
+        parts << "#{omitted_lines} lines" if omitted_lines > 0
+        parts << "#{omitted_chars} chars" if omitted_chars > 0
+        $stdout.puts colorize("  (omitting #{parts.join(', ')})", :yellow)
+      end
+    end
 
     # Write stdin input to the capture IO only (avoids double-echo on terminal)
     def echo_stdin(text)
