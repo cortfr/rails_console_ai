@@ -384,18 +384,11 @@ module ConsoleAgent
         result, tool_messages = send_query(nil, conversation: @history)
       rescue Providers::ProviderError => e
         if e.message.include?("prompt is too long") && @history.length >= 6
-          $stdout.puts "\e[33m  Context limit reached. Auto-compacting history...\e[0m"
-          compact_history
-          begin
-            result, tool_messages = send_query(nil, conversation: @history)
-          rescue Providers::ProviderError => e2
-            $stderr.puts "\e[31m  Still too large after compaction: #{e2.message}\e[0m"
-            return :error
-          end
+          $stdout.puts "\e[33m  Context limit reached. Run /compact to reduce context size, then try again.\e[0m"
         else
           $stderr.puts "\e[31mConsoleAgent Error: #{e.class}: #{e.message}\e[0m"
-          return :error
         end
+        return :error
       rescue Interrupt
         $stdout.puts "\n\e[33m  Aborted.\e[0m"
         return :interrupted
@@ -583,17 +576,7 @@ module ConsoleAgent
             provider.chat_with_tools(messages, tools: tools, system_prompt: active_system_prompt)
           end
         rescue Providers::ProviderError => e
-          if e.message.include?("prompt is too long") && messages.length >= 6
-            $stdout.puts "\e[33m  Context limit hit mid-session. Compacting messages...\e[0m"
-            messages = compact_messages(messages)
-            unless @_retried_compact
-              @_retried_compact = true
-              retry
-            end
-          end
           raise
-        ensure
-          @_retried_compact = nil
         end
         total_input += result.input_tokens || 0
         total_output += result.output_tokens || 0
@@ -980,10 +963,7 @@ module ConsoleAgent
     def warn_if_history_large
       chars = @history.sum { |m| m[:content].to_s.length }
 
-      if chars > 120_000 && @history.length >= 6
-        $stdout.puts "\e[33m  Context growing large (~#{format_tokens(chars)} chars). Auto-compacting...\e[0m"
-        compact_history
-      elsif chars > 50_000 && !@compact_warned
+      if chars > 50_000 && !@compact_warned
         @compact_warned = true
         $stdout.puts "\e[33m  Conversation is getting large (~#{format_tokens(chars)} chars). Consider running /compact to reduce context size.\e[0m"
       end
@@ -998,6 +978,9 @@ module ConsoleAgent
       before_chars = @history.sum { |m| m[:content].to_s.length }
       before_count = @history.length
 
+      # Extract successfully executed code before summarizing
+      executed_code = extract_executed_code(@history)
+
       $stdout.puts "\e[2m  Compacting #{before_count} messages (~#{format_tokens(before_chars)} chars)...\e[0m"
 
       system_prompt = <<~PROMPT
@@ -1008,8 +991,8 @@ module ConsoleAgent
         - Key findings and data discovered (include specific values, IDs, record counts)
         - Current state: what worked, what failed, where things stand
         - Important variable names, model names, or table names referenced
-        - Any code that was executed and its results
 
+        Do NOT include code that was executed — that will be preserved separately.
         Be concise but preserve all information that would be needed to continue the conversation naturally.
         Do NOT include any preamble — just output the summary directly.
       PROMPT
@@ -1027,32 +1010,96 @@ module ConsoleAgent
           return
         end
 
-        @history = [{ role: :user, content: "CONVERSATION SUMMARY (compacted):\n#{summary}" }]
+        content = "CONVERSATION SUMMARY (compacted):\n#{summary}"
+        unless executed_code.empty?
+          content += "\n\nCODE EXECUTED THIS SESSION (preserved for continuation):\n#{executed_code}"
+        end
+
+        @history = [{ role: :user, content: content }]
         @compact_warned = false
 
         after_chars = @history.first[:content].length
         $stdout.puts "\e[36m  Compacted: #{before_count} messages -> 1 summary (~#{format_tokens(before_chars)} -> ~#{format_tokens(after_chars)} chars)\e[0m"
         summary.each_line { |line| $stdout.puts "\e[2m  #{line.rstrip}\e[0m" }
+        if !executed_code.empty?
+          $stdout.puts "\e[2m  (preserved #{executed_code.scan(/```ruby/).length} executed code block(s))\e[0m"
+        end
         display_usage(result)
       rescue => e
         $stdout.puts "\e[31m  Compaction failed: #{e.message}\e[0m"
       end
     end
 
-    def compact_messages(messages)
-      return messages if messages.length < 6
+    # Extracts code blocks that were successfully executed from conversation history.
+    # Looks for:
+    # 1. Assistant messages with ```ruby blocks followed by "Code was executed." user messages
+    # 2. execute_plan tool calls followed by results without ERROR
+    # Skips code that failed or was declined.
+    def extract_executed_code(history)
+      code_blocks = []
+      history.each_cons(2) do |msg, next_msg|
+        # Pattern 1: Assistant ```ruby blocks with successful execution
+        if msg[:role].to_s == 'assistant' && next_msg[:role].to_s == 'user'
+          content = msg[:content].to_s
+          next_content = next_msg[:content].to_s
 
-      to_summarize = messages[0...-4]
-      to_keep = messages[-4..]
+          if next_content.start_with?('Code was executed.')
+            content.scan(/```ruby\s*\n(.*?)```/m).each do |match|
+              code = match[0].strip
+              next if code.empty?
+              result_summary = next_content[0..200].gsub("\n", "\n# ")
+              code_blocks << "```ruby\n#{code}\n```\n# #{result_summary}"
+            end
+          end
+        end
 
-      history_text = to_summarize.map { |m| "#{m[:role]}: #{m[:content].to_s[0..500]}" }.join("\n\n")
+        # Pattern 2: execute_plan tool calls in provider-formatted messages
+        if msg[:role].to_s == 'assistant' && msg[:content].is_a?(Array)
+          msg[:content].each do |block|
+            next unless block.is_a?(Hash) && block['type'] == 'tool_use' && block['name'] == 'execute_plan'
+            input = block['input'] || {}
+            steps = input['steps'] || []
 
-      summary_result = provider.chat(
-        [{ role: :user, content: "Summarize this conversation context concisely, preserving key facts, IDs, and findings:\n\n#{history_text}" }],
-        system_prompt: "You are a conversation summarizer. Be concise but preserve all actionable information."
-      )
+            # Find the matching tool_result in subsequent messages
+            tool_id = block['id']
+            result_msg = find_tool_result(history, tool_id)
+            next unless result_msg
 
-      [{ role: :user, content: "CONTEXT SUMMARY:\n#{summary_result.text}" }] + to_keep
+            result_text = result_msg.to_s
+            # Extract only steps that succeeded (no ERROR in their result)
+            steps.each_with_index do |step, i|
+              step_num = i + 1
+              # Check if this specific step had an error
+              step_section = result_text[/Step #{step_num}\b.*?(?=Step #{step_num + 1}\b|\z)/m] || ''
+              next if step_section.include?('ERROR:')
+              next if step_section.include?('User declined')
+
+              code = step['code'].to_s.strip
+              next if code.empty?
+              desc = step['description'] || "Step #{step_num}"
+              code_blocks << "```ruby\n# #{desc}\n#{code}\n```"
+            end
+          end
+        end
+      end
+      code_blocks.join("\n\n")
+    end
+
+    def find_tool_result(history, tool_id)
+      history.each do |msg|
+        next unless msg[:content].is_a?(Array)
+        msg[:content].each do |block|
+          next unless block.is_a?(Hash)
+          if block['type'] == 'tool_result' && block['tool_use_id'] == tool_id
+            return block['content']
+          end
+          # OpenAI format
+          if msg[:role].to_s == 'tool' && msg[:tool_call_id] == tool_id
+            return msg[:content]
+          end
+        end
+      end
+      nil
     end
 
     def display_exit_info
