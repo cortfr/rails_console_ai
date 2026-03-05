@@ -39,17 +39,29 @@ echo "Updated $VERSION_FILE"
 
 # Update changelog
 echo ""
-echo "Updating CHANGELOG.md with Claude Code..."
-claude -p "Look at the git log commits since the last version tag. Update CHANGELOG.md by adding a new ## [${new_version}] section at the top (after the header). Summarize the commits into concise changelog entries. Match the style of the existing entries. Do not modify existing entries."
-echo ""
-echo "Please review the CHANGELOG.md changes:"
-git diff CHANGELOG.md
-echo ""
-read -rp "Accept changelog? [Y/n] " changelog_confirm
-changelog_confirm=${changelog_confirm:-Y}
-if [[ ! "$changelog_confirm" =~ ^[Yy]$ ]]; then
-  echo "Opening CHANGELOG.md for manual editing..."
-  ${EDITOR:-vi} CHANGELOG.md
+read -rp "Update CHANGELOG.md? [Y/n] " update_changelog
+update_changelog=${update_changelog:-Y}
+if [[ "$update_changelog" =~ ^[Yy]$ ]]; then
+  echo "Updating CHANGELOG.md with Claude Code..."
+  claude -p "Look at the git log commits since the last version tag. Update CHANGELOG.md by adding a new ## [${new_version}] section at the top (after the header). Summarize the commits into concise changelog entries. Match the style of the existing entries. Do not modify existing entries." --allowedTools Edit Read Bash Glob Grep
+  echo ""
+  if git diff --quiet CHANGELOG.md 2>/dev/null; then
+    echo "WARNING: CHANGELOG.md was not modified by Claude."
+    echo "Opening CHANGELOG.md for manual editing..."
+    ${EDITOR:-vi} CHANGELOG.md
+  else
+    echo "Please review the CHANGELOG.md changes:"
+    git diff CHANGELOG.md
+    echo ""
+    read -rp "Accept changelog? [Y/n] " changelog_confirm
+    changelog_confirm=${changelog_confirm:-Y}
+    if [[ ! "$changelog_confirm" =~ ^[Yy]$ ]]; then
+      echo "Opening CHANGELOG.md for manual editing..."
+      ${EDITOR:-vi} CHANGELOG.md
+    fi
+  fi
+else
+  echo "Skipped changelog update."
 fi
 
 # Run tests
