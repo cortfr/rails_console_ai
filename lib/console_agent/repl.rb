@@ -564,18 +564,8 @@ module ConsoleAgent
       last_tool_names = []
 
       exhausted = false
-      thinking_suggested = false
 
       max_rounds.times do |round|
-        if round == 5 && !thinking_suggested && !on_thinking_model?
-          thinking_suggested = true
-          thinking_name = ConsoleAgent.configuration.resolved_thinking_model
-          $stdout.puts "\e[33m  This query is using many tool rounds. Switch to thinking model (#{thinking_name})? [y/N]\e[0m"
-          answer = Readline.readline("  ", false).to_s.strip.downcase
-          if answer == 'y'
-            upgrade_to_thinking_model
-          end
-        end
         if round == 0
           $stdout.puts "\e[2m  Thinking...\e[0m"
         else
