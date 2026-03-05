@@ -183,6 +183,13 @@ module ConsoleAgent
       @interactive_session_name = session.name
       @total_input_tokens = session.input_tokens || 0
       @total_output_tokens = session.output_tokens || 0
+      @prior_duration_ms = session.duration_ms || 0
+
+      # Seed per-model usage so /cost reflects prior work
+      if session.model && (session.input_tokens.to_i > 0 || session.output_tokens.to_i > 0)
+        @token_usage[session.model][:input] = session.input_tokens.to_i
+        @token_usage[session.model][:output] = session.output_tokens.to_i
+      end
 
       # Seed the capture buffer with previous output so it's preserved on save
       @interactive_console_capture.write(session.console_output.to_s)
@@ -219,6 +226,7 @@ module ConsoleAgent
       @last_interactive_result = nil
       @last_interactive_executed = false
       @compact_warned = false
+      @prior_duration_ms = 0
     end
 
     def interactive_loop
@@ -994,7 +1002,7 @@ module ConsoleAgent
 
     def finish_interactive_session
       require 'console_agent/session_logger'
-      duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - @interactive_start) * 1000).round
+      duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - @interactive_start) * 1000).round + @prior_duration_ms
       if @interactive_session_id
         SessionLogger.update(@interactive_session_id,
           conversation:  @history,

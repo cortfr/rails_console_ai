@@ -1,5 +1,19 @@
 module ConsoleAgent
   module SessionsHelper
+    def estimated_cost(session)
+      pricing = Configuration::PRICING[session.model]
+      return nil unless pricing
+
+      (session.input_tokens * pricing[:input]) + (session.output_tokens * pricing[:output])
+    end
+
+    def format_cost(session)
+      cost = estimated_cost(session)
+      return '-' unless cost
+
+      cost < 0.01 ? "<$0.01" : "$#{'%.2f' % cost}"
+    end
+
     # Convert ANSI escape codes to HTML spans for terminal-style rendering
     def ansi_to_html(text)
       return '' if text.nil? || text.empty?

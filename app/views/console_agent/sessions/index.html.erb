@@ -14,9 +14,10 @@
         <th>Time</th>
         <th>User</th>
         <th>Name</th>
-        <th>Query</th>
+        <th style="max-width: 400px;">Query</th>
         <th>Mode</th>
         <th>Tokens</th>
+        <th>Cost</th>
         <th>Executed?</th>
         <th>Duration</th>
       </tr>
@@ -27,9 +28,10 @@
           <td class="mono"><%= session.created_at.strftime('%Y-%m-%d %H:%M') %></td>
           <td><%= session.user_name %></td>
           <td><%= session.name.present? ? session.name : '-' %></td>
-          <td><a href="<%= console_agent.session_path(session) %>"><%= truncate(session.query, length: 80) %></a></td>
+          <td class="query-cell"><a href="<%= console_agent.session_path(session) %>" title="<%= h session.query.truncate(200) %>"><%= truncate(session.query.gsub(/\s+/, ' ').strip, length: 80) %></a></td>
           <td><span class="badge badge-<%= session.mode %>"><%= session.mode %></span></td>
           <td class="mono"><%= session.input_tokens + session.output_tokens %></td>
+          <td class="mono"><%= format_cost(session) %></td>
           <td><%= session.executed? ? '<span class="check">Yes</span>'.html_safe : '<span class="cross">No</span>'.html_safe %></td>
           <td class="mono"><%= session.duration_ms ? "#{session.duration_ms}ms" : '-' %></td>
         </tr>
