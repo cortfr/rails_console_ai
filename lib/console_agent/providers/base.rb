@@ -41,24 +41,27 @@ module ConsoleAgent
       def debug_request(url, body)
         return unless config.debug
 
-        $stderr.puts "\e[33m--- ConsoleAgent DEBUG: REQUEST ---\e[0m"
-        $stderr.puts "\e[33mURL: #{url}\e[0m"
-        parsed = body.is_a?(String) ? JSON.parse(body) : body
-        $stderr.puts "\e[33m#{JSON.pretty_generate(parsed)}\e[0m"
-        $stderr.puts "\e[33m--- END REQUEST ---\e[0m"
-      rescue => e
-        $stderr.puts "\e[33m[debug] #{body}\e[0m"
+        parsed = body.is_a?(String) ? (JSON.parse(body) rescue nil) : body
+        if parsed
+          # Support both symbol and string keys
+          model = parsed[:model] || parsed['model']
+          msgs = parsed[:messages] || parsed['messages']
+          sys = parsed[:system] || parsed['system']
+          tools = parsed[:tools] || parsed['tools']
+          $stderr.puts "\e[33m[debug] POST #{url} | model: #{model} | #{msgs&.length || 0} msgs | system: #{sys.to_s.length} chars | #{tools&.length || 0} tools\e[0m"
+        else
+          $stderr.puts "\e[33m[debug] POST #{url}\e[0m"
+        end
       end
 
       def debug_response(body)
         return unless config.debug
 
-        $stderr.puts "\e[36m--- ConsoleAgent DEBUG: RESPONSE ---\e[0m"
-        parsed = body.is_a?(String) ? JSON.parse(body) : body
-        $stderr.puts "\e[36m#{JSON.pretty_generate(parsed)}\e[0m"
-        $stderr.puts "\e[36m--- END RESPONSE ---\e[0m"
-      rescue => e
-        $stderr.puts "\e[36m[debug] #{body}\e[0m"
+        parsed = body.is_a?(String) ? (JSON.parse(body) rescue nil) : body
+        if parsed && parsed['usage']
+          u = parsed['usage']
+          $stderr.puts "\e[36m[debug] response: #{parsed['stop_reason']} | in: #{u['input_tokens']} out: #{u['output_tokens']}\e[0m"
+        end
       end
 
       def parse_response(response)

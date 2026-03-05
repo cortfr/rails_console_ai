@@ -79,7 +79,10 @@ end
 | `/usage` | Show token stats |
 | `/cost` | Show per-model cost breakdown |
 | `/think` | Upgrade to thinking model (Opus) for the rest of the session |
-| `/debug` | Toggle raw API output |
+| `/debug` | Toggle debug summaries (context stats, cost per call) |
+| `/expand <id>` | Show full omitted output |
+| `/context` | Show conversation history as sent to the LLM |
+| `/system` | Show the system prompt |
 | `/name <label>` | Name the session for easy resume |
 
 Prefix input with `>` to run Ruby directly (no LLM round-trip). The result is added to conversation context.
@@ -96,6 +99,8 @@ Say "think harder" in any query to auto-upgrade to the thinking model for that s
 - **App guide** — `ai_init` generates a guide injected into every system prompt
 - **Sessions** — name, list, and resume interactive conversations (`ai_setup` to enable)
 - **History compaction** — `/compact` summarizes long conversations to reduce cost and latency
+- **Output trimming** — older execution outputs are automatically replaced with references; the LLM can recall them on demand via `recall_output`, and you can `/expand <id>` to see them
+- **Debug mode** — `/debug` shows context breakdown, token counts, and per-call cost estimates before and after each LLM call
 
 ## Configuration
 

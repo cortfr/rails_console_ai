@@ -605,6 +605,10 @@ module ConsoleAgent
           $stdout.puts "\e[2m  #{llm_status(round, messages, total_input, last_thinking, last_tool_names)}\e[0m"
         end
 
+        if ConsoleAgent.configuration.debug
+          debug_pre_call(round, messages, active_system_prompt, tools, total_input, total_output)
+        end
+
         begin
           result = with_escape_monitoring do
             provider.chat_with_tools(messages, tools: tools, system_prompt: active_system_prompt)
@@ -614,6 +618,10 @@ module ConsoleAgent
         end
         total_input += result.input_tokens || 0
         total_output += result.output_tokens || 0
+
+        if ConsoleAgent.configuration.debug
+          debug_post_call(round, result, @total_input_tokens + total_input, @total_output_tokens + total_output)
+        end
 
         break unless result.tool_use?
 
@@ -643,7 +651,7 @@ module ConsoleAgent
           end
 
           if ConsoleAgent.configuration.debug
-            $stderr.puts "\e[35m[debug tool result] #{tool_result}\e[0m"
+            $stderr.puts "\e[35m[debug] tool result (#{tool_result.to_s.length} chars)\e[0m"
           end
 
           tool_msg = provider.format_tool_result(tc[:id], tool_result)
@@ -733,6 +741,89 @@ module ConsoleAgent
       end
       status += "..."
       status
+    end
+
+    def debug_pre_call(round, messages, system_prompt, tools, total_input, total_output)
+      d = "\e[35m"
+      r = "\e[0m"
+
+      # Count message types
+      user_msgs = 0
+      assistant_msgs = 0
+      tool_result_msgs = 0
+      tool_use_msgs = 0
+      output_msgs = 0
+      omitted_msgs = 0
+      total_content_chars = system_prompt.to_s.length
+
+      messages.each do |msg|
+        content_str = msg[:content].is_a?(Array) ? msg[:content].to_s : msg[:content].to_s
+        total_content_chars += content_str.length
+
+        role = msg[:role].to_s
+        if role == 'tool'
+          tool_result_msgs += 1
+        elsif msg[:content].is_a?(Array)
+          # Anthropic format — check for tool_result or tool_use blocks
+          msg[:content].each do |block|
+            next unless block.is_a?(Hash)
+            if block['type'] == 'tool_result'
+              tool_result_msgs += 1
+              omitted_msgs += 1 if block['content'].to_s.include?('Output omitted')
+            elsif block['type'] == 'tool_use'
+              tool_use_msgs += 1
+            end
+          end
+        elsif role == 'user'
+          user_msgs += 1
+          if content_str.include?('Code was executed') || content_str.include?('directly executed code')
+            output_msgs += 1
+            omitted_msgs += 1 if content_str.include?('Output omitted')
+          end
+        elsif role == 'assistant'
+          assistant_msgs += 1
+        end
+      end
+
+      tool_count = tools.respond_to?(:definitions) ? tools.definitions.length : 0
+
+      $stderr.puts "#{d}[debug] ── LLM call ##{round + 1} ──#{r}"
+      $stderr.puts "#{d}[debug]   system prompt: #{format_tokens(system_prompt.to_s.length)} chars#{r}"
+      $stderr.puts "#{d}[debug]   messages: #{messages.length} (#{user_msgs} user, #{assistant_msgs} assistant, #{tool_result_msgs} tool results, #{tool_use_msgs} tool calls)#{r}"
+      $stderr.puts "#{d}[debug]   execution outputs: #{output_msgs} (#{omitted_msgs} omitted)#{r}" if output_msgs > 0 || omitted_msgs > 0
+      $stderr.puts "#{d}[debug]   tools provided: #{tool_count}#{r}"
+      $stderr.puts "#{d}[debug]   est. content size: #{format_tokens(total_content_chars)} chars#{r}"
+      if total_input > 0 || total_output > 0
+        $stderr.puts "#{d}[debug]   tokens so far: in: #{format_tokens(total_input)} | out: #{format_tokens(total_output)}#{r}"
+      end
+    end
+
+    def debug_post_call(round, result, total_input, total_output)
+      d = "\e[35m"
+      r = "\e[0m"
+
+      input_t = result.input_tokens || 0
+      output_t = result.output_tokens || 0
+      model = ConsoleAgent.configuration.resolved_model
+      pricing = Configuration::PRICING[model]
+
+      parts = ["in: #{format_tokens(input_t)}", "out: #{format_tokens(output_t)}"]
+
+      if pricing
+        cost = (input_t * pricing[:input]) + (output_t * pricing[:output])
+        session_cost = (total_input * pricing[:input]) + (total_output * pricing[:output])
+        parts << "~$#{'%.4f' % cost}"
+        $stderr.puts "#{d}[debug]   ← response: #{parts.join(' | ')}  (session: ~$#{'%.4f' % session_cost})#{r}"
+      else
+        $stderr.puts "#{d}[debug]   ← response: #{parts.join(' | ')}#{r}"
+      end
+
+      if result.tool_use?
+        tool_names = result.tool_calls.map { |tc| tc[:name] }
+        $stderr.puts "#{d}[debug]   tool calls: #{tool_names.join(', ')}#{r}"
+      else
+        $stderr.puts "#{d}[debug]   stop reason: #{result.stop_reason}#{r}"
+      end
     end
 
     def format_tokens(count)
@@ -1217,7 +1308,7 @@ module ConsoleAgent
       @interactive_old_stdout.puts "\e[2m    /context     Show conversation history sent to the LLM\e[0m"
       @interactive_old_stdout.puts "\e[2m    /system      Show the system prompt\e[0m"
       @interactive_old_stdout.puts "\e[2m    /expand <id> Show full omitted output\e[0m"
-      @interactive_old_stdout.puts "\e[2m    /debug       Toggle debug mode\e[0m"
+      @interactive_old_stdout.puts "\e[2m    /debug       Toggle debug summaries (context stats, cost per call)\e[0m"
       @interactive_old_stdout.puts "\e[2m    > code       Execute Ruby directly (skip LLM)\e[0m"
       @interactive_old_stdout.puts "\e[2m    exit/quit    Leave interactive mode\e[0m"
     end
