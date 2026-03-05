@@ -29,7 +29,8 @@ esac
 echo ""
 echo "  $current_version → $new_version"
 echo ""
-read -rp "Proceed? [y/N] " confirm
+read -rp "Proceed? [Y/n] " confirm
+confirm=${confirm:-Y}
 [[ "$confirm" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 1; }
 
 # Update version file
@@ -50,7 +51,8 @@ echo "Built $gem_file"
 
 # Push gem
 echo ""
-read -rp "Push $gem_file to RubyGems? [y/N] " push_confirm
+read -rp "Push $gem_file to RubyGems? [Y/n] " push_confirm
+push_confirm=${push_confirm:-Y}
 if [[ "$push_confirm" =~ ^[Yy]$ ]]; then
   gem push "$gem_file"
   echo "Pushed to RubyGems."
@@ -60,7 +62,8 @@ fi
 
 # Git commit, tag, push
 echo ""
-read -rp "Commit, tag v${new_version}, and push? [y/N] " git_confirm
+read -rp "Commit, tag v${new_version}, and push? [Y/n] " git_confirm
+git_confirm=${git_confirm:-Y}
 if [[ "$git_confirm" =~ ^[Yy]$ ]]; then
   git add "$VERSION_FILE"
   git commit -m "v${new_version}"
