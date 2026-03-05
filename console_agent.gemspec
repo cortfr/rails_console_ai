@@ -10,7 +10,7 @@ Gem::Specification.new do |s|
   s.homepage    = 'https://github.com/cortfr/console_agent'
   s.license     = 'MIT'
 
-  s.files         = Dir['lib/**/*', 'app/**/*', 'config/**/*', 'LICENSE', 'README.md']
+  s.files         = Dir['lib/**/*', 'app/**/*', 'config/**/*', 'LICENSE', 'README.md', 'CHANGELOG.md']
   s.require_paths = ['lib']
 
   s.required_ruby_version = '>= 2.5'

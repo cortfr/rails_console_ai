@@ -37,6 +37,21 @@ confirm=${confirm:-Y}
 sed -i '' "s/VERSION = '${current_version}'/VERSION = '${new_version}'/" "$VERSION_FILE"
 echo "Updated $VERSION_FILE"
 
+# Update changelog
+echo ""
+echo "Updating CHANGELOG.md with Claude Code..."
+claude -p "Look at the git log commits since the last version tag. Update CHANGELOG.md by adding a new ## [${new_version}] section at the top (after the header). Summarize the commits into concise changelog entries. Match the style of the existing entries. Do not modify existing entries."
+echo ""
+echo "Please review the CHANGELOG.md changes:"
+git diff CHANGELOG.md
+echo ""
+read -rp "Accept changelog? [Y/n] " changelog_confirm
+changelog_confirm=${changelog_confirm:-Y}
+if [[ ! "$changelog_confirm" =~ ^[Yy]$ ]]; then
+  echo "Opening CHANGELOG.md for manual editing..."
+  ${EDITOR:-vi} CHANGELOG.md
+fi
+
 # Run tests
 echo ""
 echo "Running tests..."
@@ -65,7 +80,7 @@ echo ""
 read -rp "Commit, tag v${new_version}, and push? [Y/n] " git_confirm
 git_confirm=${git_confirm:-Y}
 if [[ "$git_confirm" =~ ^[Yy]$ ]]; then
-  git add "$VERSION_FILE"
+  git add "$VERSION_FILE" CHANGELOG.md
   git commit -m "v${new_version}"
   git tag "v${new_version}"
   git push
