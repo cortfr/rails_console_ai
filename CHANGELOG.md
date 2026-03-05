@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.0]
+
+- Add `/system` and `/context` commands to inspect what is being sent
+- Omit huge output from tool results
+- Don't cancel code execution on incorrect prompt answers
+- Preserve code blocks when compacting; require manual `/compact`
+- Fix authentication when neither method was applied
+- Remove prompt to upgrade model on excessive tool calls
+
 ## [0.8.0]
 
 - Add authentication function support so host apps can avoid using basic auth
