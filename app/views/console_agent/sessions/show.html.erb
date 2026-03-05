@@ -47,10 +47,6 @@
       <span class="mono"><%= @session.duration_ms ? "#{@session.duration_ms}ms" : '-' %></span>
     </div>
     <div class="meta-item">
-      <label>Executed?</label>
-      <span><%= @session.executed? ? '<span class="check">Yes</span>'.html_safe : '<span class="cross">No</span>'.html_safe %></span>
-    </div>
-    <div class="meta-item">
       <label>Time</label>
       <span><%= @session.created_at.strftime('%Y-%m-%d %H:%M:%S') %></span>
     </div>

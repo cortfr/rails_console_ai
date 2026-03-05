@@ -18,7 +18,6 @@
         <th>Mode</th>
         <th>Tokens</th>
         <th>Cost</th>
-        <th>Executed?</th>
         <th>Duration</th>
       </tr>
     </thead>
@@ -32,7 +31,6 @@
           <td><span class="badge badge-<%= session.mode %>"><%= session.mode %></span></td>
           <td class="mono"><%= session.input_tokens + session.output_tokens %></td>
           <td class="mono"><%= format_cost(session) %></td>
-          <td><%= session.executed? ? '<span class="check">Yes</span>'.html_safe : '<span class="cross">No</span>'.html_safe %></td>
           <td class="mono"><%= session.duration_ms ? "#{session.duration_ms}ms" : '-' %></td>
         </tr>
       <% end %>
