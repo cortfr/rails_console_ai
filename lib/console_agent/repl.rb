@@ -241,6 +241,11 @@ module ConsoleAgent
         break if input.downcase == 'exit' || input.downcase == 'quit'
         next if input.empty?
 
+        if input == '?' || input == '/'
+          display_help
+          next
+        end
+
         if input == '/auto'
           ConsoleAgent.configuration.auto_execute = !ConsoleAgent.configuration.auto_execute
           mode = ConsoleAgent.configuration.auto_execute ? 'ON' : 'OFF'
@@ -262,6 +267,16 @@ module ConsoleAgent
 
         if input == '/compact'
           compact_history
+          next
+        end
+
+        if input == '/system'
+          @interactive_old_stdout.puts "\e[2m#{context}\e[0m"
+          next
+        end
+
+        if input == '/context'
+          display_conversation
           next
         end
 
@@ -1100,6 +1115,38 @@ module ConsoleAgent
         end
       end
       nil
+    end
+
+    def display_conversation
+      if @history.empty?
+        @interactive_old_stdout.puts "\e[2m  (no conversation history yet)\e[0m"
+        return
+      end
+
+      @interactive_old_stdout.puts "\e[36m  Conversation (#{@history.length} messages):\e[0m"
+      @history.each_with_index do |msg, i|
+        role = msg[:role].to_s
+        content = msg[:content].to_s
+        label = role == 'user' ? "\e[33m[user]\e[0m" : "\e[36m[assistant]\e[0m"
+        @interactive_old_stdout.puts "#{label} #{content}"
+        @interactive_old_stdout.puts if i < @history.length - 1
+      end
+    end
+
+    def display_help
+      auto = ConsoleAgent.configuration.auto_execute ? 'ON' : 'OFF'
+      @interactive_old_stdout.puts "\e[36m  Commands:\e[0m"
+      @interactive_old_stdout.puts "\e[2m    /auto        Toggle auto-execute (currently #{auto}) (Shift-Tab)\e[0m"
+      @interactive_old_stdout.puts "\e[2m    /think       Switch to thinking model\e[0m"
+      @interactive_old_stdout.puts "\e[2m    /compact     Summarize conversation to reduce context\e[0m"
+      @interactive_old_stdout.puts "\e[2m    /usage       Show session token totals\e[0m"
+      @interactive_old_stdout.puts "\e[2m    /cost        Show cost estimate by model\e[0m"
+      @interactive_old_stdout.puts "\e[2m    /name <lbl>  Name this session for easy resume\e[0m"
+      @interactive_old_stdout.puts "\e[2m    /context     Show conversation history sent to the LLM\e[0m"
+      @interactive_old_stdout.puts "\e[2m    /system      Show the system prompt\e[0m"
+      @interactive_old_stdout.puts "\e[2m    /debug       Toggle debug mode\e[0m"
+      @interactive_old_stdout.puts "\e[2m    > code       Execute Ruby directly (skip LLM)\e[0m"
+      @interactive_old_stdout.puts "\e[2m    exit/quit    Leave interactive mode\e[0m"
     end
 
     def display_exit_info
