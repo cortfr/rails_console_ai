@@ -1,6 +1,21 @@
 require 'spec_helper'
 require 'console_agent/safety_guards'
 
+RSpec.describe ConsoleAgent::SafetyError do
+  it 'stores guard and blocked_key metadata' do
+    error = described_class.new("blocked", guard: :http_mutations, blocked_key: "example.com")
+    expect(error.message).to eq("blocked")
+    expect(error.guard).to eq(:http_mutations)
+    expect(error.blocked_key).to eq("example.com")
+  end
+
+  it 'defaults guard and blocked_key to nil' do
+    error = described_class.new("blocked")
+    expect(error.guard).to be_nil
+    expect(error.blocked_key).to be_nil
+  end
+end
+
 RSpec.describe ConsoleAgent::SafetyGuards do
   subject(:guards) { described_class.new }
 
@@ -45,6 +60,36 @@ RSpec.describe ConsoleAgent::SafetyGuards do
     it 'is false when guards are registered' do
       guards.add(:test) { |&b| b.call }
       expect(guards).not_to be_empty
+    end
+  end
+
+  describe '#allow / #allowed? / #allowlist' do
+    it 'allows a string key for a guard' do
+      guards.allow(:http_mutations, "s3.amazonaws.com")
+      expect(guards.allowed?(:http_mutations, "s3.amazonaws.com")).to be true
+      expect(guards.allowed?(:http_mutations, "evil.com")).to be false
+    end
+
+    it 'allows a regexp key for a guard' do
+      guards.allow(:http_mutations, /googleapis\.com/)
+      expect(guards.allowed?(:http_mutations, "sheets.googleapis.com")).to be true
+      expect(guards.allowed?(:http_mutations, "evil.com")).to be false
+    end
+
+    it 'does not duplicate entries' do
+      guards.allow(:http_mutations, "s3.amazonaws.com")
+      guards.allow(:http_mutations, "s3.amazonaws.com")
+      expect(guards.allowlist[:http_mutations].length).to eq(1)
+    end
+
+    it 'returns false for unknown guard names' do
+      expect(guards.allowed?(:unknown, "anything")).to be false
+    end
+
+    it 'returns the full allowlist hash' do
+      guards.allow(:http_mutations, "s3.amazonaws.com")
+      guards.allow(:database_writes, "sessions")
+      expect(guards.allowlist.keys).to contain_exactly(:http_mutations, :database_writes)
     end
   end
 
@@ -266,6 +311,23 @@ RSpec.describe ConsoleAgent::BuiltinGuards do
         expect { adapter.exec_update("UPDATE users SET name = 'test'") }
           .to raise_error(ConsoleAgent::SafetyError, /Database write blocked/)
       end
+
+      it 'includes guard and blocked_key in SafetyError' do
+        error = nil
+        begin
+          adapter.execute("INSERT INTO users (name) VALUES ('test')")
+        rescue ConsoleAgent::SafetyError => e
+          error = e
+        end
+        expect(error.guard).to eq(:database_writes)
+        expect(error.blocked_key).to eq("users")
+      end
+
+      it 'allows writes to allowlisted tables' do
+        ConsoleAgent.configuration.safety_guards.allow(:database_writes, 'users')
+        expect(adapter.execute("INSERT INTO users (name) VALUES ('test')"))
+          .to eq("INSERT INTO users (name) VALUES ('test')")
+      end
     end
 
     context 'when block_writes flag is not set' do
@@ -379,6 +441,27 @@ RSpec.describe ConsoleAgent::BuiltinGuards do
       it 'blocks DELETE requests' do
         expect { http.request(delete_req) }
           .to raise_error(ConsoleAgent::SafetyError, /HTTP DELETE blocked/)
+      end
+
+      it 'includes guard and blocked_key in SafetyError' do
+        error = nil
+        begin
+          http.request(post_req)
+        rescue ConsoleAgent::SafetyError => e
+          error = e
+        end
+        expect(error.guard).to eq(:http_mutations)
+        expect(error.blocked_key).to eq("example.com")
+      end
+
+      it 'allows requests to allowlisted hosts' do
+        ConsoleAgent.configuration.safety_guards.allow(:http_mutations, "example.com")
+        expect(http.request(post_req)).to eq("POST /users")
+      end
+
+      it 'allows requests matching allowlisted regexp' do
+        ConsoleAgent.configuration.safety_guards.allow(:http_mutations, /example\.com/)
+        expect(http.request(put_req)).to eq("PUT /users/1")
       end
     end
 

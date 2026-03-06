@@ -285,6 +285,15 @@ module ConsoleAgent
             status = guards.enabled? ? "\e[32mON\e[0m" : "\e[31mOFF\e[0m"
             @interactive_old_stdout.puts "\e[36m  Safe mode: #{status}\e[0m"
             @interactive_old_stdout.puts "\e[2m  Guards: #{guards.names.join(', ')}\e[0m"
+            unless guards.allowlist.empty?
+              @interactive_old_stdout.puts "\e[2m  Allowlist:\e[0m"
+              guards.allowlist.each do |guard_name, keys|
+                keys.each do |key|
+                  label = key.is_a?(Regexp) ? key.inspect : key.to_s
+                  @interactive_old_stdout.puts "\e[2m    :#{guard_name} → #{label}\e[0m"
+                end
+              end
+            end
           end
           next
         end
@@ -505,7 +514,7 @@ module ConsoleAgent
             result_str = output_parts.join("\n\n")
             result_str = result_str[0..1000] + '...' if result_str.length > 1000
             output_id = @executor.store_output(result_str)
-            @history << { role: :user, content: "Code was executed (safe mode disabled). #{result_str}", output_id: output_id }
+            @history << { role: :user, content: "Code was executed (safety override). #{result_str}", output_id: output_id }
           end
           :success
         else

@@ -49,6 +49,12 @@ ConsoleAgent.configure do |config|
   # Covers most Ruby HTTP libraries (HTTParty, RestClient, Faraday) since they use Net::HTTP:
   # config.use_builtin_safety_guard :http_mutations
   #
+  # Allowlist specific hosts or tables so they pass through without blocking:
+  # config.use_builtin_safety_guard :http_mutations,
+  #   allow: [/s3\.amazonaws\.com/, /googleapis\.com/]
+  # config.use_builtin_safety_guard :database_writes,
+  #   allow: ['console_agent_sessions']
+  #
   # Built-in guard for mailers — disables ActionMailer delivery:
   # config.use_builtin_safety_guard :mailers
   #

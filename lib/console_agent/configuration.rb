@@ -64,9 +64,15 @@ module ConsoleAgent
 
     # Register a built-in safety guard by name.
     # Available: :database_writes, :http_mutations, :mailers
-    def use_builtin_safety_guard(name)
+    #
+    # Options:
+    #   allow: Array of strings or regexps to allowlist for this guard.
+    #     - :http_mutations  → hosts (e.g. "s3.amazonaws.com", /googleapis\.com/)
+    #     - :database_writes → table names (e.g. "console_agent_sessions")
+    def use_builtin_safety_guard(name, allow: nil)
       require 'console_agent/safety_guards'
-      case name.to_sym
+      guard_name = name.to_sym
+      case guard_name
       when :database_writes
         safety_guards.add(:database_writes, &BuiltinGuards.database_writes)
       when :http_mutations
@@ -75,6 +81,10 @@ module ConsoleAgent
         safety_guards.add(:mailers, &BuiltinGuards.mailers)
       else
         raise ConfigurationError, "Unknown built-in safety guard: #{name}. Available: database_writes, http_mutations, mailers"
+      end
+
+      if allow
+        Array(allow).each { |key| safety_guards.allow(guard_name, key) }
       end
     end
 

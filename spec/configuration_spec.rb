@@ -107,6 +107,18 @@ RSpec.describe ConsoleAgent::Configuration do
       expect { config.use_builtin_safety_guard(:unknown) }
         .to raise_error(ConsoleAgent::ConfigurationError, /Unknown built-in/)
     end
+
+    it 'registers allowlist entries with allow: option' do
+      config.use_builtin_safety_guard(:http_mutations, allow: [/s3\.amazonaws\.com/, "example.com"])
+      expect(config.safety_guards.allowed?(:http_mutations, "s3.amazonaws.com")).to be true
+      expect(config.safety_guards.allowed?(:http_mutations, "example.com")).to be true
+      expect(config.safety_guards.allowed?(:http_mutations, "evil.com")).to be false
+    end
+
+    it 'accepts a single allow value (not array)' do
+      config.use_builtin_safety_guard(:database_writes, allow: 'sessions')
+      expect(config.safety_guards.allowed?(:database_writes, "sessions")).to be true
+    end
   end
 
   describe '#validate!' do

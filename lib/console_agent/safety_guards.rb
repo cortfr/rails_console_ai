@@ -2,7 +2,15 @@ module ConsoleAgent
   # Raised by safety guards to block dangerous operations.
   # Host apps should raise this error in their custom guards.
   # ConsoleAgent will catch it and guide the user to use 'd' or /danger.
-  class SafetyError < StandardError; end
+  class SafetyError < StandardError
+    attr_reader :guard, :blocked_key
+
+    def initialize(message, guard: nil, blocked_key: nil)
+      super(message)
+      @guard = guard
+      @blocked_key = blocked_key
+    end
+  end
 
   class SafetyGuards
     attr_reader :guards
@@ -10,6 +18,7 @@ module ConsoleAgent
     def initialize
       @guards = {}
       @enabled = true
+      @allowlist = {}  # { guard_name => [String or Regexp, ...] }
     end
 
     def add(name, &block)
@@ -40,6 +49,28 @@ module ConsoleAgent
       @guards.keys
     end
 
+    def allow(guard_name, key)
+      guard_name = guard_name.to_sym
+      @allowlist[guard_name] ||= []
+      @allowlist[guard_name] << key unless @allowlist[guard_name].include?(key)
+    end
+
+    def allowed?(guard_name, key)
+      entries = @allowlist[guard_name.to_sym]
+      return false unless entries
+
+      entries.any? do |entry|
+        case entry
+        when Regexp then key.match?(entry)
+        else entry.to_s == key.to_s
+        end
+      end
+    end
+
+    def allowlist
+      @allowlist
+    end
+
     # Compose all guards around a block of code.
     # Each guard is an around-block: guard.call { inner }
     # Result: guard_1 { guard_2 { guard_3 { yield } } }
@@ -59,26 +90,38 @@ module ConsoleAgent
     # Blocks INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, TRUNCATE
     module WriteBlocker
       WRITE_PATTERN = /\A\s*(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE)\b/i
+      TABLE_PATTERN = /\b(?:INTO|FROM|UPDATE|TABLE|TRUNCATE)\s+[`"]?(\w+)[`"]?/i
+
+      private
+
+      def console_agent_check_write!(sql)
+        return unless Thread.current[:console_agent_block_writes] && sql.match?(WRITE_PATTERN)
+
+        table = sql.match(TABLE_PATTERN)&.captures&.first
+        guards = ConsoleAgent.configuration.safety_guards
+        return if table && guards.allowed?(:database_writes, table)
+
+        raise ConsoleAgent::SafetyError.new(
+          "Database write blocked: #{sql.strip.split(/\s+/).first(3).join(' ')}...",
+          guard: :database_writes,
+          blocked_key: table
+        )
+      end
+
+      public
 
       def execute(sql, *args, **kwargs)
-        if Thread.current[:console_agent_block_writes] && sql.match?(WRITE_PATTERN)
-          raise ConsoleAgent::SafetyError, "Database write blocked: #{sql.strip.split(/\s+/).first(3).join(' ')}..."
-        end
+        console_agent_check_write!(sql)
         super
       end
 
-      # Also intercept exec_delete/exec_update for adapters that bypass execute
       def exec_delete(sql, *args, **kwargs)
-        if Thread.current[:console_agent_block_writes] && sql.match?(WRITE_PATTERN)
-          raise ConsoleAgent::SafetyError, "Database write blocked: #{sql.strip.split(/\s+/).first(3).join(' ')}..."
-        end
+        console_agent_check_write!(sql)
         super
       end
 
       def exec_update(sql, *args, **kwargs)
-        if Thread.current[:console_agent_block_writes] && sql.match?(WRITE_PATTERN)
-          raise ConsoleAgent::SafetyError, "Database write blocked: #{sql.strip.split(/\s+/).first(3).join(' ')}..."
-        end
+        console_agent_check_write!(sql)
         super
       end
     end
@@ -113,7 +156,15 @@ module ConsoleAgent
 
       def request(req, *args, &block)
         if Thread.current[:console_agent_block_http] && !SAFE_METHODS.include?(req.method)
-          raise ConsoleAgent::SafetyError, "HTTP #{req.method} blocked (#{@address}#{req.path})"
+          host = @address.to_s
+          guards = ConsoleAgent.configuration.safety_guards
+          unless guards.allowed?(:http_mutations, host)
+            raise ConsoleAgent::SafetyError.new(
+              "HTTP #{req.method} blocked (#{host}#{req.path})",
+              guard: :http_mutations,
+              blocked_key: host
+            )
+          end
         end
         super
       end

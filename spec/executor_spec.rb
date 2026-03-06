@@ -130,7 +130,7 @@ RSpec.describe ConsoleAgent::Executor do
 
     it 'catches SafetyError with a helpful message' do
       ConsoleAgent.configuration.safety_guard(:blocker) do |&block|
-        raise ConsoleAgent::SafetyError, "Database write blocked"
+        raise ConsoleAgent::SafetyError.new("Database write blocked", guard: :database_writes, blocked_key: "users")
       end
 
       result = executor.execute('"hello"')
@@ -138,12 +138,15 @@ RSpec.describe ConsoleAgent::Executor do
       expect(executor.last_error).to include("SafetyError")
       expect(executor.last_error).to include("Database write blocked")
       expect(executor.last_safety_error).to eq(true)
+      expect(executor.last_safety_exception).to be_a(ConsoleAgent::SafetyError)
+      expect(executor.last_safety_exception.guard).to eq(:database_writes)
+      expect(executor.last_safety_exception.blocked_key).to eq("users")
     end
 
     it 'detects SafetyError wrapped by another exception' do
       ConsoleAgent.configuration.safety_guard(:blocker) do |&block|
         begin
-          raise ConsoleAgent::SafetyError, "Database write blocked"
+          raise ConsoleAgent::SafetyError.new("Database write blocked", guard: :database_writes, blocked_key: "users")
         rescue ConsoleAgent::SafetyError
           raise RuntimeError, "wrapped error"
         end
@@ -154,6 +157,20 @@ RSpec.describe ConsoleAgent::Executor do
       expect(executor.last_safety_error).to eq(true)
       expect(executor.last_error).to include("SafetyError")
       expect(executor.last_error).to include("Database write blocked")
+      expect(executor.last_safety_exception.guard).to eq(:database_writes)
+      expect(executor.last_safety_exception.blocked_key).to eq("users")
+    end
+
+    it 'clears last_safety_exception on successful execution' do
+      ConsoleAgent.configuration.safety_guard(:blocker) do |&block|
+        raise ConsoleAgent::SafetyError.new("blocked", guard: :test, blocked_key: "x")
+      end
+      executor.execute('"hello"')
+      expect(executor.last_safety_exception).not_to be_nil
+
+      ConsoleAgent.configuration.safety_guards.remove(:blocker)
+      executor.execute('1 + 1')
+      expect(executor.last_safety_exception).to be_nil
     end
   end
 
@@ -228,6 +245,48 @@ RSpec.describe ConsoleAgent::Executor do
       allow($stdin).to receive(:gets).and_return("d\n")
       executor.confirm_and_execute('1 + 1')
       expect(ConsoleAgent.configuration.safety_guards).to be_enabled
+    end
+  end
+
+  describe '#offer_danger_retry' do
+    it 'adds to allowlist when user chooses a' do
+      # Simulate a safety error with metadata
+      executor.instance_variable_set(:@last_safety_exception,
+        ConsoleAgent::SafetyError.new("blocked", guard: :http_mutations, blocked_key: "s3.amazonaws.com"))
+      executor.instance_variable_set(:@last_safety_error, true)
+
+      allow($stdin).to receive(:gets).and_return("a\n")
+      executor.offer_danger_retry('1 + 1')
+
+      expect(ConsoleAgent.configuration.safety_guards.allowed?(:http_mutations, "s3.amazonaws.com")).to be true
+    end
+
+    it 'disables all guards when user chooses d' do
+      call_log = []
+      ConsoleAgent.configuration.safety_guard(:test) do |&block|
+        call_log << :guard
+        block.call
+      end
+
+      executor.instance_variable_set(:@last_safety_exception,
+        ConsoleAgent::SafetyError.new("blocked", guard: :http_mutations, blocked_key: "evil.com"))
+      executor.instance_variable_set(:@last_safety_error, true)
+
+      allow($stdin).to receive(:gets).and_return("d\n")
+      result = executor.offer_danger_retry('1 + 1')
+      expect(result).to eq(2)
+      expect(call_log).to be_empty
+      expect(ConsoleAgent.configuration.safety_guards).to be_enabled
+    end
+
+    it 'returns nil when user cancels' do
+      executor.instance_variable_set(:@last_safety_exception,
+        ConsoleAgent::SafetyError.new("blocked", guard: :test, blocked_key: "x"))
+      executor.instance_variable_set(:@last_safety_error, true)
+
+      allow($stdin).to receive(:gets).and_return("n\n")
+      result = executor.offer_danger_retry('1 + 1')
+      expect(result).to be_nil
     end
   end
 end

@@ -43,7 +43,7 @@ module ConsoleAgent
   class Executor
     CODE_REGEX = /```ruby\s*\n(.*?)```/m
 
-    attr_reader :binding_context, :last_error, :last_safety_error
+    attr_reader :binding_context, :last_error, :last_safety_error, :last_safety_exception
     attr_accessor :on_prompt
 
     def initialize(binding_context)
@@ -81,6 +81,7 @@ module ConsoleAgent
 
       @last_error = nil
       @last_safety_error = false
+      @last_safety_exception = nil
       captured_output = StringIO.new
       old_stdout = $stdout
       # Tee output: capture it and also print to the real stdout
@@ -99,6 +100,7 @@ module ConsoleAgent
       $stdout = old_stdout if old_stdout
       @last_error = "SafetyError: #{e.message}"
       @last_safety_error = true
+      @last_safety_exception = e
       $stderr.puts colorize("Blocked: #{e.message}", :red)
       @last_output = captured_output&.string
       nil
@@ -112,9 +114,11 @@ module ConsoleAgent
       $stdout = old_stdout if old_stdout
       # Check if a SafetyError is wrapped (e.g. ActiveRecord::StatementInvalid wrapping our error)
       if safety_error?(e)
-        safety_msg = extract_safety_message(e)
+        safety_exc = extract_safety_exception(e)
+        safety_msg = safety_exc ? safety_exc.message : e.message
         @last_error = "SafetyError: #{safety_msg}"
         @last_safety_error = true
+        @last_safety_exception = safety_exc
         $stderr.puts colorize("Blocked: #{safety_msg}", :red)
         @last_output = captured_output&.string
         return nil
@@ -204,18 +208,56 @@ module ConsoleAgent
       end
     end
 
-    private
-
     def offer_danger_retry(code)
-      $stdout.print colorize("Re-run with safe mode disabled? [y/N] ", :yellow)
+      exc = @last_safety_exception
+      blocked_key = exc&.blocked_key
+      guard = exc&.guard
+
+      if blocked_key && guard
+        allow_desc = allow_description(guard, blocked_key)
+        $stdout.puts colorize("  [d] re-run with all safe mode disabled", :yellow)
+        $stdout.puts colorize("  [a] allow #{allow_desc} for this session", :yellow)
+        $stdout.puts colorize("  [N] cancel", :yellow)
+        $stdout.print colorize("Choice: ", :yellow)
+      else
+        $stdout.print colorize("Re-run with safe mode disabled? [y/N] ", :yellow)
+      end
+
       answer = $stdin.gets.to_s.strip.downcase
       echo_stdin(answer)
-      if answer == 'y' || answer == 'yes'
+
+      case answer
+      when 'a', 'allow'
+        if blocked_key && guard
+          ConsoleAgent.configuration.safety_guards.allow(guard, blocked_key)
+          allow_desc = allow_description(guard, blocked_key)
+          $stdout.puts colorize("Allowed #{allow_desc} for this session.", :green)
+          return execute(code)
+        else
+          $stdout.puts colorize("Nothing to allow — re-run with safe mode disabled instead? [y/N]", :yellow)
+          answer = $stdin.gets.to_s.strip.downcase
+          echo_stdin(answer)
+        end
+      when 'd', 'danger', 'y', 'yes'
         $stdout.puts colorize("Executing with safety guards disabled.", :red)
         return execute_unsafe(code)
       end
+
       $stdout.puts colorize("Cancelled.", :yellow)
       nil
+    end
+
+    private
+
+    def allow_description(guard, blocked_key)
+      case guard
+      when :database_writes
+        "all writes to #{blocked_key}"
+      when :http_mutations
+        "all HTTP mutations to #{blocked_key}"
+      else
+        "#{blocked_key} for :#{guard}"
+      end
     end
 
     def execute_unsafe(code)
@@ -251,14 +293,14 @@ module ConsoleAgent
       false
     end
 
-    def extract_safety_message(exception)
-      return exception.message if exception.is_a?(ConsoleAgent::SafetyError)
+    def extract_safety_exception(exception)
+      return exception if exception.is_a?(ConsoleAgent::SafetyError)
       cause = exception.cause
       while cause
-        return cause.message if cause.is_a?(ConsoleAgent::SafetyError)
+        return cause if cause.is_a?(ConsoleAgent::SafetyError)
         cause = cause.cause
       end
-      exception.message
+      nil
     end
 
     MAX_DISPLAY_LINES = 10
