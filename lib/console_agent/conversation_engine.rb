@@ -387,8 +387,10 @@ module ConsoleAgent
 
     def context
       base = @context_base ||= context_builder.build
-      vars = binding_variable_summary
-      vars ? "#{base}\n\n#{vars}" : base
+      parts = [base]
+      parts << safety_context
+      parts << binding_variable_summary
+      parts.compact.join("\n\n")
     end
 
     def upgrade_to_thinking_model
@@ -542,6 +544,34 @@ module ConsoleAgent
     end
 
     private
+
+    def safety_context
+      guards = ConsoleAgent.configuration.safety_guards
+      return nil if guards.empty?
+
+      if !@channel.supports_danger?
+        <<~PROMPT.strip
+          ## Safety Guards (ENFORCED — CANNOT BE DISABLED)
+
+          This session has safety guards that block side effects. These guards CANNOT be bypassed,
+          disabled, or worked around in this channel. Do NOT attempt to:
+          - Search for ways to disable safety guards
+          - Look for SafetyError, allow_writes, or similar bypass mechanisms
+          - Suggest the user disable protections
+          - Re-attempt blocked operations with different syntax
+
+          When an operation is blocked, report what happened and move on.
+          Only read operations are permitted.
+        PROMPT
+      elsif guards.enabled?
+        <<~PROMPT.strip
+          ## Safety Guards
+
+          This session has safety guards that block side effects (database writes, HTTP mutations, etc.).
+          If an operation is blocked, the user will be prompted to allow it or disable guards.
+        PROMPT
+      end
+    end
 
     def one_shot_round(conversation)
       result, _ = send_query(nil, conversation: conversation)

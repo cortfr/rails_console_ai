@@ -368,9 +368,14 @@ module ConsoleAgent
 
           exec_result = @executor.execute(step['code'])
 
-          # On safety error, offer to re-run with guards disabled
+          # On safety error, offer to re-run with guards disabled (console only)
           if @executor.last_safety_error
-            exec_result = @executor.offer_danger_retry(step['code'])
+            if @channel && !@channel.supports_danger?
+              results << "Step #{i + 1} (#{step['description']}):\nBLOCKED by safety guard: #{@executor.last_error}. Write operations are not permitted in this channel."
+              break
+            else
+              exec_result = @executor.offer_danger_retry(step['code'])
+            end
           end
 
           # Make result available as step1, step2, etc. for subsequent steps
