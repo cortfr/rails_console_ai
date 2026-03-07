@@ -245,8 +245,26 @@ module ConsoleAgent
 
       session = @mutex.synchronize { @sessions[thread_ts] }
 
-      if text.strip.downcase == 'cancel' || text.strip.downcase == 'stop'
+      command = text.strip.downcase
+      if command == 'cancel' || command == 'stop'
         cancel_session(session, channel_id, thread_ts)
+        return
+      end
+
+      if command == 'clear'
+        count = count_bot_messages(channel_id, thread_ts)
+        if count == 0
+          post_message(channel: channel_id, thread_ts: thread_ts, text: "No bot messages to clear.")
+        else
+          post_message(channel: channel_id, thread_ts: thread_ts,
+            text: "This will permanently delete #{count} bot message#{'s' unless count == 1} from this thread. Type `clear!` to confirm.")
+        end
+        return
+      end
+
+      if command == 'clear!'
+        cancel_session(session, channel_id, thread_ts) if session
+        clear_bot_messages(channel_id, thread_ts)
         return
       end
 
@@ -346,6 +364,44 @@ module ConsoleAgent
         puts "[#{channel_id}/#{thread_ts}] cancel: no session"
       end
       @mutex.synchronize { @sessions.delete(thread_ts) }
+    end
+
+    def count_bot_messages(channel_id, thread_ts)
+      result = slack_get("conversations.replies", channel: channel_id, ts: thread_ts, limit: 200)
+      return 0 unless result["ok"]
+      (result["messages"] || []).count { |m| m["user"] == @bot_user_id }
+    rescue
+      0
+    end
+
+    def clear_bot_messages(channel_id, thread_ts)
+      result = slack_get("conversations.replies", channel: channel_id, ts: thread_ts, limit: 200)
+      unless result["ok"]
+        puts "[#{channel_id}/#{thread_ts}] clear: failed to fetch replies: #{result["error"]}"
+        return
+      end
+
+      bot_messages = (result["messages"] || []).select { |m| m["user"] == @bot_user_id }
+      bot_messages.each do |m|
+        puts "[#{channel_id}/#{thread_ts}] clearing #{channel_id.length} / #{m["ts"]}"
+        slack_api("chat.delete", channel: channel_id, ts: m["ts"])
+      end
+      puts "[#{channel_id}/#{thread_ts}] cleared #{bot_messages.length} bot messages"
+    rescue => e
+      puts "[#{channel_id}/#{thread_ts}] clear failed: #{e.message}"
+    end
+
+    def slack_get(method, **params)
+      uri = URI("https://slack.com/api/#{method}")
+      uri.query = URI.encode_www_form(params)
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = true
+      req = Net::HTTP::Get.new(uri)
+      req["Authorization"] = "Bearer #{@bot_token}"
+      resp = http.request(req)
+      JSON.parse(resp.body)
+    rescue => e
+      { "ok" => false, "error" => e.message }
     end
 
     def waiting_for_reply?(channel)
