@@ -339,8 +339,10 @@ module ConsoleAgent
     def cancel_session(session, channel_id, thread_ts)
       if session
         session[:channel].cancel!
+        session[:channel].display("Stopped.")
         puts "[#{channel_id}/#{thread_ts}] cancel requested"
       else
+        post_message(channel: channel_id, thread_ts: thread_ts, text: "No active session to stop.")
         puts "[#{channel_id}/#{thread_ts}] cancel: no session"
       end
       @mutex.synchronize { @sessions.delete(thread_ts) }
