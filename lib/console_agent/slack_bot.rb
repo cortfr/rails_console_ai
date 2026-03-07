@@ -284,6 +284,7 @@ module ConsoleAgent
       session[:thread] = Thread.new do
         Thread.current.report_on_exception = false
         begin
+          channel.display_dim("_session: #{channel_id}/#{thread_ts}_")
           if restored
             puts "Restored session for thread #{thread_ts} (#{engine.history.length} messages)"
             channel.display_dim("_(session restored — continuing from previous conversation)_")

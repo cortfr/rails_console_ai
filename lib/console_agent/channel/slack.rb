@@ -5,6 +5,24 @@ module ConsoleAgent
     class Slack < Base
       ANSI_REGEX = /\e\[[0-9;]*m/
 
+      THINKING_MESSAGES = [
+        "Thinking...",
+        "Reticulating splines...",
+        "Scrubbing encryption bits...",
+        "Consulting the oracle...",
+        "Rummaging through the database...",
+        "Warming up the hamster wheel...",
+        "Polishing the pixels...",
+        "Untangling the spaghetti code...",
+        "Asking the magic 8-ball...",
+        "Counting all the things...",
+        "Herding the electrons...",
+        "Dusting off the old records...",
+        "Feeding the algorithms...",
+        "Shaking the data tree...",
+        "Bribing the servers...",
+      ].freeze
+
       def initialize(slack_bot:, channel_id:, thread_ts:, user_name: nil)
         @slack_bot = slack_bot
         @channel_id = channel_id
@@ -29,7 +47,16 @@ module ConsoleAgent
       end
 
       def display_dim(text)
-        post(strip_ansi(text))
+        stripped = strip_ansi(text).strip
+        if stripped =~ /\AThinking\.\.\.|\ACalling LLM/
+          post(random_thinking_message)
+        elsif stripped =~ /\AAttempting to fix|\ACancelled|\A_session:/
+          post(stripped)
+        else
+          # Log for engineers but don't post to Slack
+          @output_log.write("#{stripped}\n")
+          $stdout.puts "#{@log_prefix} (dim) #{stripped}"
+        end
       end
 
       def display_warning(text)
@@ -51,13 +78,9 @@ module ConsoleAgent
         post("```#{text}```")
       end
 
-      def display_result(result)
-        return if result.nil?
-        text = "=> #{result.inspect}"
-        if text.length > 3000
-          text = text[0, 3000] + "\n... (truncated)"
-        end
-        post("```#{strip_ansi(text)}```")
+      def display_result(_result)
+        # Don't post raw return values to Slack — the LLM formats output via puts
+        nil
       end
 
       def prompt(text)
@@ -132,6 +155,10 @@ module ConsoleAgent
         )
       rescue => e
         ConsoleAgent.logger.error("Slack post failed: #{e.message}")
+      end
+
+      def random_thinking_message
+        THINKING_MESSAGES.sample
       end
 
       def strip_ansi(text)
