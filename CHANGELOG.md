@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.12.0]
+
+- Add `slack_allowed_usernames` to restrict Slack channel access
+
 ## [0.11.0]
 
 - Add Slack channel integration with system instructions and connection pooling
