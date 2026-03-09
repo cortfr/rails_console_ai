@@ -27,7 +27,8 @@ module RailsConsoleAi
                   :authenticate,
                   :slack_bot_token, :slack_app_token, :slack_channel_ids, :slack_allowed_usernames,
                   :local_url, :local_model, :local_api_key,
-                  :bedrock_region
+                  :bedrock_region,
+                  :code_search_paths
 
     def initialize
       @provider     = :anthropic
@@ -56,6 +57,7 @@ module RailsConsoleAi
       @local_model      = 'qwen2.5:7b'
       @local_api_key    = nil
       @bedrock_region   = nil
+      @code_search_paths = %w[app]
     end
 
     def safety_guards

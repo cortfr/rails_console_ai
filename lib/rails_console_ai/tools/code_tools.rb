@@ -4,23 +4,31 @@ module RailsConsoleAi
       MAX_FILE_LINES = 500
       MAX_LIST_ENTRIES = 100
       MAX_SEARCH_RESULTS = 50
+      FILE_EXTENSIONS = %w[rb erb haml slim html js jsx ts tsx css scss sass json yml yaml rake].freeze
+      FILE_GLOB = "*.{#{FILE_EXTENSIONS.join(',')}}".freeze
 
       def list_files(directory = nil)
-        directory = sanitize_directory(directory || 'app')
         root = rails_root
         return "Rails.root is not available." unless root
 
-        full_path = File.join(root, directory)
-        return "Directory '#{directory}' not found." unless File.directory?(full_path)
+        directories = directory ? [sanitize_directory(directory)] : default_search_paths
 
-        files = Dir.glob(File.join(full_path, '**', '*.rb')).sort
-        files = files.map { |f| f.sub("#{root}/", '') }
+        files = []
+        directories.each do |dir|
+          full_path = File.join(root, dir)
+          next unless File.directory?(full_path)
+
+          Dir.glob(File.join(full_path, '**', FILE_GLOB)).sort.each do |f|
+            files << f.sub("#{root}/", '')
+          end
+        end
 
         if files.length > MAX_LIST_ENTRIES
           truncated = files.first(MAX_LIST_ENTRIES)
           truncated.join("\n") + "\n... and #{files.length - MAX_LIST_ENTRIES} more files"
         elsif files.empty?
-          "No Ruby files found in '#{directory}'."
+          searched = directory || default_search_paths.join(', ')
+          "No files found in '#{searched}'."
         else
           files.join("\n")
         end
@@ -71,30 +79,36 @@ module RailsConsoleAi
       def search_code(query, directory = nil)
         return "Error: query is required." if query.nil? || query.strip.empty?
 
-        directory = sanitize_directory(directory || 'app')
         root = rails_root
         return "Rails.root is not available." unless root
 
-        full_path = File.join(root, directory)
-        return "Directory '#{directory}' not found." unless File.directory?(full_path)
+        directories = directory ? [sanitize_directory(directory)] : default_search_paths
 
         results = []
-        Dir.glob(File.join(full_path, '**', '*.rb')).sort.each do |file|
+        directories.each do |dir|
           break if results.length >= MAX_SEARCH_RESULTS
 
-          relative = file.sub("#{root}/", '')
-          File.readlines(file).each_with_index do |line, idx|
-            if line.include?(query)
-              results << "#{relative}:#{idx + 1}: #{line.strip}"
-              break if results.length >= MAX_SEARCH_RESULTS
+          full_path = File.join(root, dir)
+          next unless File.directory?(full_path)
+
+          Dir.glob(File.join(full_path, '**', FILE_GLOB)).sort.each do |file|
+            break if results.length >= MAX_SEARCH_RESULTS
+
+            relative = file.sub("#{root}/", '')
+            File.readlines(file).each_with_index do |line, idx|
+              if line.include?(query)
+                results << "#{relative}:#{idx + 1}: #{line.strip}"
+                break if results.length >= MAX_SEARCH_RESULTS
+              end
             end
+          rescue => e
+            # skip unreadable files
           end
-        rescue => e
-          # skip unreadable files
         end
 
         if results.empty?
-          "No matches found for '#{query}' in #{directory}/."
+          searched = directory || default_search_paths.join(', ')
+          "No matches found for '#{query}' in #{searched}."
         else
           header = "Found #{results.length} match#{'es' if results.length != 1}:\n"
           header + results.join("\n")
@@ -111,6 +125,10 @@ module RailsConsoleAi
         else
           nil
         end
+      end
+
+      def default_search_paths
+        RailsConsoleAi.configuration.code_search_paths
       end
 
       def sanitize_path(path)

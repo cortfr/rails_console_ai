@@ -93,7 +93,7 @@ Say "think harder" in any query to auto-upgrade to the thinking model for that s
 
 ## Features
 
-- **Tool use** — AI introspects your schema, models, files, and code to write accurate queries
+- **Tool use** — AI introspects your schema, models, files (Ruby, ERB, HTML, JS, CSS, YAML, etc), and code to write accurate queries
 - **Multi-step plans** — complex tasks are broken into steps, executed sequentially with `step1`/`step2` references
 - **Two-tier models** — defaults to Sonnet for speed/cost; `/think` upgrades to Opus when you need it
 - **Cost tracking** — `/cost` shows per-model token usage and estimated spend
@@ -231,8 +231,21 @@ RailsConsoleAi.configure do |config|
   config.temperature = 0.2
   config.timeout = 30                 # HTTP timeout in seconds
   config.max_tool_rounds = 200        # safety cap on tool-use loops
+  config.code_search_paths = %w[app]  # directories for list_files / search_code
 end
 ```
+
+### Code Search Paths
+
+By default, `list_files` and `search_code` only look in `app/`. If your project has code in other directories (e.g. a frontend in `public/portal`, or shared code in `lib`), add them:
+
+```ruby
+RailsConsoleAi.configure do |config|
+  config.code_search_paths = %w[app lib public/portal]
+end
+```
+
+The tools search all configured paths when no explicit directory is passed. You can still pass a specific directory to either tool to override this.
 
 ## Web UI Authentication
 

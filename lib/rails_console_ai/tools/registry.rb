@@ -144,11 +144,11 @@ module RailsConsoleAi
 
         register(
           name: 'list_files',
-          description: 'List Ruby files in a directory of this Rails app. Defaults to app/ directory.',
+          description: "List files in this Rails app (Ruby, ERB, HTML, JS, CSS, YAML, etc). Searches configured paths by default: #{RailsConsoleAi.configuration.code_search_paths.join(', ')}.",
           parameters: {
             'type' => 'object',
             'properties' => {
-              'directory' => { 'type' => 'string', 'description' => 'Relative directory path (e.g. "app/models", "lib"). Defaults to "app".' }
+              'directory' => { 'type' => 'string', 'description' => 'Relative directory path (e.g. "app/models", "lib"). Omit to search all configured paths.' }
             }
           },
           handler: ->(args) { code.list_files(args['directory']) }
@@ -171,12 +171,12 @@ module RailsConsoleAi
 
         register(
           name: 'search_code',
-          description: 'Search for a pattern in Ruby files. Returns matching lines with file paths.',
+          description: "Search for a pattern in project files (Ruby, ERB, HTML, JS, CSS, YAML, etc). Returns matching lines with file paths. Searches configured paths by default: #{RailsConsoleAi.configuration.code_search_paths.join(', ')}.",
           parameters: {
             'type' => 'object',
             'properties' => {
               'query' => { 'type' => 'string', 'description' => 'Search pattern (substring match)' },
-              'directory' => { 'type' => 'string', 'description' => 'Relative directory to search in. Defaults to "app".' }
+              'directory' => { 'type' => 'string', 'description' => 'Relative directory to search in. Omit to search all configured paths.' }
             },
             'required' => ['query']
           },
