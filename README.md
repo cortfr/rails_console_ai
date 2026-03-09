@@ -147,19 +147,92 @@ raise ConsoleAgent::SafetyError, "Stripe charge blocked"
 - **`d`** at the `Execute? [y/N/edit/danger]` prompt disables guards for that single execution
 - When a guard blocks an operation, the user is prompted: `Re-run with safe mode disabled? [y/N]`
 
+## LLM Providers
+
+ConsoleAgent supports four LLM providers. Each uses a two-tier model system: a default model for speed/cost, and a thinking model activated via `/think` or by saying "think harder".
+
+### Anthropic (default)
+
+```ruby
+ConsoleAgent.configure do |config|
+  config.provider = :anthropic
+  config.api_key = 'sk-ant-...'  # or set ANTHROPIC_API_KEY env var
+end
+```
+
+Default model: `claude-sonnet-4-6`. Thinking model: `claude-opus-4-6`. Prompt caching is enabled automatically.
+
+### OpenAI
+
+```ruby
+ConsoleAgent.configure do |config|
+  config.provider = :openai
+  config.api_key = 'sk-...'  # or set OPENAI_API_KEY env var
+end
+```
+
+Default model: `gpt-5.3-codex`. OpenAI applies prompt caching automatically on their end for prompts over 1024 tokens.
+
+### AWS Bedrock
+
+Access frontier models (Claude, Mistral, DeepSeek, Llama) via your AWS account with pay-per-token pricing. No API key needed — authentication uses the AWS SDK credential chain (IAM roles, env vars, `~/.aws/credentials`).
+
+```ruby
+# Gemfile
+gem 'aws-sdk-bedrockruntime'
+```
+
+```ruby
+ConsoleAgent.configure do |config|
+  config.provider = :bedrock
+  config.bedrock_region = 'us-east-1'
+  # config.model = 'us.anthropic.claude-sonnet-4-6'           # default
+  # config.thinking_model = 'us.anthropic.claude-opus-4-6-v1' # default
+end
+```
+
+Bedrock model IDs use the `us.` prefix for cross-region inference profiles (required for on-demand Anthropic models). Non-Anthropic models use their bare ID:
+
+```ruby
+config.model = 'mistral.devstral-2-123b'
+config.model = 'deepseek.v3.2'
+```
+
+**Setup checklist:**
+1. Add `aws-sdk-bedrockruntime` to your Gemfile (it is not a hard dependency of the gem)
+2. Ensure AWS credentials are available to the SDK (env vars, IAM role, or `~/.aws/credentials`)
+3. For Anthropic models, submit the use case form in the Bedrock console (one-time, per account)
+4. The IAM role/user needs `bedrock:InvokeModel` permission
+
+Prompt caching is automatically enabled for Anthropic models on Bedrock, reducing cost on multi-turn tool use conversations.
+
+### Local (Ollama / vLLM / OpenAI-compatible)
+
+Run against a local model server. No API key required.
+
+```ruby
+ConsoleAgent.configure do |config|
+  config.provider = :local
+  config.local_url = 'http://localhost:11434'
+  config.local_model = 'qwen2.5:7b'
+  # config.local_api_key = nil  # if your server requires auth
+end
+```
+
+Timeout is automatically raised to 300s minimum for local models to account for slower inference.
+
 ## Configuration
 
 ```ruby
 ConsoleAgent.configure do |config|
-  config.provider = :anthropic       # or :openai
+  config.provider = :anthropic       # :anthropic, :openai, :bedrock, :local
   config.auto_execute = false         # true to skip confirmations
   config.session_logging = true       # requires ai_setup
-  config.model = 'claude-sonnet-4-6'  # model used by /think (default)
-  config.thinking_model = 'claude-opus-4-6'  # model used by /think (default)
+  config.temperature = 0.2
+  config.timeout = 30                 # HTTP timeout in seconds
+  config.max_tool_rounds = 200        # safety cap on tool-use loops
 end
 ```
-
-The default model is `claude-sonnet-4-6` (Anthropic) or `gpt-5.3-codex` (OpenAI). The thinking model defaults to `claude-opus-4-6` and is activated via `/think` or by saying "think harder".
 
 ## Web UI Authentication
 
@@ -191,7 +264,7 @@ end
 
 When `authenticate` is set, `admin_username` / `admin_password` are ignored.
 
-## Channels
+## Additional Channels
 
 ConsoleAgent can run through different channels beyond the Rails console. Each channel is a separate process that connects the same AI engine to a different interface.
 
@@ -248,7 +321,7 @@ This starts a long-running process (run it separately from your web server). Eac
 
 ## Requirements
 
-Ruby >= 2.5, Rails >= 5.0, Faraday >= 1.0
+Ruby >= 2.5, Rails >= 5.0, Faraday >= 1.0. For Bedrock: `aws-sdk-bedrockruntime` (loaded lazily, not a hard dependency).
 
 ## License
 

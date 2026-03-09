@@ -50,14 +50,13 @@ module ConsoleAgent
           }
         }
         if system_prompt
-          params[:system] = [
-            { text: system_prompt },
-            { cache_point: { type: 'default' } }
-          ]
+          sys_blocks = [{ text: system_prompt }]
+          sys_blocks << { cache_point: { type: 'default' } } if cache_supported?
+          params[:system] = sys_blocks
         end
         if tools
           bedrock_tools = tools.to_bedrock_format
-          bedrock_tools << { cache_point: { type: 'default' } } if bedrock_tools.any?
+          bedrock_tools << { cache_point: { type: 'default' } } if bedrock_tools.any? && cache_supported?
           params[:tool_config] = { tools: bedrock_tools }
         end
 
@@ -99,6 +98,11 @@ module ConsoleAgent
           client_opts[:http_read_timeout] = t
           Aws::BedrockRuntime::Client.new(client_opts)
         end
+      end
+
+      def cache_supported?
+        model = config.resolved_model
+        model.include?('anthropic')
       end
 
       def aws_error_class
