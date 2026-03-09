@@ -1,7 +1,7 @@
 require 'spec_helper'
 require 'rails_console_ai/tools/schema_tools'
 
-RSpec.describe RailsConsoleAI::Tools::SchemaTools do
+RSpec.describe RailsConsoleAi::Tools::SchemaTools do
   subject(:tools) { described_class.new }
 
   describe '#list_tables' do

@@ -1,4 +1,4 @@
-RailsConsoleAI.configure do |config|
+RailsConsoleAi.configure do |config|
   # LLM provider: :anthropic, :openai, or :local
   config.provider = :anthropic
 
@@ -42,14 +42,14 @@ RailsConsoleAI.configure do |config|
   # config.debug = true
 
   # Session logging: persist AI sessions to the database
-  # Run RailsConsoleAI.setup! in the Rails console to create the table
+  # Run RailsConsoleAi.setup! in the Rails console to create the table
   config.session_logging = true
 
-  # Database connection for RailsConsoleAI tables (default: ActiveRecord::Base)
+  # Database connection for RailsConsoleAi tables (default: ActiveRecord::Base)
   # Set to a class that responds to .connection if tables live on a different DB
   # config.connection_class = Sharding::CentralizedModel
 
-  # Admin UI credentials (mount RailsConsoleAI::Engine => '/rails_console_ai' in routes.rb)
+  # Admin UI credentials (mount RailsConsoleAi::Engine => '/rails_console_ai' in routes.rb)
   # When nil, all requests are denied. Set credentials or use config.authenticate.
   # config.admin_username = 'admin'
   # config.admin_password = 'changeme'

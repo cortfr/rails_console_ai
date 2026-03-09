@@ -1,4 +1,4 @@
-# RailsConsoleAI
+# RailsConsoleAi
 
 Claude Code for your Rails Console.
 
@@ -49,7 +49,7 @@ Set your API key in the generated initializer or via env var (`ANTHROPIC_API_KEY
 
 ```ruby
 # config/initializers/rails_console_ai.rb
-RailsConsoleAI.configure do |config|
+RailsConsoleAi.configure do |config|
   config.api_key = 'sk-ant-...'
 end
 ```
@@ -112,7 +112,7 @@ Safety guards prevent AI-generated code from causing side effects. When a guard 
 ### Built-in Guards
 
 ```ruby
-RailsConsoleAI.configure do |config|
+RailsConsoleAi.configure do |config|
   config.use_builtin_safety_guard :database_writes  # blocks INSERT/UPDATE/DELETE/DROP/etc.
   config.use_builtin_safety_guard :http_mutations    # blocks POST/PUT/PATCH/DELETE via Net::HTTP
   config.use_builtin_safety_guard :mailers           # disables ActionMailer delivery
@@ -128,17 +128,17 @@ end
 Write your own guards using the around-block pattern:
 
 ```ruby
-RailsConsoleAI.configure do |config|
+RailsConsoleAi.configure do |config|
   config.safety_guard :jobs do |&execute|
     Sidekiq::Testing.fake! { execute.call }
   end
 end
 ```
 
-Raise `RailsConsoleAI::SafetyError` in your app code to trigger the safe mode prompt:
+Raise `RailsConsoleAi::SafetyError` in your app code to trigger the safe mode prompt:
 
 ```ruby
-raise RailsConsoleAI::SafetyError, "Stripe charge blocked"
+raise RailsConsoleAi::SafetyError, "Stripe charge blocked"
 ```
 
 ### Toggling Safe Mode
@@ -149,12 +149,12 @@ raise RailsConsoleAI::SafetyError, "Stripe charge blocked"
 
 ## LLM Providers
 
-RailsConsoleAI supports four LLM providers. Each uses a two-tier model system: a default model for speed/cost, and a thinking model activated via `/think` or by saying "think harder".
+RailsConsoleAi supports four LLM providers. Each uses a two-tier model system: a default model for speed/cost, and a thinking model activated via `/think` or by saying "think harder".
 
 ### Anthropic (default)
 
 ```ruby
-RailsConsoleAI.configure do |config|
+RailsConsoleAi.configure do |config|
   config.provider = :anthropic
   config.api_key = 'sk-ant-...'  # or set ANTHROPIC_API_KEY env var
 end
@@ -165,7 +165,7 @@ Default model: `claude-sonnet-4-6`. Thinking model: `claude-opus-4-6`. Prompt ca
 ### OpenAI
 
 ```ruby
-RailsConsoleAI.configure do |config|
+RailsConsoleAi.configure do |config|
   config.provider = :openai
   config.api_key = 'sk-...'  # or set OPENAI_API_KEY env var
 end
@@ -183,7 +183,7 @@ gem 'aws-sdk-bedrockruntime'
 ```
 
 ```ruby
-RailsConsoleAI.configure do |config|
+RailsConsoleAi.configure do |config|
   config.provider = :bedrock
   config.bedrock_region = 'us-east-1'
   # config.model = 'us.anthropic.claude-sonnet-4-6'           # default
@@ -211,7 +211,7 @@ Prompt caching is automatically enabled for Anthropic models on Bedrock, reducin
 Run against a local model server. No API key required.
 
 ```ruby
-RailsConsoleAI.configure do |config|
+RailsConsoleAi.configure do |config|
   config.provider = :local
   config.local_url = 'http://localhost:11434'
   config.local_model = 'qwen2.5:7b'
@@ -224,7 +224,7 @@ Timeout is automatically raised to 300s minimum for local models to account for 
 ## Configuration
 
 ```ruby
-RailsConsoleAI.configure do |config|
+RailsConsoleAi.configure do |config|
   config.provider = :anthropic       # :anthropic, :openai, :bedrock, :local
   config.auto_execute = false         # true to skip confirmations
   config.session_logging = true       # requires ai_setup
@@ -241,7 +241,7 @@ The engine mounts a session viewer at `/rails_console_ai`. By default it's open 
 ### Basic Auth
 
 ```ruby
-RailsConsoleAI.configure do |config|
+RailsConsoleAi.configure do |config|
   config.admin_username = 'admin'
   config.admin_password = ENV['CONSOLE_AGENT_PASSWORD']
 end
@@ -252,7 +252,7 @@ end
 For apps with their own auth system, pass a proc to `authenticate`. It runs in the controller context, so you have access to `session`, `request`, `redirect_to`, etc.
 
 ```ruby
-RailsConsoleAI.configure do |config|
+RailsConsoleAi.configure do |config|
   config.authenticate = proc {
     user = User.find_by(id: session[:user_id])
     unless user&.admin?
@@ -266,11 +266,11 @@ When `authenticate` is set, `admin_username` / `admin_password` are ignored.
 
 ## Additional Channels
 
-RailsConsoleAI can run through different channels beyond the Rails console. Each channel is a separate process that connects the same AI engine to a different interface.
+RailsConsoleAi can run through different channels beyond the Rails console. Each channel is a separate process that connects the same AI engine to a different interface.
 
 ### Slack
 
-Run RailsConsoleAI as a Slack bot. Each Slack thread becomes an independent AI session with full tool use, multi-step plans, and safety guards always on.
+Run RailsConsoleAi as a Slack bot. Each Slack thread becomes an independent AI session with full tool use, multi-step plans, and safety guards always on.
 
 #### Slack App Setup
 
@@ -299,7 +299,7 @@ Run RailsConsoleAI as a Slack bot. Each Slack thread becomes an independent AI s
 #### Configuration
 
 ```ruby
-RailsConsoleAI.configure do |config|
+RailsConsoleAi.configure do |config|
   config.slack_bot_token = ENV['SLACK_BOT_TOKEN']   # xoxb-...
   config.slack_app_token = ENV['SLACK_APP_TOKEN']    # xapp-...
 

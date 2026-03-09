@@ -2,7 +2,7 @@ require 'spec_helper'
 require 'rails_console_ai/storage/file_storage'
 require 'tmpdir'
 
-RSpec.describe RailsConsoleAI::Storage::FileStorage do
+RSpec.describe RailsConsoleAi::Storage::FileStorage do
   let(:tmpdir) { Dir.mktmpdir('rails_console_ai_test') }
   subject(:storage) { described_class.new(tmpdir) }
 
@@ -37,7 +37,7 @@ RSpec.describe RailsConsoleAI::Storage::FileStorage do
 
       expect {
         storage.write('readonly/test.yml', 'content')
-      }.to raise_error(RailsConsoleAI::Storage::StorageError, /Cannot write/)
+      }.to raise_error(RailsConsoleAi::Storage::StorageError, /Cannot write/)
     ensure
       File.chmod(0o755, File.join(tmpdir, 'readonly'))
     end

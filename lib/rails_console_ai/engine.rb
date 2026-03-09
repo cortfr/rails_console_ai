@@ -1,5 +1,5 @@
-module RailsConsoleAI
+module RailsConsoleAi
   class Engine < ::Rails::Engine
-    isolate_namespace RailsConsoleAI
+    isolate_namespace RailsConsoleAi
   end
 end

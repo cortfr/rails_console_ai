@@ -1,4 +1,4 @@
-module RailsConsoleAI
+module RailsConsoleAi
   class SessionsController < ApplicationController
     PER_PAGE = 50
 

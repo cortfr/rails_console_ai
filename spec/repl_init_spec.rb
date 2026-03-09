@@ -6,29 +6,29 @@ require 'rails_console_ai/repl'
 require 'rails_console_ai/storage/file_storage'
 require 'tmpdir'
 
-RSpec.describe RailsConsoleAI::Repl, '#init_guide' do
+RSpec.describe RailsConsoleAi::Repl, '#init_guide' do
   let(:test_binding) { binding }
-  let(:mock_provider) { instance_double('RailsConsoleAI::Providers::Anthropic') }
+  let(:mock_provider) { instance_double('RailsConsoleAi::Providers::Anthropic') }
   let(:tmpdir) { Dir.mktmpdir('rails_console_ai_test') }
-  let(:storage) { RailsConsoleAI::Storage::FileStorage.new(tmpdir) }
+  let(:storage) { RailsConsoleAi::Storage::FileStorage.new(tmpdir) }
   subject(:repl) { described_class.new(test_binding) }
 
   before do
-    RailsConsoleAI.configure do |c|
+    RailsConsoleAi.configure do |c|
       c.api_key = 'test-key'
       c.provider = :anthropic
       c.storage_adapter = storage
     end
 
-    allow(RailsConsoleAI::Providers).to receive(:build).and_return(mock_provider)
-    allow(RailsConsoleAI::ContextBuilder).to receive(:new)
+    allow(RailsConsoleAi::Providers).to receive(:build).and_return(mock_provider)
+    allow(RailsConsoleAi::ContextBuilder).to receive(:new)
       .and_return(double(build: 'test context', environment_context: '## Environment'))
   end
 
   after { FileUtils.rm_rf(tmpdir) }
 
   def chat_result(text, input_tokens: 100, output_tokens: 50)
-    RailsConsoleAI::Providers::ChatResult.new(
+    RailsConsoleAi::Providers::ChatResult.new(
       text: text,
       input_tokens: input_tokens,
       output_tokens: output_tokens,
@@ -45,13 +45,13 @@ RSpec.describe RailsConsoleAI::Repl, '#init_guide' do
     expect(output).to include('No existing guide')
     expect(output).to include('Guide saved')
 
-    saved = storage.read(RailsConsoleAI::GUIDE_KEY)
+    saved = storage.read(RailsConsoleAi::GUIDE_KEY)
     expect(saved).to include('My App')
     expect(saved).to include('managing widgets')
   end
 
   it 'passes existing guide to system prompt on re-run' do
-    storage.write(RailsConsoleAI::GUIDE_KEY, '# Old Guide')
+    storage.write(RailsConsoleAi::GUIDE_KEY, '# Old Guide')
 
     captured_opts = nil
     allow(mock_provider).to receive(:chat_with_tools) do |_messages, **opts|
@@ -71,7 +71,7 @@ RSpec.describe RailsConsoleAI::Repl, '#init_guide' do
 
     capture_stdout { repl.init_guide }
 
-    saved = storage.read(RailsConsoleAI::GUIDE_KEY)
+    saved = storage.read(RailsConsoleAi::GUIDE_KEY)
     expect(saved).to eq("# My App\nContent here.")
     expect(saved).not_to include('```')
   end
@@ -82,7 +82,7 @@ RSpec.describe RailsConsoleAI::Repl, '#init_guide' do
 
     capture_stdout { repl.init_guide }
 
-    saved = storage.read(RailsConsoleAI::GUIDE_KEY)
+    saved = storage.read(RailsConsoleAi::GUIDE_KEY)
     expect(saved).to start_with('# My App')
     expect(saved).not_to include('enough information')
   end
@@ -94,7 +94,7 @@ RSpec.describe RailsConsoleAI::Repl, '#init_guide' do
     output = capture_stdout { repl.init_guide }
 
     expect(output).to include('No guide content generated')
-    expect(storage.read(RailsConsoleAI::GUIDE_KEY)).to be_nil
+    expect(storage.read(RailsConsoleAi::GUIDE_KEY)).to be_nil
   end
 
   it 'handles interrupts gracefully' do
@@ -105,7 +105,7 @@ RSpec.describe RailsConsoleAI::Repl, '#init_guide' do
   end
 
   it 'runs tool-use loop when LLM requests tools' do
-    tool_call_result = RailsConsoleAI::Providers::ChatResult.new(
+    tool_call_result = RailsConsoleAi::Providers::ChatResult.new(
       text: '',
       input_tokens: 50,
       output_tokens: 20,
@@ -131,7 +131,7 @@ RSpec.describe RailsConsoleAI::Repl, '#init_guide' do
     capture_stdout { repl.init_guide }
 
     expect(call_count).to eq(2)
-    saved = storage.read(RailsConsoleAI::GUIDE_KEY)
+    saved = storage.read(RailsConsoleAi::GUIDE_KEY)
     expect(saved).to include('App Guide')
   end
 

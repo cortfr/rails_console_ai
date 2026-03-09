@@ -4,24 +4,24 @@ require 'rails_console_ai/providers/base'
 require 'rails_console_ai/executor'
 require 'rails_console_ai/repl'
 
-RSpec.describe RailsConsoleAI::Repl do
+RSpec.describe RailsConsoleAi::Repl do
   let(:test_binding) { binding }
-  let(:mock_provider) { instance_double('RailsConsoleAI::Providers::Anthropic') }
+  let(:mock_provider) { instance_double('RailsConsoleAi::Providers::Anthropic') }
   subject(:repl) { described_class.new(test_binding) }
 
   before do
-    RailsConsoleAI.configure do |c|
+    RailsConsoleAi.configure do |c|
       c.api_key = 'test-key'
       c.provider = :anthropic
     end
 
-    allow(RailsConsoleAI::Providers).to receive(:build).and_return(mock_provider)
-    allow(RailsConsoleAI::ContextBuilder).to receive(:new)
+    allow(RailsConsoleAi::Providers).to receive(:build).and_return(mock_provider)
+    allow(RailsConsoleAi::ContextBuilder).to receive(:new)
       .and_return(double(build: 'test context'))
   end
 
   def chat_result(text, input_tokens: 100, output_tokens: 50)
-    RailsConsoleAI::Providers::ChatResult.new(
+    RailsConsoleAi::Providers::ChatResult.new(
       text: text,
       input_tokens: input_tokens,
       output_tokens: output_tokens,
@@ -51,7 +51,7 @@ RSpec.describe RailsConsoleAI::Repl do
 
     it 'handles provider errors gracefully' do
       allow(mock_provider).to receive(:chat_with_tools)
-        .and_raise(RailsConsoleAI::Providers::ProviderError, 'API down')
+        .and_raise(RailsConsoleAi::Providers::ProviderError, 'API down')
 
       expect { repl.one_shot('test') }.not_to raise_error
     end
@@ -70,7 +70,7 @@ RSpec.describe RailsConsoleAI::Repl do
   describe 'tool use' do
     it 'runs tool-use loop when LLM requests tools' do
       # First call: LLM wants to call list_tables
-      tool_call_result = RailsConsoleAI::Providers::ChatResult.new(
+      tool_call_result = RailsConsoleAi::Providers::ChatResult.new(
         text: '',
         input_tokens: 50,
         output_tokens: 20,
@@ -79,7 +79,7 @@ RSpec.describe RailsConsoleAI::Repl do
       )
 
       # Second call: LLM produces final answer (use code that won't error in tests)
-      final_result = RailsConsoleAI::Providers::ChatResult.new(
+      final_result = RailsConsoleAi::Providers::ChatResult.new(
         text: "Here are the tables:\n```ruby\n['users', 'posts']\n```",
         input_tokens: 80,
         output_tokens: 30,
@@ -107,7 +107,7 @@ RSpec.describe RailsConsoleAI::Repl do
     end
 
     it 'makes only one call when no tools needed' do
-      final_result = RailsConsoleAI::Providers::ChatResult.new(
+      final_result = RailsConsoleAi::Providers::ChatResult.new(
         text: "Sure:\n```ruby\n1 + 1\n```",
         input_tokens: 50,
         output_tokens: 20,
@@ -128,12 +128,12 @@ RSpec.describe RailsConsoleAI::Repl do
     end
 
     it 'aggregates tokens across tool rounds' do
-      tool_result = RailsConsoleAI::Providers::ChatResult.new(
+      tool_result = RailsConsoleAi::Providers::ChatResult.new(
         text: '', input_tokens: 100, output_tokens: 20,
         tool_calls: [{ id: 't1', name: 'list_tables', arguments: {} }],
         stop_reason: :tool_use
       )
-      final_result = RailsConsoleAI::Providers::ChatResult.new(
+      final_result = RailsConsoleAi::Providers::ChatResult.new(
         text: "Done:\n```ruby\n42\n```", input_tokens: 150, output_tokens: 30,
         tool_calls: [], stop_reason: :end_turn
       )
@@ -648,7 +648,7 @@ RSpec.describe RailsConsoleAI::Repl do
       end
 
       output = capture_stdout { repl.resume(mock_session) }
-      expect(output).to include('Left RailsConsoleAI interactive mode')
+      expect(output).to include('Left RailsConsoleAi interactive mode')
     end
   end
 end

@@ -1,4 +1,4 @@
-module RailsConsoleAI
+module RailsConsoleAi
   class Session < ActiveRecord::Base
     self.table_name = 'rails_console_ai_sessions'
 
@@ -11,7 +11,7 @@ module RailsConsoleAI
     scope :search, ->(q) { where("name LIKE ? OR query LIKE ?", "%#{q}%", "%#{q}%") }
 
     def self.connection
-      klass = RailsConsoleAI.configuration.connection_class
+      klass = RailsConsoleAi.configuration.connection_class
       if klass
         klass = Object.const_get(klass) if klass.is_a?(String)
         klass.connection

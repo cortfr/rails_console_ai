@@ -1,12 +1,12 @@
 require 'yaml'
 
-module RailsConsoleAI
+module RailsConsoleAi
   module Tools
     class MemoryTools
       MEMORIES_DIR = 'memories'
 
       def initialize(storage = nil)
-        @storage = storage || RailsConsoleAI.storage
+        @storage = storage || RailsConsoleAi.storage
       end
 
       def save_memory(name:, description:, tags: [])
@@ -105,7 +105,7 @@ module RailsConsoleAI
         return nil if content.nil? || content.strip.empty?
         parse_memory(content)
       rescue => e
-        RailsConsoleAI.logger.warn("RailsConsoleAI: failed to load memory #{key}: #{e.message}")
+        RailsConsoleAi.logger.warn("RailsConsoleAi: failed to load memory #{key}: #{e.message}")
         nil
       end
 
@@ -113,7 +113,7 @@ module RailsConsoleAI
         keys = @storage.list("#{MEMORIES_DIR}/*.md")
         keys.map { |key| load_memory(key) }.compact
       rescue => e
-        RailsConsoleAI.logger.warn("RailsConsoleAI: failed to load memories: #{e.message}")
+        RailsConsoleAi.logger.warn("RailsConsoleAi: failed to load memories: #{e.message}")
         []
       end
 

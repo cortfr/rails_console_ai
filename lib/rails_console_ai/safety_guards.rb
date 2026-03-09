@@ -1,7 +1,7 @@
-module RailsConsoleAI
+module RailsConsoleAi
   # Raised by safety guards to block dangerous operations.
   # Host apps should raise this error in their custom guards.
-  # RailsConsoleAI will catch it and guide the user to use 'd' or /danger.
+  # RailsConsoleAi will catch it and guide the user to use 'd' or /danger.
   class SafetyError < StandardError
     attr_reader :guard, :blocked_key
 
@@ -98,10 +98,10 @@ module RailsConsoleAI
         return unless Thread.current[:rails_console_ai_block_writes] && sql.match?(WRITE_PATTERN)
 
         table = sql.match(TABLE_PATTERN)&.captures&.first
-        guards = RailsConsoleAI.configuration.safety_guards
+        guards = RailsConsoleAi.configuration.safety_guards
         return if table && guards.allowed?(:database_writes, table)
 
-        raise RailsConsoleAI::SafetyError.new(
+        raise RailsConsoleAi::SafetyError.new(
           "Database write blocked: #{sql.strip.split(/\s+/).first(3).join(' ')}...",
           guard: :database_writes,
           blocked_key: table
@@ -157,9 +157,9 @@ module RailsConsoleAI
       def request(req, *args, &block)
         if Thread.current[:rails_console_ai_block_http] && !SAFE_METHODS.include?(req.method)
           host = @address.to_s
-          guards = RailsConsoleAI.configuration.safety_guards
+          guards = RailsConsoleAi.configuration.safety_guards
           unless guards.allowed?(:http_mutations, host)
-            raise RailsConsoleAI::SafetyError.new(
+            raise RailsConsoleAi::SafetyError.new(
               "HTTP #{req.method} blocked (#{host}#{req.path})",
               guard: :http_mutations,
               blocked_key: host

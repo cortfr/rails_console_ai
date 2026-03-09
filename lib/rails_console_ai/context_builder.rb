@@ -1,13 +1,13 @@
-module RailsConsoleAI
+module RailsConsoleAi
   class ContextBuilder
-    def initialize(config = RailsConsoleAI.configuration)
+    def initialize(config = RailsConsoleAi.configuration)
       @config = config
     end
 
     def build
       build_smart
     rescue => e
-      RailsConsoleAI.logger.warn("RailsConsoleAI: context build error: #{e.message}")
+      RailsConsoleAi.logger.warn("RailsConsoleAi: context build error: #{e.message}")
       smart_system_instructions + "\n\n" + environment_context
     end
 
@@ -90,12 +90,12 @@ module RailsConsoleAI
     end
 
     def guide_context
-      content = RailsConsoleAI.storage.read(RailsConsoleAI::GUIDE_KEY)
+      content = RailsConsoleAi.storage.read(RailsConsoleAi::GUIDE_KEY)
       return nil if content.nil? || content.strip.empty?
 
       "## Application Guide\n\n#{content.strip}"
     rescue => e
-      RailsConsoleAI.logger.debug("RailsConsoleAI: guide context failed: #{e.message}")
+      RailsConsoleAi.logger.debug("RailsConsoleAi: guide context failed: #{e.message}")
       nil
     end
 
@@ -112,7 +112,7 @@ module RailsConsoleAI
       lines << "Call recall_memories to get details before answering. Do NOT guess from the name alone."
       lines.join("\n")
     rescue => e
-      RailsConsoleAI.logger.debug("RailsConsoleAI: memory context failed: #{e.message}")
+      RailsConsoleAi.logger.debug("RailsConsoleAi: memory context failed: #{e.message}")
       nil
     end
 

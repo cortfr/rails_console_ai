@@ -1,7 +1,7 @@
 require 'rails_console_ai/version'
 require 'rails_console_ai/configuration'
 
-module RailsConsoleAI
+module RailsConsoleAi
   GUIDE_KEY = 'rails_console_ai.md'.freeze
 
   class << self
@@ -39,7 +39,7 @@ module RailsConsoleAI
                     Rails.logger
                   else
                     require 'logger'
-                    Logger.new($stderr, progname: 'RailsConsoleAI')
+                    Logger.new($stderr, progname: 'RailsConsoleAi')
                   end
     end
 
@@ -65,7 +65,7 @@ module RailsConsoleAI
                    end
 
       lines = []
-      lines << "\e[36m[RailsConsoleAI v#{VERSION}]\e[0m"
+      lines << "\e[36m[RailsConsoleAi v#{VERSION}]\e[0m"
       lines << "  Provider:       #{c.provider}"
       lines << "  Model:          #{c.resolved_model}"
       lines << "  API key:        #{masked_key}"
@@ -94,7 +94,7 @@ module RailsConsoleAI
       table = 'rails_console_ai_sessions'
 
       if conn.table_exists?(table)
-        $stdout.puts "\e[32mRailsConsoleAI: #{table} already exists. Run RailsConsoleAI.teardown! first to recreate.\e[0m"
+        $stdout.puts "\e[32mRailsConsoleAi: #{table} already exists. Run RailsConsoleAi.teardown! first to recreate.\e[0m"
       else
         conn.create_table(table) do |t|
           t.text    :query,         null: false
@@ -119,10 +119,10 @@ module RailsConsoleAI
         conn.add_index(table, :user_name)
         conn.add_index(table, :name)
 
-        $stdout.puts "\e[32mRailsConsoleAI: created #{table} table.\e[0m"
+        $stdout.puts "\e[32mRailsConsoleAi: created #{table} table.\e[0m"
       end
     rescue => e
-      $stderr.puts "\e[31mRailsConsoleAI setup failed: #{e.class}: #{e.message}\e[0m"
+      $stderr.puts "\e[31mRailsConsoleAi setup failed: #{e.class}: #{e.message}\e[0m"
     end
 
     def migrate!
@@ -130,7 +130,7 @@ module RailsConsoleAI
       table = 'rails_console_ai_sessions'
 
       unless conn.table_exists?(table)
-        $stderr.puts "\e[33mRailsConsoleAI: #{table} does not exist. Run RailsConsoleAI.setup! first.\e[0m"
+        $stderr.puts "\e[33mRailsConsoleAi: #{table} does not exist. Run RailsConsoleAi.setup! first.\e[0m"
         return
       end
 
@@ -149,12 +149,12 @@ module RailsConsoleAI
       end
 
       if migrations.empty?
-        $stdout.puts "\e[32mRailsConsoleAI: #{table} is up to date.\e[0m"
+        $stdout.puts "\e[32mRailsConsoleAi: #{table} is up to date.\e[0m"
       else
-        $stdout.puts "\e[32mRailsConsoleAI: added columns: #{migrations.join(', ')}.\e[0m"
+        $stdout.puts "\e[32mRailsConsoleAi: added columns: #{migrations.join(', ')}.\e[0m"
       end
     rescue => e
-      $stderr.puts "\e[31mRailsConsoleAI migrate failed: #{e.class}: #{e.message}\e[0m"
+      $stderr.puts "\e[31mRailsConsoleAi migrate failed: #{e.class}: #{e.message}\e[0m"
     end
 
     def teardown!
@@ -162,7 +162,7 @@ module RailsConsoleAI
       table = 'rails_console_ai_sessions'
 
       unless conn.table_exists?(table)
-        $stdout.puts "\e[33mRailsConsoleAI: #{table} does not exist, nothing to remove.\e[0m"
+        $stdout.puts "\e[33mRailsConsoleAi: #{table} does not exist, nothing to remove.\e[0m"
         return
       end
 
@@ -176,9 +176,9 @@ module RailsConsoleAI
       end
 
       conn.drop_table(table)
-      $stdout.puts "\e[32mRailsConsoleAI: dropped #{table}.\e[0m"
+      $stdout.puts "\e[32mRailsConsoleAi: dropped #{table}.\e[0m"
     rescue => e
-      $stderr.puts "\e[31mRailsConsoleAI teardown failed: #{e.class}: #{e.message}\e[0m"
+      $stderr.puts "\e[31mRailsConsoleAi teardown failed: #{e.class}: #{e.message}\e[0m"
     end
 
     private
@@ -190,7 +190,7 @@ module RailsConsoleAI
         count = conn.select_value("SELECT COUNT(*) FROM #{conn.quote_table_name('rails_console_ai_sessions')}")
         "\e[32m#{count} sessions\e[0m"
       else
-        "\e[33mtable missing (run RailsConsoleAI.setup!)\e[0m"
+        "\e[33mtable missing (run RailsConsoleAi.setup!)\e[0m"
       end
     rescue
       "\e[33munavailable\e[0m"

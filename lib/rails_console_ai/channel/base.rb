@@ -1,4 +1,4 @@
-module RailsConsoleAI
+module RailsConsoleAi
   module Channel
     class Base
       def display(text);            raise NotImplementedError; end

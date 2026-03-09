@@ -8,16 +8,16 @@ require 'rails_console_ai/context_builder'
 require 'rails_console_ai/providers/base'
 require 'rails_console_ai/executor'
 
-module RailsConsoleAI
+module RailsConsoleAi
   class SlackBot
     def initialize
-      @bot_token = RailsConsoleAI.configuration.slack_bot_token || ENV['SLACK_BOT_TOKEN']
-      @app_token = RailsConsoleAI.configuration.slack_app_token || ENV['SLACK_APP_TOKEN']
+      @bot_token = RailsConsoleAi.configuration.slack_bot_token || ENV['SLACK_BOT_TOKEN']
+      @app_token = RailsConsoleAi.configuration.slack_app_token || ENV['SLACK_APP_TOKEN']
       @channel_ids = resolve_channel_ids
 
       raise ConfigurationError, "SLACK_BOT_TOKEN is required" unless @bot_token
       raise ConfigurationError, "SLACK_APP_TOKEN is required (Socket Mode)" unless @app_token
-      raise ConfigurationError, "slack_allowed_usernames must be configured (e.g. ['alice'] or 'ALL')" unless RailsConsoleAI.configuration.slack_allowed_usernames
+      raise ConfigurationError, "slack_allowed_usernames must be configured (e.g. ['alice'] or 'ALL')" unless RailsConsoleAi.configuration.slack_allowed_usernames
 
       @bot_user_id = nil
       @sessions = {}       # thread_ts → { channel:, engine:, thread: }
@@ -242,7 +242,7 @@ module RailsConsoleAI
       user_id = event[:user]
       user_name = resolve_user_name(user_id)
 
-      allowed_list = Array(RailsConsoleAI.configuration.slack_allowed_usernames).map(&:to_s).map(&:downcase)
+      allowed_list = Array(RailsConsoleAi.configuration.slack_allowed_usernames).map(&:to_s).map(&:downcase)
       unless allowed_list.include?('all') || allowed_list.include?(user_name.to_s.downcase)
         puts "[#{channel_id}/#{thread_ts}] @#{user_name} << (ignored — not in allowed usernames)"
         post_message(channel: channel_id, thread_ts: thread_ts, text: "Sorry, I don't recognize your username (@#{user_name}). Ask an admin to add you to the allowed usernames list.")
@@ -283,7 +283,7 @@ module RailsConsoleAI
         start_session(channel_id, thread_ts, text.strip, user_name)
       end
     rescue => e
-      RailsConsoleAI.logger.error("SlackBot event handling error: #{e.class}: #{e.message}")
+      RailsConsoleAi.logger.error("SlackBot event handling error: #{e.class}: #{e.message}")
     end
 
     def start_session(channel_id, thread_ts, text, user_name)
@@ -318,7 +318,7 @@ module RailsConsoleAI
           engine.process_message(text)
         rescue => e
           channel.display_error("Error: #{e.class}: #{e.message}")
-          RailsConsoleAI.logger.error("SlackBot session error: #{e.class}: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
+          RailsConsoleAi.logger.error("SlackBot session error: #{e.class}: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
         ensure
           ActiveRecord::Base.clear_active_connections! if defined?(ActiveRecord::Base)
         end
@@ -334,7 +334,7 @@ module RailsConsoleAI
       engine.restore_session(saved)
       true
     rescue => e
-      RailsConsoleAI.logger.warn("SlackBot: failed to restore session for #{thread_ts}: #{e.message}")
+      RailsConsoleAi.logger.warn("SlackBot: failed to restore session for #{thread_ts}: #{e.message}")
       false
     end
 
@@ -355,7 +355,7 @@ module RailsConsoleAI
           engine.process_message(text)
         rescue => e
           channel.display_error("Error: #{e.class}: #{e.message}")
-          RailsConsoleAI.logger.error("SlackBot session error: #{e.class}: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
+          RailsConsoleAi.logger.error("SlackBot session error: #{e.class}: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
         ensure
           ActiveRecord::Base.clear_active_connections! if defined?(ActiveRecord::Base)
         end
@@ -422,7 +422,7 @@ module RailsConsoleAI
     end
 
     def resolve_channel_ids
-      ids = RailsConsoleAI.configuration.slack_channel_ids || ENV['CONSOLE_AGENT_SLACK_CHANNELS']
+      ids = RailsConsoleAi.configuration.slack_channel_ids || ENV['CONSOLE_AGENT_SLACK_CHANNELS']
       return nil if ids.nil?
       ids = ids.split(',').map(&:strip) if ids.is_a?(String)
       ids
@@ -446,7 +446,7 @@ module RailsConsoleAI
       name = result.dig("user", "name") if name.nil? || name.empty?
       @user_cache[user_id] = name || user_id
     rescue => e
-      RailsConsoleAI.logger.warn("Failed to resolve user name for #{user_id}: #{e.message}")
+      RailsConsoleAi.logger.warn("Failed to resolve user name for #{user_id}: #{e.message}")
       @user_cache[user_id] = user_id
     end
 
@@ -456,7 +456,7 @@ module RailsConsoleAI
                      else
                        "all channels"
                      end
-      puts "RailsConsoleAI SlackBot started (#{channel_info}, bot: #{@bot_user_id})"
+      puts "RailsConsoleAi SlackBot started (#{channel_info}, bot: #{@bot_user_id})"
 
       channel = Channel::Slack.new(slack_bot: self, channel_id: "boot", thread_ts: "boot")
       engine = ConversationEngine.new(

@@ -1,4 +1,4 @@
-module RailsConsoleAI
+module RailsConsoleAi
   module Providers
     class Anthropic < Base
       API_URL = 'https://api.anthropic.com'.freeze

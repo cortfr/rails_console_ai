@@ -1,8 +1,8 @@
 require 'spec_helper'
 require 'rails_console_ai/console_methods'
 
-RSpec.describe RailsConsoleAI::ConsoleMethods do
-  let(:test_class) { Class.new { include RailsConsoleAI::ConsoleMethods } }
+RSpec.describe RailsConsoleAi::ConsoleMethods do
+  let(:test_class) { Class.new { include RailsConsoleAi::ConsoleMethods } }
   let(:instance) { test_class.new }
 
   describe '#ai_sessions' do
@@ -10,7 +10,7 @@ RSpec.describe RailsConsoleAI::ConsoleMethods do
     let(:mock_scope) { double('scope') }
 
     before do
-      stub_const('RailsConsoleAI::Session', mock_session_class)
+      stub_const('RailsConsoleAi::Session', mock_session_class)
       allow(mock_session_class).to receive(:recent).and_return(mock_scope)
       allow(mock_scope).to receive(:limit).and_return([])
       allow(mock_scope).to receive(:search).and_return(mock_scope)
@@ -54,12 +54,12 @@ RSpec.describe RailsConsoleAI::ConsoleMethods do
 
   describe '#ai_resume' do
     let(:mock_session_class) { double('SessionClass') }
-    let(:mock_repl) { instance_double('RailsConsoleAI::Repl') }
+    let(:mock_repl) { instance_double('RailsConsoleAi::Repl') }
 
     before do
-      stub_const('RailsConsoleAI::Session', mock_session_class)
-      allow(RailsConsoleAI).to receive(:current_user).and_return('testuser')
-      allow(RailsConsoleAI::Repl).to receive(:new).and_return(mock_repl)
+      stub_const('RailsConsoleAi::Session', mock_session_class)
+      allow(RailsConsoleAi).to receive(:current_user).and_return('testuser')
+      allow(RailsConsoleAi::Repl).to receive(:new).and_return(mock_repl)
       allow(mock_repl).to receive(:resume)
     end
 
@@ -94,7 +94,7 @@ RSpec.describe RailsConsoleAI::ConsoleMethods do
     let(:mock_session_class) { double('SessionClass') }
 
     before do
-      stub_const('RailsConsoleAI::Session', mock_session_class)
+      stub_const('RailsConsoleAi::Session', mock_session_class)
       # Stub SessionLogger dependencies
       allow(mock_session_class).to receive(:connection).and_return(
         double('connection', table_exists?: true)
@@ -104,14 +104,14 @@ RSpec.describe RailsConsoleAI::ConsoleMethods do
     it 'names a session by id' do
       session = double('session', id: 42)
       allow(mock_session_class).to receive(:find_by).with(id: 42).and_return(session)
-      allow(RailsConsoleAI::SessionLogger).to receive(:update)
+      allow(RailsConsoleAi::SessionLogger).to receive(:update)
 
       # Reset table_exists cache
-      RailsConsoleAI::SessionLogger.instance_variable_set(:@table_exists, nil)
+      RailsConsoleAi::SessionLogger.instance_variable_set(:@table_exists, nil)
 
       output = capture_stdout { instance.ai_name(42, 'new_name') }
       expect(output).to include('named: new_name')
-      expect(RailsConsoleAI::SessionLogger).to have_received(:update).with(42, name: 'new_name')
+      expect(RailsConsoleAi::SessionLogger).to have_received(:update).with(42, name: 'new_name')
     end
 
     it 'shows error when session not found' do
@@ -123,10 +123,10 @@ RSpec.describe RailsConsoleAI::ConsoleMethods do
   end
 
   describe '#ai_setup' do
-    it 'delegates to RailsConsoleAI.setup!' do
-      allow(RailsConsoleAI).to receive(:setup!)
+    it 'delegates to RailsConsoleAi.setup!' do
+      allow(RailsConsoleAi).to receive(:setup!)
       instance.ai_setup
-      expect(RailsConsoleAI).to have_received(:setup!)
+      expect(RailsConsoleAi).to have_received(:setup!)
     end
   end
 

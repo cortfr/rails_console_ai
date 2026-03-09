@@ -1,6 +1,6 @@
 require 'rails_console_ai/channel/base'
 
-module RailsConsoleAI
+module RailsConsoleAi
   module Channel
     class Slack < Base
       ANSI_REGEX = /\e\[[0-9;]*m/
@@ -167,7 +167,7 @@ module RailsConsoleAI
           text: text
         )
       rescue => e
-        RailsConsoleAI.logger.error("Slack post failed: #{e.message}")
+        RailsConsoleAi.logger.error("Slack post failed: #{e.message}")
       end
 
       def random_thinking_message

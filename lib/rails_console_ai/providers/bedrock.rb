@@ -1,4 +1,4 @@
-module RailsConsoleAI
+module RailsConsoleAi
   module Providers
     class Bedrock < Base
       def chat(messages, system_prompt: nil)

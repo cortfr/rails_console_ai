@@ -1,7 +1,7 @@
 require 'readline'
 require 'rails_console_ai/channel/base'
 
-module RailsConsoleAI
+module RailsConsoleAi
   module Channel
     class Console < Base
       attr_reader :real_stdout
@@ -71,7 +71,7 @@ module RailsConsoleAI
       end
 
       def user_identity
-        RailsConsoleAI.current_user
+        RailsConsoleAi.current_user
       end
 
       def mode
@@ -154,10 +154,10 @@ module RailsConsoleAI
       end
 
       def run_interactive_loop
-        auto = RailsConsoleAI.configuration.auto_execute
-        guards = RailsConsoleAI.configuration.safety_guards
+        auto = RailsConsoleAi.configuration.auto_execute
+        guards = RailsConsoleAi.configuration.safety_guards
         name_display = @engine.session_name ? " (#{@engine.session_name})" : ""
-        @real_stdout.puts "\e[36mRailsConsoleAI interactive mode#{name_display}. Type 'exit' or 'quit' to leave.\e[0m"
+        @real_stdout.puts "\e[36mRailsConsoleAi interactive mode#{name_display}. Type 'exit' or 'quit' to leave.\e[0m"
         safe_info = guards.empty? ? '' : " | Safe mode: #{guards.enabled? ? 'ON' : 'OFF'} (/danger to toggle)"
         @real_stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab or /auto to toggle)#{safe_info} | > code | /usage | /cost | /compact | /think | /name <label>\e[0m"
 
@@ -220,7 +220,7 @@ module RailsConsoleAI
         display_exit_info
       rescue => e
         $stdout = @real_stdout if @real_stdout
-        $stderr.puts "\e[31mRailsConsoleAI Error: #{e.class}: #{e.message}\e[0m"
+        $stderr.puts "\e[31mRailsConsoleAi Error: #{e.class}: #{e.message}\e[0m"
       end
 
       def handle_slash_command(input)
@@ -228,8 +228,8 @@ module RailsConsoleAI
         when '?', '/'
           display_help
         when '/auto'
-          RailsConsoleAI.configuration.auto_execute = !RailsConsoleAI.configuration.auto_execute
-          mode = RailsConsoleAI.configuration.auto_execute ? 'ON' : 'OFF'
+          RailsConsoleAi.configuration.auto_execute = !RailsConsoleAi.configuration.auto_execute
+          mode = RailsConsoleAi.configuration.auto_execute ? 'ON' : 'OFF'
           @real_stdout.puts "\e[36m  Auto-execute: #{mode}\e[0m"
         when '/danger'
           toggle_danger
@@ -238,8 +238,8 @@ module RailsConsoleAI
         when '/usage'
           @engine.display_session_summary
         when '/debug'
-          RailsConsoleAI.configuration.debug = !RailsConsoleAI.configuration.debug
-          mode = RailsConsoleAI.configuration.debug ? 'ON' : 'OFF'
+          RailsConsoleAi.configuration.debug = !RailsConsoleAi.configuration.debug
+          mode = RailsConsoleAi.configuration.debug ? 'ON' : 'OFF'
           @real_stdout.puts "\e[36m  Debug: #{mode}\e[0m"
         when '/compact'
           @engine.compact_history
@@ -276,7 +276,7 @@ module RailsConsoleAI
       end
 
       def toggle_danger
-        guards = RailsConsoleAI.configuration.safety_guards
+        guards = RailsConsoleAi.configuration.safety_guards
         if guards.empty?
           @real_stdout.puts "\e[33m  No safety guards configured.\e[0m"
         elsif guards.enabled?
@@ -289,7 +289,7 @@ module RailsConsoleAI
       end
 
       def display_safe_status
-        guards = RailsConsoleAI.configuration.safety_guards
+        guards = RailsConsoleAi.configuration.safety_guards
         if guards.empty?
           @real_stdout.puts "\e[33m  No safety guards configured.\e[0m"
         else
@@ -323,8 +323,8 @@ module RailsConsoleAI
       end
 
       def display_help
-        auto = RailsConsoleAI.configuration.auto_execute ? 'ON' : 'OFF'
-        guards = RailsConsoleAI.configuration.safety_guards
+        auto = RailsConsoleAi.configuration.auto_execute ? 'ON' : 'OFF'
+        guards = RailsConsoleAi.configuration.safety_guards
         @real_stdout.puts "\e[36m  Commands:\e[0m"
         @real_stdout.puts "\e[2m    /auto        Toggle auto-execute (currently #{auto}) (Shift-Tab)\e[0m"
         unless guards.empty?
@@ -357,7 +357,7 @@ module RailsConsoleAI
             $stdout.puts "\e[2m  Resume it: ai_resume #{session_id}\e[0m"
           end
         end
-        $stdout.puts "\e[36mLeft RailsConsoleAI interactive mode.\e[0m"
+        $stdout.puts "\e[36mLeft RailsConsoleAi interactive mode.\e[0m"
       end
 
       # --- Terminal helpers ---

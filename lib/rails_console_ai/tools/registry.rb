@@ -1,6 +1,6 @@
 require 'json'
 
-module RailsConsoleAI
+module RailsConsoleAi
   module Tools
     class Registry
       attr_reader :definitions
@@ -221,7 +221,7 @@ module RailsConsoleAI
       end
 
       def register_memory_tools
-        return unless RailsConsoleAI.configuration.memories_enabled
+        return unless RailsConsoleAi.configuration.memories_enabled
 
         require 'rails_console_ai/tools/memory_tools'
         memory = MemoryTools.new
@@ -301,7 +301,7 @@ module RailsConsoleAI
       def execute_plan(steps)
         return 'No steps provided.' if steps.nil? || steps.empty?
 
-        auto = RailsConsoleAI.configuration.auto_execute
+        auto = RailsConsoleAi.configuration.auto_execute
 
         # Display full plan
         $stdout.puts

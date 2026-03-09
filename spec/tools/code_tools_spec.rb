@@ -3,7 +3,7 @@ require 'fileutils'
 require 'tmpdir'
 require 'rails_console_ai/tools/code_tools'
 
-RSpec.describe RailsConsoleAI::Tools::CodeTools do
+RSpec.describe RailsConsoleAi::Tools::CodeTools do
   subject(:tools) { described_class.new }
 
   describe '#read_file' do

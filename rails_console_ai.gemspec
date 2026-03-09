@@ -2,7 +2,7 @@ require_relative 'lib/rails_console_ai/version'
 
 Gem::Specification.new do |s|
   s.name        = 'rails_console_ai'
-  s.version     = RailsConsoleAI::VERSION
+  s.version     = RailsConsoleAi::VERSION
   s.summary     = 'AI-powered Rails console assistant'
   s.description = 'An LLM-powered agent for your Rails console. Ask questions in natural language, get executable Ruby code.'
   s.authors     = ['Cortfr']

@@ -1,13 +1,13 @@
-module RailsConsoleAI
+module RailsConsoleAi
   module ConsoleMethods
     def ai_status
-      RailsConsoleAI.status
+      RailsConsoleAi.status
     end
 
     def ai_memories(n = nil)
       require 'yaml'
       require 'rails_console_ai/tools/memory_tools'
-      storage = RailsConsoleAI.storage
+      storage = RailsConsoleAi.storage
       keys = storage.list('memories/*.md').sort
 
       if keys.empty?
@@ -48,7 +48,7 @@ module RailsConsoleAI
 
     def ai_sessions(n = 10, search: nil)
       require 'rails_console_ai/session_logger'
-      session_class = Object.const_get('RailsConsoleAI::Session')
+      session_class = Object.const_get('RailsConsoleAi::Session')
 
       scope = session_class.recent
       scope = scope.search(search) if search
@@ -80,7 +80,7 @@ module RailsConsoleAI
       $stdout.puts "\e[2mUse ai_sessions(n, search: \"term\") to filter.\e[0m"
       nil
     rescue => e
-      $stderr.puts "\e[31mRailsConsoleAI error: #{e.message}\e[0m"
+      $stderr.puts "\e[31mRailsConsoleAi error: #{e.message}\e[0m"
       nil
     end
 
@@ -96,8 +96,8 @@ module RailsConsoleAI
       session = if identifier
                   __find_session(identifier)
                 else
-                  session_class = Object.const_get('RailsConsoleAI::Session')
-                  session_class.where(mode: 'interactive', user_name: RailsConsoleAI.current_user).recent.first
+                  session_class = Object.const_get('RailsConsoleAi::Session')
+                  session_class.where(mode: 'interactive', user_name: RailsConsoleAi.current_user).recent.first
                 end
 
       unless session
@@ -109,7 +109,7 @@ module RailsConsoleAI
       repl = Repl.new(__rails_console_ai_binding)
       repl.resume(session)
     rescue => e
-      $stderr.puts "\e[31mRailsConsoleAI error: #{e.message}\e[0m"
+      $stderr.puts "\e[31mRailsConsoleAi error: #{e.message}\e[0m"
       nil
     end
 
@@ -122,16 +122,16 @@ module RailsConsoleAI
         return nil
       end
 
-      RailsConsoleAI::SessionLogger.update(session.id, name: new_name)
+      RailsConsoleAi::SessionLogger.update(session.id, name: new_name)
       $stdout.puts "\e[36mSession ##{session.id} named: #{new_name}\e[0m"
       nil
     rescue => e
-      $stderr.puts "\e[31mRailsConsoleAI error: #{e.message}\e[0m"
+      $stderr.puts "\e[31mRailsConsoleAi error: #{e.message}\e[0m"
       nil
     end
 
     def ai_setup
-      RailsConsoleAI.setup!
+      RailsConsoleAi.setup!
     end
 
     def ai_init
@@ -143,7 +143,7 @@ module RailsConsoleAI
       repl = Repl.new(__rails_console_ai_binding)
       repl.init_guide
     rescue => e
-      $stderr.puts "\e[31mRailsConsoleAI error: #{e.message}\e[0m"
+      $stderr.puts "\e[31mRailsConsoleAi error: #{e.message}\e[0m"
       nil
     end
 
@@ -173,7 +173,7 @@ module RailsConsoleAI
       repl = Repl.new(__rails_console_ai_binding)
       repl.one_shot(query.to_s)
     rescue => e
-      $stderr.puts "\e[31mRailsConsoleAI error: #{e.message}\e[0m"
+      $stderr.puts "\e[31mRailsConsoleAi error: #{e.message}\e[0m"
       nil
     end
 
@@ -193,7 +193,7 @@ module RailsConsoleAI
         repl.interactive
       end
     rescue => e
-      $stderr.puts "\e[31mRailsConsoleAI error: #{e.message}\e[0m"
+      $stderr.puts "\e[31mRailsConsoleAi error: #{e.message}\e[0m"
       nil
     end
 
@@ -213,14 +213,14 @@ module RailsConsoleAI
       repl = Repl.new(__rails_console_ai_binding)
       repl.explain(query.to_s)
     rescue => e
-      $stderr.puts "\e[31mRailsConsoleAI error: #{e.message}\e[0m"
+      $stderr.puts "\e[31mRailsConsoleAi error: #{e.message}\e[0m"
       nil
     end
 
     private
 
     def __find_session(identifier)
-      session_class = Object.const_get('RailsConsoleAI::Session')
+      session_class = Object.const_get('RailsConsoleAi::Session')
       if identifier.is_a?(Integer)
         session_class.find_by(id: identifier)
       else
@@ -246,11 +246,11 @@ module RailsConsoleAI
     end
 
     def __ensure_rails_console_ai_user
-      return if RailsConsoleAI.current_user
-      $stdout.puts "\e[36mRailsConsoleAI logs all AI sessions for audit purposes.\e[0m"
+      return if RailsConsoleAi.current_user
+      $stdout.puts "\e[36mRailsConsoleAi logs all AI sessions for audit purposes.\e[0m"
       $stdout.print "\e[36mPlease enter your name: \e[0m"
       name = $stdin.gets.to_s.strip
-      RailsConsoleAI.current_user = name.empty? ? ENV['USER'] : name
+      RailsConsoleAi.current_user = name.empty? ? ENV['USER'] : name
     end
 
     def __rails_console_ai_binding

@@ -1,4 +1,4 @@
-module RailsConsoleAI
+module RailsConsoleAi
   module Providers
     class OpenAI < Base
       API_URL = 'https://api.openai.com'.freeze

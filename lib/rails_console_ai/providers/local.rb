@@ -1,4 +1,4 @@
-module RailsConsoleAI
+module RailsConsoleAi
   module Providers
     class Local < OpenAI
       private

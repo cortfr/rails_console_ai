@@ -1,7 +1,7 @@
 require 'spec_helper'
 require 'rails_console_ai/safety_guards'
 
-RSpec.describe RailsConsoleAI::SafetyError do
+RSpec.describe RailsConsoleAi::SafetyError do
   it 'stores guard and blocked_key metadata' do
     error = described_class.new("blocked", guard: :http_mutations, blocked_key: "example.com")
     expect(error.message).to eq("blocked")
@@ -16,7 +16,7 @@ RSpec.describe RailsConsoleAI::SafetyError do
   end
 end
 
-RSpec.describe RailsConsoleAI::SafetyGuards do
+RSpec.describe RailsConsoleAi::SafetyGuards do
   subject(:guards) { described_class.new }
 
   describe '#add' do
@@ -171,7 +171,7 @@ RSpec.describe RailsConsoleAI::SafetyGuards do
   end
 end
 
-RSpec.describe RailsConsoleAI::BuiltinGuards do
+RSpec.describe RailsConsoleAi::BuiltinGuards do
   describe '.database_writes' do
     it 'returns a callable guard' do
       guard = described_class.database_writes
@@ -240,7 +240,7 @@ RSpec.describe RailsConsoleAI::BuiltinGuards do
     end
   end
 
-  describe RailsConsoleAI::BuiltinGuards::WriteBlocker do
+  describe RailsConsoleAi::BuiltinGuards::WriteBlocker do
     let(:test_class) do
       Class.new do
         def execute(sql, *args, **kwargs)
@@ -259,7 +259,7 @@ RSpec.describe RailsConsoleAI::BuiltinGuards do
 
     let(:blocked_class) do
       klass = Class.new(test_class)
-      klass.prepend(RailsConsoleAI::BuiltinGuards::WriteBlocker)
+      klass.prepend(RailsConsoleAi::BuiltinGuards::WriteBlocker)
       klass
     end
 
@@ -271,27 +271,27 @@ RSpec.describe RailsConsoleAI::BuiltinGuards do
 
       it 'blocks INSERT statements' do
         expect { adapter.execute("INSERT INTO users (name) VALUES ('test')") }
-          .to raise_error(RailsConsoleAI::SafetyError, /Database write blocked/)
+          .to raise_error(RailsConsoleAi::SafetyError, /Database write blocked/)
       end
 
       it 'blocks UPDATE statements' do
         expect { adapter.execute("UPDATE users SET name = 'test'") }
-          .to raise_error(RailsConsoleAI::SafetyError, /Database write blocked/)
+          .to raise_error(RailsConsoleAi::SafetyError, /Database write blocked/)
       end
 
       it 'blocks DELETE statements' do
         expect { adapter.execute("DELETE FROM users WHERE id = 1") }
-          .to raise_error(RailsConsoleAI::SafetyError, /Database write blocked/)
+          .to raise_error(RailsConsoleAi::SafetyError, /Database write blocked/)
       end
 
       it 'blocks DROP statements' do
         expect { adapter.execute("DROP TABLE users") }
-          .to raise_error(RailsConsoleAI::SafetyError, /Database write blocked/)
+          .to raise_error(RailsConsoleAi::SafetyError, /Database write blocked/)
       end
 
       it 'blocks TRUNCATE statements' do
         expect { adapter.execute("TRUNCATE TABLE users") }
-          .to raise_error(RailsConsoleAI::SafetyError, /Database write blocked/)
+          .to raise_error(RailsConsoleAi::SafetyError, /Database write blocked/)
       end
 
       it 'allows SELECT statements' do
@@ -304,19 +304,19 @@ RSpec.describe RailsConsoleAI::BuiltinGuards do
 
       it 'blocks exec_delete' do
         expect { adapter.exec_delete("DELETE FROM users WHERE id = 1") }
-          .to raise_error(RailsConsoleAI::SafetyError, /Database write blocked/)
+          .to raise_error(RailsConsoleAi::SafetyError, /Database write blocked/)
       end
 
       it 'blocks exec_update' do
         expect { adapter.exec_update("UPDATE users SET name = 'test'") }
-          .to raise_error(RailsConsoleAI::SafetyError, /Database write blocked/)
+          .to raise_error(RailsConsoleAi::SafetyError, /Database write blocked/)
       end
 
       it 'includes guard and blocked_key in SafetyError' do
         error = nil
         begin
           adapter.execute("INSERT INTO users (name) VALUES ('test')")
-        rescue RailsConsoleAI::SafetyError => e
+        rescue RailsConsoleAi::SafetyError => e
           error = e
         end
         expect(error.guard).to eq(:database_writes)
@@ -324,7 +324,7 @@ RSpec.describe RailsConsoleAI::BuiltinGuards do
       end
 
       it 'allows writes to allowlisted tables' do
-        RailsConsoleAI.configuration.safety_guards.allow(:database_writes, 'users')
+        RailsConsoleAi.configuration.safety_guards.allow(:database_writes, 'users')
         expect(adapter.execute("INSERT INTO users (name) VALUES ('test')"))
           .to eq("INSERT INTO users (name) VALUES ('test')")
       end
@@ -375,7 +375,7 @@ RSpec.describe RailsConsoleAI::BuiltinGuards do
     end
   end
 
-  describe RailsConsoleAI::BuiltinGuards::HttpBlocker do
+  describe RailsConsoleAi::BuiltinGuards::HttpBlocker do
     let(:test_class) do
       Class.new do
         attr_accessor :address
@@ -392,7 +392,7 @@ RSpec.describe RailsConsoleAI::BuiltinGuards do
 
     let(:blocked_class) do
       klass = Class.new(test_class)
-      klass.prepend(RailsConsoleAI::BuiltinGuards::HttpBlocker)
+      klass.prepend(RailsConsoleAi::BuiltinGuards::HttpBlocker)
       klass
     end
 
@@ -425,29 +425,29 @@ RSpec.describe RailsConsoleAI::BuiltinGuards do
 
       it 'blocks POST requests' do
         expect { http.request(post_req) }
-          .to raise_error(RailsConsoleAI::SafetyError, /HTTP POST blocked/)
+          .to raise_error(RailsConsoleAi::SafetyError, /HTTP POST blocked/)
       end
 
       it 'blocks PUT requests' do
         expect { http.request(put_req) }
-          .to raise_error(RailsConsoleAI::SafetyError, /HTTP PUT blocked/)
+          .to raise_error(RailsConsoleAi::SafetyError, /HTTP PUT blocked/)
       end
 
       it 'blocks PATCH requests' do
         expect { http.request(patch_req) }
-          .to raise_error(RailsConsoleAI::SafetyError, /HTTP PATCH blocked/)
+          .to raise_error(RailsConsoleAi::SafetyError, /HTTP PATCH blocked/)
       end
 
       it 'blocks DELETE requests' do
         expect { http.request(delete_req) }
-          .to raise_error(RailsConsoleAI::SafetyError, /HTTP DELETE blocked/)
+          .to raise_error(RailsConsoleAi::SafetyError, /HTTP DELETE blocked/)
       end
 
       it 'includes guard and blocked_key in SafetyError' do
         error = nil
         begin
           http.request(post_req)
-        rescue RailsConsoleAI::SafetyError => e
+        rescue RailsConsoleAi::SafetyError => e
           error = e
         end
         expect(error.guard).to eq(:http_mutations)
@@ -455,12 +455,12 @@ RSpec.describe RailsConsoleAI::BuiltinGuards do
       end
 
       it 'allows requests to allowlisted hosts' do
-        RailsConsoleAI.configuration.safety_guards.allow(:http_mutations, "example.com")
+        RailsConsoleAi.configuration.safety_guards.allow(:http_mutations, "example.com")
         expect(http.request(post_req)).to eq("POST /users")
       end
 
       it 'allows requests matching allowlisted regexp' do
-        RailsConsoleAI.configuration.safety_guards.allow(:http_mutations, /example\.com/)
+        RailsConsoleAi.configuration.safety_guards.allow(:http_mutations, /example\.com/)
         expect(http.request(put_req)).to eq("PUT /users/1")
       end
     end

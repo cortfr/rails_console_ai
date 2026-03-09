@@ -1,12 +1,12 @@
 require 'faraday'
 require 'json'
 
-module RailsConsoleAI
+module RailsConsoleAi
   module Providers
     class Base
       attr_reader :config
 
-      def initialize(config = RailsConsoleAI.configuration)
+      def initialize(config = RailsConsoleAi.configuration)
         @config = config
       end
 
@@ -95,7 +95,7 @@ module RailsConsoleAI
       end
     end
 
-    def self.build(config = RailsConsoleAI.configuration)
+    def self.build(config = RailsConsoleAi.configuration)
       case config.provider
       when :anthropic
         require 'rails_console_ai/providers/anthropic'

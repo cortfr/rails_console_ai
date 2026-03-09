@@ -1,6 +1,6 @@
 require 'stringio'
 
-module RailsConsoleAI
+module RailsConsoleAi
   # Writes to two IO streams simultaneously
   class TeeIO
     attr_reader :secondary
@@ -112,7 +112,7 @@ module RailsConsoleAI
 
       @last_output = captured_output.string
       result
-    rescue RailsConsoleAI::SafetyError => e
+    rescue RailsConsoleAi::SafetyError => e
       $stdout = old_stdout if old_stdout
       @last_error = "SafetyError: #{e.message}"
       @last_safety_error = true
@@ -280,7 +280,7 @@ module RailsConsoleAI
       case answer
       when 'a', 'allow'
         if blocked_key && guard
-          RailsConsoleAI.configuration.safety_guards.allow(guard, blocked_key)
+          RailsConsoleAi.configuration.safety_guards.allow(guard, blocked_key)
           allow_desc = allow_description(guard, blocked_key)
           $stdout.puts colorize("Allowed #{allow_desc} for this session.", :green)
           return execute(code)
@@ -328,7 +328,7 @@ module RailsConsoleAI
     end
 
     def execute_unsafe(code)
-      guards = RailsConsoleAI.configuration.safety_guards
+      guards = RailsConsoleAi.configuration.safety_guards
       guards.disable!
       execute(code)
     ensure
@@ -336,7 +336,7 @@ module RailsConsoleAI
     end
 
     def execute_prompt
-      guards = RailsConsoleAI.configuration.safety_guards
+      guards = RailsConsoleAi.configuration.safety_guards
       if !guards.empty? && guards.enabled? && danger_allowed?
         "Execute? [y/N/edit/danger] "
       else
@@ -345,26 +345,26 @@ module RailsConsoleAI
     end
 
     def with_safety_guards(&block)
-      RailsConsoleAI.configuration.safety_guards.wrap(&block)
+      RailsConsoleAi.configuration.safety_guards.wrap(&block)
     end
 
     # Check if an exception is or wraps a SafetyError (e.g. AR::StatementInvalid wrapping it)
     def safety_error?(exception)
-      return true if exception.is_a?(RailsConsoleAI::SafetyError)
-      return true if exception.message.include?("RailsConsoleAI safe mode")
+      return true if exception.is_a?(RailsConsoleAi::SafetyError)
+      return true if exception.message.include?("RailsConsoleAi safe mode")
       cause = exception.cause
       while cause
-        return true if cause.is_a?(RailsConsoleAI::SafetyError)
+        return true if cause.is_a?(RailsConsoleAi::SafetyError)
         cause = cause.cause
       end
       false
     end
 
     def extract_safety_exception(exception)
-      return exception if exception.is_a?(RailsConsoleAI::SafetyError)
+      return exception if exception.is_a?(RailsConsoleAi::SafetyError)
       cause = exception.cause
       while cause
-        return cause if cause.is_a?(RailsConsoleAI::SafetyError)
+        return cause if cause.is_a?(RailsConsoleAi::SafetyError)
         cause = cause.cause
       end
       nil

@@ -1,4 +1,4 @@
-module RailsConsoleAI
+module RailsConsoleAi
   module Tools
     class ModelTools
       def list_models

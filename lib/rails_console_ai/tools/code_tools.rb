@@ -1,4 +1,4 @@
-module RailsConsoleAI
+module RailsConsoleAi
   module Tools
     class CodeTools
       MAX_FILE_LINES = 500

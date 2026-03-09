@@ -1,7 +1,7 @@
 require 'spec_helper'
 require 'rails_console_ai/tools/registry'
 
-RSpec.describe RailsConsoleAI::Tools::Registry do
+RSpec.describe RailsConsoleAi::Tools::Registry do
   subject(:registry) { described_class.new }
 
   describe '#definitions' do
@@ -48,7 +48,7 @@ RSpec.describe RailsConsoleAI::Tools::Registry do
 
   describe 'recall_output tool' do
     it 'is registered when executor is provided' do
-      executor = RailsConsoleAI::Executor.new(binding)
+      executor = RailsConsoleAi::Executor.new(binding)
       reg = described_class.new(executor: executor)
       names = reg.definitions.map { |d| d[:name] }
       expect(names).to include('recall_output')
@@ -60,7 +60,7 @@ RSpec.describe RailsConsoleAI::Tools::Registry do
     end
 
     it 'retrieves stored output' do
-      executor = RailsConsoleAI::Executor.new(binding)
+      executor = RailsConsoleAi::Executor.new(binding)
       id = executor.store_output("stored data")
       reg = described_class.new(executor: executor)
       result = reg.execute('recall_output', { 'id' => id })
@@ -68,7 +68,7 @@ RSpec.describe RailsConsoleAI::Tools::Registry do
     end
 
     it 'returns error for unknown id' do
-      executor = RailsConsoleAI::Executor.new(binding)
+      executor = RailsConsoleAi::Executor.new(binding)
       reg = described_class.new(executor: executor)
       result = reg.execute('recall_output', { 'id' => 999 })
       expect(result).to include('No output found')

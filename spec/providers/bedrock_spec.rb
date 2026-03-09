@@ -15,9 +15,9 @@ module Aws
   end
 end
 
-RSpec.describe RailsConsoleAI::Providers::Bedrock do
+RSpec.describe RailsConsoleAi::Providers::Bedrock do
   let(:config) do
-    RailsConsoleAI::Configuration.new.tap do |c|
+    RailsConsoleAi::Configuration.new.tap do |c|
       c.provider = :bedrock
       c.model = 'anthropic.claude-3-5-sonnet-20241022-v2:0'
       c.max_tokens = 1024
@@ -75,7 +75,7 @@ RSpec.describe RailsConsoleAI::Providers::Bedrock do
         .and_raise(Aws::BedrockRuntime::Errors::ServiceError.new('Access denied'))
 
       expect { provider.chat(messages) }.to raise_error(
-        RailsConsoleAI::Providers::ProviderError, /AWS Bedrock error.*Access denied/
+        RailsConsoleAi::Providers::ProviderError, /AWS Bedrock error.*Access denied/
       )
     end
   end
@@ -118,7 +118,7 @@ RSpec.describe RailsConsoleAI::Providers::Bedrock do
 
   describe '#format_assistant_message' do
     it 'builds a Bedrock-format assistant message with tool calls' do
-      result = RailsConsoleAI::Providers::ChatResult.new(
+      result = RailsConsoleAi::Providers::ChatResult.new(
         text: 'Checking...',
         tool_calls: [{ id: 'tool_1', name: 'list_tables', arguments: {} }]
       )

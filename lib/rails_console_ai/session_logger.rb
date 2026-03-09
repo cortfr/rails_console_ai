@@ -1,8 +1,8 @@
-module RailsConsoleAI
+module RailsConsoleAi
   module SessionLogger
     class << self
       def log(attrs)
-        return unless RailsConsoleAI.configuration.session_logging
+        return unless RailsConsoleAi.configuration.session_logging
         return unless table_exists?
 
         create_attrs = {
@@ -18,8 +18,8 @@ module RailsConsoleAI
           code_result:   attrs[:code_result],
           console_output: attrs[:console_output],
           executed:      attrs[:executed] || false,
-          provider:      RailsConsoleAI.configuration.provider.to_s,
-          model:         RailsConsoleAI.configuration.resolved_model,
+          provider:      RailsConsoleAi.configuration.provider.to_s,
+          model:         RailsConsoleAi.configuration.resolved_model,
           duration_ms:   attrs[:duration_ms],
           created_at:    Time.respond_to?(:current) ? Time.current : Time.now
         }
@@ -27,24 +27,24 @@ module RailsConsoleAI
         record = session_class.create!(create_attrs)
         record.id
       rescue => e
-        msg = "RailsConsoleAI: session logging failed: #{e.class}: #{e.message}"
+        msg = "RailsConsoleAi: session logging failed: #{e.class}: #{e.message}"
         $stderr.puts "\e[33m#{msg}\e[0m" if $stderr.respond_to?(:puts)
-        RailsConsoleAI.logger.warn(msg)
+        RailsConsoleAi.logger.warn(msg)
         nil
       end
 
       def find_by_slack_thread(thread_ts)
-        return nil unless RailsConsoleAI.configuration.session_logging
+        return nil unless RailsConsoleAi.configuration.session_logging
         return nil unless table_exists?
         session_class.where(slack_thread_ts: thread_ts).order(created_at: :desc).first
       rescue => e
-        RailsConsoleAI.logger.warn("RailsConsoleAI: session lookup failed: #{e.class}: #{e.message}")
+        RailsConsoleAi.logger.warn("RailsConsoleAi: session lookup failed: #{e.class}: #{e.message}")
         nil
       end
 
       def update(id, attrs)
         return unless id
-        return unless RailsConsoleAI.configuration.session_logging
+        return unless RailsConsoleAi.configuration.session_logging
         return unless table_exists?
 
         updates = {}
@@ -61,9 +61,9 @@ module RailsConsoleAI
 
         session_class.where(id: id).update_all(updates) unless updates.empty?
       rescue => e
-        msg = "RailsConsoleAI: session update failed: #{e.class}: #{e.message}"
+        msg = "RailsConsoleAi: session update failed: #{e.class}: #{e.message}"
         $stderr.puts "\e[33m#{msg}\e[0m" if $stderr.respond_to?(:puts)
-        RailsConsoleAI.logger.warn(msg)
+        RailsConsoleAi.logger.warn(msg)
         nil
       end
 
@@ -79,11 +79,11 @@ module RailsConsoleAI
       end
 
       def session_class
-        Object.const_get('RailsConsoleAI::Session')
+        Object.const_get('RailsConsoleAi::Session')
       end
 
       def current_user_name
-        RailsConsoleAI.current_user || ENV['USER']
+        RailsConsoleAi.current_user || ENV['USER']
       end
     end
   end

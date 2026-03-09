@@ -1,4 +1,4 @@
-module RailsConsoleAI
+module RailsConsoleAi
   module Storage
     class StorageError < StandardError; end
 

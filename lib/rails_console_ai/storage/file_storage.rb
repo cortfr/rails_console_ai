@@ -1,7 +1,7 @@
 require 'fileutils'
 require 'rails_console_ai/storage/base'
 
-module RailsConsoleAI
+module RailsConsoleAi
   module Storage
     class FileStorage < Base
       attr_reader :root_path

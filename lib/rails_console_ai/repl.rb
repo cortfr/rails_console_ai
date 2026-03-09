@@ -1,7 +1,7 @@
 require 'rails_console_ai/channel/console'
 require 'rails_console_ai/conversation_engine'
 
-module RailsConsoleAI
+module RailsConsoleAi
   class Repl
     def initialize(binding_context)
       @binding_context = binding_context

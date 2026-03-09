@@ -1,7 +1,7 @@
 require 'spec_helper'
 require 'rails_console_ai/executor'
 
-RSpec.describe RailsConsoleAI::Executor do
+RSpec.describe RailsConsoleAi::Executor do
   let(:test_binding) { binding }
   subject(:executor) { described_class.new(test_binding) }
 
@@ -93,7 +93,7 @@ RSpec.describe RailsConsoleAI::Executor do
   describe '#execute with safety guards' do
     it 'wraps execution with configured safety guards' do
       call_log = []
-      RailsConsoleAI.configuration.safety_guard(:test) do |&block|
+      RailsConsoleAi.configuration.safety_guard(:test) do |&block|
         call_log << :guard_before
         result = block.call
         call_log << :guard_after
@@ -107,11 +107,11 @@ RSpec.describe RailsConsoleAI::Executor do
 
     it 'skips guards when safety guards are disabled' do
       call_log = []
-      RailsConsoleAI.configuration.safety_guard(:test) do |&block|
+      RailsConsoleAi.configuration.safety_guard(:test) do |&block|
         call_log << :guard
         block.call
       end
-      RailsConsoleAI.configuration.safety_guards.disable!
+      RailsConsoleAi.configuration.safety_guards.disable!
 
       result = executor.execute('1 + 1')
       expect(result).to eq(2)
@@ -119,7 +119,7 @@ RSpec.describe RailsConsoleAI::Executor do
     end
 
     it 'reports guard errors as execution errors' do
-      RailsConsoleAI.configuration.safety_guard(:blocker) do |&block|
+      RailsConsoleAi.configuration.safety_guard(:blocker) do |&block|
         raise RuntimeError, "write blocked!"
       end
 
@@ -129,8 +129,8 @@ RSpec.describe RailsConsoleAI::Executor do
     end
 
     it 'catches SafetyError with a helpful message' do
-      RailsConsoleAI.configuration.safety_guard(:blocker) do |&block|
-        raise RailsConsoleAI::SafetyError.new("Database write blocked", guard: :database_writes, blocked_key: "users")
+      RailsConsoleAi.configuration.safety_guard(:blocker) do |&block|
+        raise RailsConsoleAi::SafetyError.new("Database write blocked", guard: :database_writes, blocked_key: "users")
       end
 
       result = executor.execute('"hello"')
@@ -138,16 +138,16 @@ RSpec.describe RailsConsoleAI::Executor do
       expect(executor.last_error).to include("SafetyError")
       expect(executor.last_error).to include("Database write blocked")
       expect(executor.last_safety_error).to eq(true)
-      expect(executor.last_safety_exception).to be_a(RailsConsoleAI::SafetyError)
+      expect(executor.last_safety_exception).to be_a(RailsConsoleAi::SafetyError)
       expect(executor.last_safety_exception.guard).to eq(:database_writes)
       expect(executor.last_safety_exception.blocked_key).to eq("users")
     end
 
     it 'detects SafetyError wrapped by another exception' do
-      RailsConsoleAI.configuration.safety_guard(:blocker) do |&block|
+      RailsConsoleAi.configuration.safety_guard(:blocker) do |&block|
         begin
-          raise RailsConsoleAI::SafetyError.new("Database write blocked", guard: :database_writes, blocked_key: "users")
-        rescue RailsConsoleAI::SafetyError
+          raise RailsConsoleAi::SafetyError.new("Database write blocked", guard: :database_writes, blocked_key: "users")
+        rescue RailsConsoleAi::SafetyError
           raise RuntimeError, "wrapped error"
         end
       end
@@ -162,13 +162,13 @@ RSpec.describe RailsConsoleAI::Executor do
     end
 
     it 'clears last_safety_exception on successful execution' do
-      RailsConsoleAI.configuration.safety_guard(:blocker) do |&block|
-        raise RailsConsoleAI::SafetyError.new("blocked", guard: :test, blocked_key: "x")
+      RailsConsoleAi.configuration.safety_guard(:blocker) do |&block|
+        raise RailsConsoleAi::SafetyError.new("blocked", guard: :test, blocked_key: "x")
       end
       executor.execute('"hello"')
       expect(executor.last_safety_exception).not_to be_nil
 
-      RailsConsoleAI.configuration.safety_guards.remove(:blocker)
+      RailsConsoleAi.configuration.safety_guards.remove(:blocker)
       executor.execute('1 + 1')
       expect(executor.last_safety_exception).to be_nil
     end
@@ -229,7 +229,7 @@ RSpec.describe RailsConsoleAI::Executor do
 
     it 'executes with guards disabled on danger' do
       call_log = []
-      RailsConsoleAI.configuration.safety_guard(:test) do |&block|
+      RailsConsoleAi.configuration.safety_guard(:test) do |&block|
         call_log << :guard
         block.call
       end
@@ -241,10 +241,10 @@ RSpec.describe RailsConsoleAI::Executor do
     end
 
     it 're-enables guards after danger execution' do
-      RailsConsoleAI.configuration.safety_guard(:test) { |&b| b.call }
+      RailsConsoleAi.configuration.safety_guard(:test) { |&b| b.call }
       allow($stdin).to receive(:gets).and_return("d\n")
       executor.confirm_and_execute('1 + 1')
-      expect(RailsConsoleAI.configuration.safety_guards).to be_enabled
+      expect(RailsConsoleAi.configuration.safety_guards).to be_enabled
     end
   end
 
@@ -252,36 +252,36 @@ RSpec.describe RailsConsoleAI::Executor do
     it 'adds to allowlist when user chooses a' do
       # Simulate a safety error with metadata
       executor.instance_variable_set(:@last_safety_exception,
-        RailsConsoleAI::SafetyError.new("blocked", guard: :http_mutations, blocked_key: "s3.amazonaws.com"))
+        RailsConsoleAi::SafetyError.new("blocked", guard: :http_mutations, blocked_key: "s3.amazonaws.com"))
       executor.instance_variable_set(:@last_safety_error, true)
 
       allow($stdin).to receive(:gets).and_return("a\n")
       executor.offer_danger_retry('1 + 1')
 
-      expect(RailsConsoleAI.configuration.safety_guards.allowed?(:http_mutations, "s3.amazonaws.com")).to be true
+      expect(RailsConsoleAi.configuration.safety_guards.allowed?(:http_mutations, "s3.amazonaws.com")).to be true
     end
 
     it 'disables all guards when user chooses d' do
       call_log = []
-      RailsConsoleAI.configuration.safety_guard(:test) do |&block|
+      RailsConsoleAi.configuration.safety_guard(:test) do |&block|
         call_log << :guard
         block.call
       end
 
       executor.instance_variable_set(:@last_safety_exception,
-        RailsConsoleAI::SafetyError.new("blocked", guard: :http_mutations, blocked_key: "evil.com"))
+        RailsConsoleAi::SafetyError.new("blocked", guard: :http_mutations, blocked_key: "evil.com"))
       executor.instance_variable_set(:@last_safety_error, true)
 
       allow($stdin).to receive(:gets).and_return("d\n")
       result = executor.offer_danger_retry('1 + 1')
       expect(result).to eq(2)
       expect(call_log).to be_empty
-      expect(RailsConsoleAI.configuration.safety_guards).to be_enabled
+      expect(RailsConsoleAi.configuration.safety_guards).to be_enabled
     end
 
     it 'returns nil when user cancels' do
       executor.instance_variable_set(:@last_safety_exception,
-        RailsConsoleAI::SafetyError.new("blocked", guard: :test, blocked_key: "x"))
+        RailsConsoleAi::SafetyError.new("blocked", guard: :test, blocked_key: "x"))
       executor.instance_variable_set(:@last_safety_error, true)
 
       allow($stdin).to receive(:gets).and_return("n\n")

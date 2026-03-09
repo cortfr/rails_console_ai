@@ -1,4 +1,4 @@
-module RailsConsoleAI
+module RailsConsoleAi
   class Configuration
     PROVIDERS = %i[anthropic openai local bedrock].freeze
 

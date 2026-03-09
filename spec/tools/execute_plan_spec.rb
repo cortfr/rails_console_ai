@@ -4,8 +4,8 @@ require 'rails_console_ai/tools/registry'
 
 RSpec.describe 'execute_plan tool' do
   let(:test_binding) { binding }
-  let(:executor) { RailsConsoleAI::Executor.new(test_binding) }
-  let(:registry) { RailsConsoleAI::Tools::Registry.new(executor: executor) }
+  let(:executor) { RailsConsoleAi::Executor.new(test_binding) }
+  let(:registry) { RailsConsoleAi::Tools::Registry.new(executor: executor) }
 
   let(:two_steps) do
     {
@@ -23,7 +23,7 @@ RSpec.describe 'execute_plan tool' do
     end
 
     it 'does not register execute_plan when no executor is provided' do
-      reg = RailsConsoleAI::Tools::Registry.new
+      reg = RailsConsoleAi::Tools::Registry.new
       names = reg.definitions.map { |d| d[:name] }
       expect(names).not_to include('execute_plan')
     end
@@ -31,7 +31,7 @@ RSpec.describe 'execute_plan tool' do
 
   describe 'with auto_execute ON' do
     before do
-      RailsConsoleAI.configuration.auto_execute = true
+      RailsConsoleAi.configuration.auto_execute = true
     end
 
     it 'executes all steps without prompting' do
@@ -129,7 +129,7 @@ RSpec.describe 'execute_plan tool' do
 
   describe 'with auto_execute OFF' do
     before do
-      RailsConsoleAI.configuration.auto_execute = false
+      RailsConsoleAi.configuration.auto_execute = false
     end
 
     it 'prompts for plan approval and executes on y' do
@@ -176,7 +176,7 @@ RSpec.describe 'execute_plan tool' do
 
       registry.execute('execute_plan', two_steps)
 
-      expect(RailsConsoleAI.configuration.auto_execute).to eq(false)
+      expect(RailsConsoleAi.configuration.auto_execute).to eq(false)
     end
 
     it 'shows auto option in the accept prompt' do
@@ -231,7 +231,7 @@ RSpec.describe 'execute_plan tool' do
 
   describe 'plan display' do
     before do
-      RailsConsoleAI.configuration.auto_execute = true
+      RailsConsoleAi.configuration.auto_execute = true
     end
 
     it 'shows full multi-line code in plan overview' do

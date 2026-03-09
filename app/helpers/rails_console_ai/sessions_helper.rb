@@ -1,4 +1,4 @@
-module RailsConsoleAI
+module RailsConsoleAi
   module SessionsHelper
     def estimated_cost(session)
       pricing = Configuration::PRICING[session.model]

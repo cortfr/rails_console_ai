@@ -1,4 +1,4 @@
-module RailsConsoleAI
+module RailsConsoleAi
   class ConversationEngine
     attr_reader :history, :total_input_tokens, :total_output_tokens,
                 :interactive_session_id, :session_name
@@ -65,10 +65,10 @@ module RailsConsoleAI
       log_session(@_last_log_attrs.merge(console_output: console_capture.string))
       exec_result
     rescue Providers::ProviderError => e
-      @channel.display_error("RailsConsoleAI Error: #{e.message}")
+      @channel.display_error("RailsConsoleAi Error: #{e.message}")
       nil
     rescue => e
-      @channel.display_error("RailsConsoleAI Error: #{e.class}: #{e.message}")
+      @channel.display_error("RailsConsoleAi Error: #{e.class}: #{e.message}")
       nil
     end
 
@@ -93,10 +93,10 @@ module RailsConsoleAI
       log_session(@_last_log_attrs.merge(console_output: console_capture.string))
       nil
     rescue Providers::ProviderError => e
-      @channel.display_error("RailsConsoleAI Error: #{e.message}")
+      @channel.display_error("RailsConsoleAi Error: #{e.message}")
       nil
     rescue => e
-      @channel.display_error("RailsConsoleAI Error: #{e.class}: #{e.message}")
+      @channel.display_error("RailsConsoleAi Error: #{e.class}: #{e.message}")
       nil
     end
 
@@ -115,9 +115,9 @@ module RailsConsoleAI
     end
 
     def init_guide
-      storage = RailsConsoleAI.storage
+      storage = RailsConsoleAi.storage
       existing_guide = begin
-        content = storage.read(RailsConsoleAI::GUIDE_KEY)
+        content = storage.read(RailsConsoleAi::GUIDE_KEY)
         (content && !content.strip.empty?) ? content.strip : nil
       rescue
         nil
@@ -134,8 +134,8 @@ module RailsConsoleAI
       sys_prompt = init_system_prompt(existing_guide)
       messages = [{ role: :user, content: "Explore this Rails application and generate the application guide." }]
 
-      original_timeout = RailsConsoleAI.configuration.timeout
-      RailsConsoleAI.configuration.timeout = [original_timeout, 120].max
+      original_timeout = RailsConsoleAi.configuration.timeout
+      RailsConsoleAi.configuration.timeout = [original_timeout, 120].max
 
       result, _ = send_query_with_tools(messages, system_prompt: sys_prompt, tools_override: init_tools)
 
@@ -148,8 +148,8 @@ module RailsConsoleAI
         return nil
       end
 
-      storage.write(RailsConsoleAI::GUIDE_KEY, guide_text)
-      path = storage.respond_to?(:root_path) ? File.join(storage.root_path, RailsConsoleAI::GUIDE_KEY) : RailsConsoleAI::GUIDE_KEY
+      storage.write(RailsConsoleAi::GUIDE_KEY, guide_text)
+      path = storage.respond_to?(:root_path) ? File.join(storage.root_path, RailsConsoleAi::GUIDE_KEY) : RailsConsoleAi::GUIDE_KEY
       $stdout.puts "\e[32m  Guide saved to #{path} (#{guide_text.length} chars)\e[0m"
       display_usage(result)
       nil
@@ -157,13 +157,13 @@ module RailsConsoleAI
       $stdout.puts "\n\e[33m  Interrupted.\e[0m"
       nil
     rescue Providers::ProviderError => e
-      @channel.display_error("RailsConsoleAI Error: #{e.message}")
+      @channel.display_error("RailsConsoleAi Error: #{e.message}")
       nil
     rescue => e
-      @channel.display_error("RailsConsoleAI Error: #{e.class}: #{e.message}")
+      @channel.display_error("RailsConsoleAi Error: #{e.class}: #{e.message}")
       nil
     ensure
-      RailsConsoleAI.configuration.timeout = original_timeout if original_timeout
+      RailsConsoleAi.configuration.timeout = original_timeout if original_timeout
     end
 
     # --- Interactive session management ---
@@ -250,7 +250,7 @@ module RailsConsoleAI
         if e.message.include?("prompt is too long") && @history.length >= 6
           @channel.display_warning("  Context limit reached. Run /compact to reduce context size, then try again.")
         else
-          @channel.display_error("RailsConsoleAI Error: #{e.class}: #{e.message}")
+          @channel.display_error("RailsConsoleAi Error: #{e.class}: #{e.message}")
         end
         return :error
       rescue Interrupt
@@ -271,7 +271,7 @@ module RailsConsoleAI
       return :no_code unless code && !code.strip.empty?
       return :cancelled if @channel.cancelled?
 
-      exec_result = if RailsConsoleAI.configuration.auto_execute
+      exec_result = if RailsConsoleAi.configuration.auto_execute
                       @executor.execute(code)
                     else
                       @executor.confirm_and_execute(code)
@@ -352,7 +352,7 @@ module RailsConsoleAI
 
       @token_usage.each do |model, usage|
         pricing = Configuration::PRICING[model]
-        pricing ||= { input: 0.0, output: 0.0 } if RailsConsoleAI.configuration.provider == :local
+        pricing ||= { input: 0.0, output: 0.0 } if RailsConsoleAi.configuration.provider == :local
         input_str = "in: #{format_tokens(usage[:input])}"
         output_str = "out: #{format_tokens(usage[:output])}"
 
@@ -406,7 +406,7 @@ module RailsConsoleAI
     end
 
     def upgrade_to_thinking_model
-      config = RailsConsoleAI.configuration
+      config = RailsConsoleAi.configuration
       current = config.resolved_model
       thinking = config.resolved_thinking_model
 
@@ -558,7 +558,7 @@ module RailsConsoleAI
     private
 
     def safety_context
-      guards = RailsConsoleAI.configuration.safety_guards
+      guards = RailsConsoleAi.configuration.safety_guards
       return nil if guards.empty?
 
       if !@channel.supports_danger?
@@ -597,7 +597,7 @@ module RailsConsoleAI
       has_code = code && !code.strip.empty?
 
       if has_code
-        exec_result = if RailsConsoleAI.configuration.auto_execute
+        exec_result = if RailsConsoleAi.configuration.auto_execute
                         @executor.execute(code)
                       else
                         @executor.confirm_and_execute(code)
@@ -682,7 +682,7 @@ module RailsConsoleAI
     end
 
     def send_query(query, conversation: nil)
-      RailsConsoleAI.configuration.validate!
+      RailsConsoleAi.configuration.validate!
 
       messages = if conversation
                    conversation.dup
@@ -699,7 +699,7 @@ module RailsConsoleAI
       require 'rails_console_ai/tools/registry'
       tools = tools_override || Tools::Registry.new(executor: @executor, channel: @channel)
       active_system_prompt = system_prompt || context
-      max_rounds = RailsConsoleAI.configuration.max_tool_rounds
+      max_rounds = RailsConsoleAi.configuration.max_tool_rounds
       total_input = 0
       total_output = 0
       result = nil
@@ -726,7 +726,7 @@ module RailsConsoleAI
           @channel.display_dim("  #{llm_status(round, messages, total_input, last_thinking, last_tool_names)}")
         end
 
-        if RailsConsoleAI.configuration.debug
+        if RailsConsoleAi.configuration.debug
           debug_pre_call(round, messages, active_system_prompt, tools, total_input, total_output)
         end
 
@@ -742,7 +742,7 @@ module RailsConsoleAI
 
         break if @channel.cancelled?
 
-        if RailsConsoleAI.configuration.debug
+        if RailsConsoleAi.configuration.debug
           debug_post_call(round, result, @total_input_tokens + total_input, @total_output_tokens + total_output)
         end
 
@@ -770,7 +770,7 @@ module RailsConsoleAI
             @channel.display_dim("     #{preview}#{cached_tag}")
           end
 
-          if RailsConsoleAI.configuration.debug
+          if RailsConsoleAi.configuration.debug
             $stderr.puts "\e[35m[debug] tool result (#{tool_result.to_s.length} chars)\e[0m"
           end
 
@@ -786,7 +786,7 @@ module RailsConsoleAI
       end
 
       if exhausted
-        $stdout.puts "\e[33m  Hit tool round limit (#{max_rounds}). Forcing final answer. Increase with: RailsConsoleAI.configure { |c| c.max_tool_rounds = 200 }\e[0m"
+        $stdout.puts "\e[33m  Hit tool round limit (#{max_rounds}). Forcing final answer. Increase with: RailsConsoleAi.configure { |c| c.max_tool_rounds = 200 }\e[0m"
         messages << { role: :user, content: "You've used all available tool rounds. Please provide your best answer now based on what you've learned so far." }
         result = provider.chat(messages, system_prompt: active_system_prompt)
         total_input += result.input_tokens || 0
@@ -806,7 +806,7 @@ module RailsConsoleAI
       @total_input_tokens += result.input_tokens || 0
       @total_output_tokens += result.output_tokens || 0
 
-      model = RailsConsoleAI.configuration.resolved_model
+      model = RailsConsoleAi.configuration.resolved_model
       @token_usage[model][:input] += result.input_tokens || 0
       @token_usage[model][:output] += result.output_tokens || 0
       @token_usage[model][:cache_read] = (@token_usage[model][:cache_read] || 0) + (result.cache_read_input_tokens || 0)
@@ -1006,9 +1006,9 @@ module RailsConsoleAI
 
       input_t = result.input_tokens || 0
       output_t = result.output_tokens || 0
-      model = RailsConsoleAI.configuration.resolved_model
+      model = RailsConsoleAi.configuration.resolved_model
       pricing = Configuration::PRICING[model]
-      pricing ||= { input: 0.0, output: 0.0 } if RailsConsoleAI.configuration.provider == :local
+      pricing ||= { input: 0.0, output: 0.0 } if RailsConsoleAi.configuration.provider == :local
 
       cache_r = result.cache_read_input_tokens || 0
       cache_w = result.cache_write_input_tokens || 0
