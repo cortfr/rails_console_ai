@@ -94,7 +94,8 @@ module RailsConsoleAi
       table = 'rails_console_ai_sessions'
 
       if conn.table_exists?(table)
-        $stdout.puts "\e[32mRailsConsoleAi: #{table} already exists. Run RailsConsoleAi.teardown! first to recreate.\e[0m"
+        $stdout.puts "\e[32mRailsConsoleAi: #{table} already exists — checking for pending migrations.\e[0m"
+        migrate!
       else
         conn.create_table(table) do |t|
           t.text    :query,         null: false
@@ -151,6 +152,7 @@ module RailsConsoleAi
       if migrations.empty?
         $stdout.puts "\e[32mRailsConsoleAi: #{table} is up to date.\e[0m"
       else
+        RailsConsoleAi::Session.reset_column_information if defined?(RailsConsoleAi::Session)
         $stdout.puts "\e[32mRailsConsoleAi: added columns: #{migrations.join(', ')}.\e[0m"
       end
     rescue => e
