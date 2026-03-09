@@ -32,6 +32,7 @@ module RailsConsoleAi
         @cancelled = false
         @log_prefix = "[#{@channel_id}/#{@thread_ts}] @#{@user_name}"
         @output_log = StringIO.new
+        @thinking_ts = nil
       end
 
       def cancel!
@@ -43,13 +44,14 @@ module RailsConsoleAi
       end
 
       def display(text)
+        clear_thinking
         post(strip_ansi(text))
       end
 
       def display_dim(text)
         stripped = strip_ansi(text).strip
         if stripped =~ /\AThinking\.\.\.|\ACalling LLM/
-          post(random_thinking_message)
+          show_thinking
         elsif stripped =~ /\AAttempting to fix|\ACancelled|\A_session:/
           post(stripped)
         else
@@ -60,10 +62,12 @@ module RailsConsoleAi
       end
 
       def display_warning(text)
+        clear_thinking
         post(":warning: #{strip_ansi(text)}")
       end
 
       def display_error(text)
+        clear_thinking
         post(":x: #{strip_ansi(text)}")
       end
 
@@ -73,6 +77,7 @@ module RailsConsoleAi
       end
 
       def display_result_output(output)
+        clear_thinking
         text = strip_ansi(output).strip
         return if text.empty?
         text = text[0, 3000] + "\n... (truncated)" if text.length > 3000
@@ -135,6 +140,7 @@ module RailsConsoleAi
           - The output of `puts` in your code is automatically shown to the user. Do NOT
             repeat or re-display data that your code already printed via `puts`.
             Just add a brief summary after (e.g. "10 events found" or "Let me know if you need more detail").
+          - Do not offer to make changes or take actions on behalf of the user. Only report findings.
           - This is a live production database — other processes, users, and background jobs are
             constantly changing data. Never assume results will be the same as a previous query.
             Always re-run queries when asked, even if you just ran the same one.
@@ -170,8 +176,40 @@ module RailsConsoleAi
         RailsConsoleAi.logger.error("Slack post failed: #{e.message}")
       end
 
-      def random_thinking_message
-        THINKING_MESSAGES.sample
+      def show_thinking
+        msg = THINKING_MESSAGES.sample
+        if @thinking_ts
+          # Update the existing thinking message in place
+          @slack_bot.send(:slack_api, "chat.update",
+            channel: @channel_id,
+            ts: @thinking_ts,
+            text: msg
+          )
+        else
+          # Post a new thinking message and track its ts
+          result = @slack_bot.send(:post_message,
+            channel: @channel_id,
+            thread_ts: @thread_ts,
+            text: msg
+          )
+          @thinking_ts = result&.dig("ts")
+        end
+        $stdout.puts "#{@log_prefix} >> #{msg}"
+      rescue => e
+        RailsConsoleAi.logger.error("Slack thinking message failed: #{e.message}")
+      end
+
+      def clear_thinking
+        return unless @thinking_ts
+
+        @slack_bot.send(:slack_api, "chat.delete",
+          channel: @channel_id,
+          ts: @thinking_ts
+        )
+        @thinking_ts = nil
+      rescue => e
+        RailsConsoleAi.logger.error("Slack clear thinking failed: #{e.message}")
+        @thinking_ts = nil
       end
 
       def strip_ansi(text)
