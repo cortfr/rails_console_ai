@@ -140,8 +140,8 @@ module RailsConsoleAi
         return nil
       end
       @last_error = "#{e.class}: #{e.message}"
-      display_error("Error: #{@last_error}")
-      e.backtrace.first(3).each { |line| display_error("  #{line}") }
+      backtrace = e.backtrace.first(3).map { |line| "  #{line}" }.join("\n")
+      display_error("Error: #{@last_error}\n#{backtrace}")
       @last_output = captured_output&.string
       nil
     end
