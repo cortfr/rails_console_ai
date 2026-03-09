@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.13.0]
+
+- Rename gem from `console_agent` to `rails_console_ai`
+- Add AWS Bedrock provider
+- Add prompt caching and cache-aware cost tracking for Anthropic
+- Enable prompt caching for Bedrock
+
 ## [0.12.0]
 
 - Add `slack_allowed_usernames` to restrict Slack channel access
