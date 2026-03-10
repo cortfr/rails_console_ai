@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.18.0]
+
+- Handle "smart" quotes coming from Slack
+- Eager load when Slack bot starts up
+- Handle `>` in Slack for direct code execution
+- Handle stopping of sessions in Slack bot by recording the stop
+
 ## [0.17.0]
 
 - Add `/retry` command
