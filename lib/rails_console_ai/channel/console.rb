@@ -259,12 +259,18 @@ module RailsConsoleAi
           else
             @real_stdout.puts "\e[33mNo omitted output with id #{expand_id}\e[0m"
           end
+        when '/retry'
+          retry_last_code
         when /\A\/name/
           handle_name_command(input)
         else
           return false
         end
         true
+      end
+
+      def retry_last_code
+        @engine.retry_last_code
       end
 
       def handle_direct_execution(input)
@@ -341,6 +347,7 @@ module RailsConsoleAi
         @real_stdout.puts "\e[2m    /system      Show the system prompt\e[0m"
         @real_stdout.puts "\e[2m    /expand <id> Show full omitted output\e[0m"
         @real_stdout.puts "\e[2m    /debug       Toggle debug summaries (context stats, cost per call)\e[0m"
+        @real_stdout.puts "\e[2m    /retry       Re-execute the last code block\e[0m"
         @real_stdout.puts "\e[2m    > code       Execute Ruby directly (skip LLM)\e[0m"
         @real_stdout.puts "\e[2m    exit/quit    Leave interactive mode\e[0m"
       end
