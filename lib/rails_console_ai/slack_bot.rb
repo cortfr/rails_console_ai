@@ -10,6 +10,9 @@ require 'rails_console_ai/executor'
 
 module RailsConsoleAi
   class SlackBot
+    PING_INTERVAL = 30  # seconds — send ping if no data received
+    PONG_TIMEOUT  = 60  # seconds — reconnect if no pong after ping
+
     def initialize
       @bot_token = RailsConsoleAi.configuration.slack_bot_token || ENV['SLACK_BOT_TOKEN']
       @app_token = RailsConsoleAi.configuration.slack_app_token || ENV['SLACK_APP_TOKEN']
@@ -78,9 +81,27 @@ module RailsConsoleAi
 
       puts "Connected to Slack Socket Mode."
 
-      # Main read loop
+      # Main read loop with keepalive
+      last_activity = Time.now
+      ping_sent = false
+
       loop do
+        ready = IO.select([ssl.to_io], nil, nil, PING_INTERVAL)
+
+        if ready.nil?
+          # Timeout — no data received
+          if ping_sent && (Time.now - last_activity) > PONG_TIMEOUT
+            puts "Slack connection timed out (no pong received). Reconnecting..."
+            break
+          end
+          send_ws_ping(ssl)
+          ping_sent = true
+          next
+        end
+
         data = read_ws_frame(ssl)
+        last_activity = Time.now
+        ping_sent = false
         next unless data
 
         begin
@@ -128,6 +149,11 @@ module RailsConsoleAi
       if opcode == 9
         payload = read_ws_payload(ssl)
         send_ws_pong(ssl, payload)
+        return nil
+      end
+      # Handle pong (opcode 10) — response to our keepalive ping
+      if opcode == 0xA
+        read_ws_payload(ssl) # consume payload
         return nil
       end
       # Close frame (opcode 8)
@@ -191,6 +217,14 @@ module RailsConsoleAi
       frame << [(bytes.length | 0x80)].pack("C")
       frame << mask_key.pack("C*")
       frame << masked.pack("C*")
+      ssl.write(frame)
+    end
+
+    def send_ws_ping(ssl)
+      mask_key = 4.times.map { rand(256) }
+      frame = [0x89].pack("C") # FIN + ping opcode
+      frame << [0x80].pack("C") # masked, zero-length payload
+      frame << mask_key.pack("C*")
       ssl.write(frame)
     end
 
