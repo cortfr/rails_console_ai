@@ -409,6 +409,17 @@ module RailsConsoleAi
         session[:channel].cancel!
         session[:channel].display("Stopped.")
         puts "[#{channel_id}/#{thread_ts}] cancel requested"
+
+        # Record stop in conversation history so restored sessions know
+        # the previous topic was abandoned by the user
+        engine = session[:engine]
+        engine.history << { role: :user, content: "stop" }
+        engine.history << { role: :assistant, content: "Stopped. Awaiting new instructions." }
+        begin
+          engine.send(:log_interactive_turn)
+        rescue => e
+          RailsConsoleAi.logger.warn("SlackBot: failed to save cancel state: #{e.message}")
+        end
       else
         post_message(channel: channel_id, thread_ts: thread_ts, text: "No active session to stop.")
         puts "[#{channel_id}/#{thread_ts}] cancel: no session"
