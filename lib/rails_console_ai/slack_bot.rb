@@ -96,25 +96,32 @@ module RailsConsoleAi
 
       # Main read loop with keepalive
       last_activity = Time.now
+      last_ping_sent_at = Time.now
       ping_sent = false
 
       loop do
         ready = IO.select([ssl.to_io], nil, nil, PING_INTERVAL)
 
-        if ready.nil?
-          # Timeout — no data received
+        # Send outbound ping on a fixed schedule, regardless of inbound activity
+        if Time.now - last_ping_sent_at >= PING_INTERVAL
           if ping_sent && (Time.now - last_activity) > PONG_TIMEOUT
-            puts "Slack connection timed out (no pong received). Reconnecting..."
+            puts "Slack connection timed out (no pong received after #{(Time.now - last_activity).round}s). Reconnecting..."
             break
           end
+          puts "Sending WebSocket ping (last activity #{(Time.now - last_activity).round}s ago)"
           send_ws_ping(ssl)
+          last_ping_sent_at = Time.now
           ping_sent = true
-          next
         end
+
+        next if ready.nil?
 
         data = read_ws_frame(ssl)
         last_activity = Time.now
-        ping_sent = false
+        if ping_sent
+          puts "Received data after ping — connection alive"
+          ping_sent = false
+        end
         next unless data
 
         begin
@@ -161,12 +168,14 @@ module RailsConsoleAi
       # Handle ping (opcode 9) → send pong (opcode 10)
       if opcode == 9
         payload = read_ws_payload(ssl)
+        puts "Received server ping, sending pong"
         send_ws_pong(ssl, payload)
         return nil
       end
       # Handle pong (opcode 10) — response to our keepalive ping
       if opcode == 0xA
         read_ws_payload(ssl) # consume payload
+        puts "Received WebSocket pong"
         return nil
       end
       # Close frame (opcode 8)
