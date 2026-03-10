@@ -538,6 +538,8 @@ module RailsConsoleAi
     def unescape_slack(text)
       return text unless text
       text.gsub("&amp;", "&").gsub("&lt;", "<").gsub("&gt;", ">")
+          .gsub("\u2018", "'").gsub("\u2019", "'")   # smart single quotes → straight
+          .gsub("\u201C", '"').gsub("\u201D", '"')    # smart double quotes → straight
     end
 
     def waiting_for_reply?(channel)
