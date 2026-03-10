@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.17.0]
+
+- Add `/retry` command
+- Print provider information when `ai!` starts
+- Keep Slack bot alive during long-running sessions
+- Improve Slack bot log prefixes for production log search
+- Catch safety errors even when swallowed by executed code
+- Fix Bedrock handling of multiple tool results
+
 ## [0.16.0]
 
 - Run migrations during setup
