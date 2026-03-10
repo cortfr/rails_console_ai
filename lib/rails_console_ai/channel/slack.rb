@@ -37,14 +37,14 @@ module RailsConsoleAi
         elsif stripped =~ /\ACalling LLM/
           # Technical LLM round status — suppress in Slack
           @output_log.write("#{stripped}\n")
-          $stdout.puts "#{@log_prefix} (dim) #{stripped}"
+          STDOUT.puts "#{@log_prefix} (dim) #{stripped}"
         elsif raw =~ /\A {2,4}\S/ && stripped.length > 10
           # LLM thinking text (2-space indent from conversation engine) — show as status
           post(stripped)
         else
           # Tool result previews (5+ space indent) and other technical noise — log only
           @output_log.write("#{stripped}\n")
-          $stdout.puts "#{@log_prefix} (dim) #{stripped}"
+          STDOUT.puts "#{@log_prefix} (dim) #{stripped}"
         end
       end
 
@@ -150,7 +150,7 @@ module RailsConsoleAi
       def post(text)
         return if text.nil? || text.strip.empty?
         @output_log.write("#{text}\n")
-        $stdout.puts "#{@log_prefix} >> #{text}"
+        STDOUT.puts "#{@log_prefix} >> #{text}"
         @slack_bot.send(:post_message,
           channel: @channel_id,
           thread_ts: @thread_ts,

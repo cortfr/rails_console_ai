@@ -2,6 +2,7 @@ require 'json'
 require 'uri'
 require 'net/http'
 require 'openssl'
+require 'rails_console_ai/prefixed_io'
 require 'rails_console_ai/channel/slack'
 require 'rails_console_ai/conversation_engine'
 require 'rails_console_ai/context_builder'
@@ -29,6 +30,11 @@ module RailsConsoleAi
     end
 
     def start
+      $stdout.sync = true
+      $stderr.sync = true
+      $stdout = RailsConsoleAi::PrefixedIO.new($stdout) unless $stdout.is_a?(RailsConsoleAi::PrefixedIO)
+      $stderr = RailsConsoleAi::PrefixedIO.new($stderr) unless $stderr.is_a?(RailsConsoleAi::PrefixedIO)
+
       @bot_user_id = slack_api("auth.test", token: @bot_token).dig("user_id")
       log_startup
 
@@ -343,6 +349,7 @@ module RailsConsoleAi
 
       session[:thread] = Thread.new do
         Thread.current.report_on_exception = false
+        Thread.current[:log_prefix] = "[#{channel_id}/#{thread_ts}] @#{user_name}"
         begin
           channel.display_dim("_session: #{channel_id}/#{thread_ts}_")
           if restored
@@ -385,6 +392,7 @@ module RailsConsoleAi
       # Otherwise treat as a new message in the conversation
       session[:thread] = Thread.new do
         Thread.current.report_on_exception = false
+        Thread.current[:log_prefix] = channel.instance_variable_get(:@log_prefix)
         begin
           engine.process_message(text)
         rescue => e
