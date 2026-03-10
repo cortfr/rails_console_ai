@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.16.0]
+
+- Run migrations during setup
+- Clarify LLM activity messages in Slack channel
+- Clean up error messages
+- Rotate thinking messages in Slack bot
+
 ## [0.15.0]
 
 - Add `config.code_search_paths` to configure searchable code directories
