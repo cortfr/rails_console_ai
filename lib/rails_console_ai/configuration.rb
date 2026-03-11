@@ -30,7 +30,8 @@ module RailsConsoleAi
                   :bedrock_region,
                   :code_search_paths,
                   :channels,
-                  :bypass_guards_for_methods
+                  :bypass_guards_for_methods,
+                  :user_extra_info
 
     def initialize
       @provider     = :anthropic
@@ -62,6 +63,12 @@ module RailsConsoleAi
       @code_search_paths = %w[app]
       @channels = {}
       @bypass_guards_for_methods = []
+      @user_extra_info = {}
+    end
+
+    def resolve_user_extra_info(username)
+      return nil if @user_extra_info.nil? || @user_extra_info.empty? || username.nil?
+      @user_extra_info[username.to_s.downcase]
     end
 
     def safety_guards

@@ -1,8 +1,9 @@
 module RailsConsoleAi
   class ContextBuilder
-    def initialize(config = RailsConsoleAi.configuration, channel_mode: nil)
+    def initialize(config = RailsConsoleAi.configuration, channel_mode: nil, user_name: nil)
       @config = config
       @channel_mode = channel_mode
+      @user_name = user_name
     end
 
     def build
@@ -19,6 +20,7 @@ module RailsConsoleAi
       parts << guide_context
       parts << trusted_methods_context
       parts << skills_context
+      parts << user_extra_info_context
       parts << pinned_memory_context
       parts << memory_context
       parts.compact.join("\n\n")
@@ -136,6 +138,13 @@ module RailsConsoleAi
     rescue => e
       RailsConsoleAi.logger.debug("RailsConsoleAi: skills context failed: #{e.message}")
       nil
+    end
+
+    def user_extra_info_context
+      info = @config.resolve_user_extra_info(@user_name)
+      return nil if info.nil? || info.strip.empty?
+
+      "## Current User\n\nUser: #{@user_name}\n#{info}"
     end
 
     def pinned_memory_context
