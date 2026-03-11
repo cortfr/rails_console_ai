@@ -35,11 +35,26 @@ RSpec.describe RailsConsoleAi::Repl do
 
   describe '#one_shot' do
     it 'sends query to provider and displays response' do
-      stub_no_tools(chat_result("Here is the code:\n```ruby\n1 + 1\n```"))
+      # LLM uses the execute_code tool (not code fences) to run code
+      tool_call_result = RailsConsoleAi::Providers::ChatResult.new(
+        text: '',
+        input_tokens: 50, output_tokens: 20,
+        tool_calls: [{ id: 'tc_1', name: 'execute_code', arguments: { 'code' => '1 + 1' } }],
+        stop_reason: :tool_use
+      )
+      final_result = chat_result("The result is 2.")
+
+      call_count = 0
+      allow(mock_provider).to receive(:chat_with_tools) do
+        call_count += 1
+        call_count == 1 ? tool_call_result : final_result
+      end
+      allow(mock_provider).to receive(:format_assistant_message).and_return({ role: 'assistant', content: [] })
+      allow(mock_provider).to receive(:format_tool_result).and_return({ role: 'user', content: [] })
       allow($stdin).to receive(:gets).and_return("y\n")
 
-      result = repl.one_shot('add numbers')
-      expect(result).to eq(2)
+      repl.one_shot('add numbers')
+      expect(call_count).to eq(2)
     end
 
     it 'returns nil when provider returns no code' do
@@ -163,11 +178,25 @@ RSpec.describe RailsConsoleAi::Repl do
     end
 
     it 'does not interfere with normal non-interrupted flow' do
-      stub_no_tools(chat_result("Result:\n```ruby\n1 + 1\n```"))
+      tool_call_result = RailsConsoleAi::Providers::ChatResult.new(
+        text: '',
+        input_tokens: 50, output_tokens: 20,
+        tool_calls: [{ id: 'tc_1', name: 'execute_code', arguments: { 'code' => '1 + 1' } }],
+        stop_reason: :tool_use
+      )
+      final_result = chat_result("Result: 2")
+
+      call_count = 0
+      allow(mock_provider).to receive(:chat_with_tools) do
+        call_count += 1
+        call_count == 1 ? tool_call_result : final_result
+      end
+      allow(mock_provider).to receive(:format_assistant_message).and_return({ role: 'assistant', content: [] })
+      allow(mock_provider).to receive(:format_tool_result).and_return({ role: 'user', content: [] })
       allow($stdin).to receive(:gets).and_return("y\n")
 
-      result = repl.one_shot('add numbers')
-      expect(result).to eq(2)
+      repl.one_shot('add numbers')
+      expect(call_count).to eq(2)
     end
   end
 
@@ -175,15 +204,24 @@ RSpec.describe RailsConsoleAi::Repl do
     it 'adds execution errors to conversation history and auto-retries' do
       allow(Readline).to receive(:respond_to?).with(:parse_and_bind).and_return(false)
 
-      # First LLM call: returns code that will error
-      # Second LLM call (auto-retry): returns fixed code
-      error_response = chat_result("Try this:\n```ruby\nraise 'something broke'\n```")
-      fixed_response = chat_result("Fixed:\n```ruby\n42\n```")
+      # LLM call 1: uses execute_code tool with code that will error
+      error_tool_result = RailsConsoleAi::Providers::ChatResult.new(
+        text: '',
+        input_tokens: 50, output_tokens: 20,
+        tool_calls: [{ id: 'tc_1', name: 'execute_code', arguments: { 'code' => "raise 'something broke'" } }],
+        stop_reason: :tool_use
+      )
+      # LLM call 2: after seeing the error in tool result, returns final text
+      fixed_response = chat_result("I see there was an error.")
 
       llm_call_count = 0
       allow(mock_provider).to receive(:chat_with_tools) do
         llm_call_count += 1
-        llm_call_count == 1 ? error_response : fixed_response
+        llm_call_count == 1 ? error_tool_result : fixed_response
+      end
+      allow(mock_provider).to receive(:format_assistant_message).and_return({ role: 'assistant', content: [] })
+      allow(mock_provider).to receive(:format_tool_result) do |_id, result|
+        { role: :user, content: result.to_s }
       end
       allow($stdin).to receive(:gets).and_return("y\n")
 
@@ -195,11 +233,11 @@ RSpec.describe RailsConsoleAi::Repl do
 
       capture_stdout { repl.interactive }
 
-      # LLM was called twice: once for the original query, once for the auto-retry
+      # LLM was called twice: once for the original query, once after seeing the execute_code error
       expect(llm_call_count).to eq(2)
 
       history = repl.instance_variable_get(:@history)
-      error_msg = history.find { |h| h[:content]&.include?('Code execution failed') }
+      error_msg = history.find { |h| h[:content].to_s.include?('ERROR:') }
       expect(error_msg).not_to be_nil
       expect(error_msg[:content]).to include('RuntimeError')
       expect(error_msg[:content]).to include('something broke')
@@ -208,15 +246,24 @@ RSpec.describe RailsConsoleAi::Repl do
     it 'only auto-retries once (does not loop on repeated errors)' do
       allow(Readline).to receive(:respond_to?).with(:parse_and_bind).and_return(false)
 
-      # Both LLM calls return code that errors
-      stub_no_tools(chat_result("Try this:\n```ruby\nraise 'still broken'\n```"))
-      allow($stdin).to receive(:gets).and_return("y\n")
+      # LLM call 1: uses execute_code tool with code that errors
+      error_tool_result = RailsConsoleAi::Providers::ChatResult.new(
+        text: '',
+        input_tokens: 50, output_tokens: 20,
+        tool_calls: [{ id: 'tc_1', name: 'execute_code', arguments: { 'code' => "raise 'still broken'" } }],
+        stop_reason: :tool_use
+      )
+      # LLM call 2: after seeing the error, gives up and returns final text (no infinite loop)
+      give_up_response = chat_result("Sorry, I was unable to complete that.")
 
       llm_call_count = 0
       allow(mock_provider).to receive(:chat_with_tools) do
         llm_call_count += 1
-        chat_result("Try this:\n```ruby\nraise 'still broken'\n```")
+        llm_call_count == 1 ? error_tool_result : give_up_response
       end
+      allow(mock_provider).to receive(:format_assistant_message).and_return({ role: 'assistant', content: [] })
+      allow(mock_provider).to receive(:format_tool_result).and_return({ role: 'user', content: [] })
+      allow($stdin).to receive(:gets).and_return("y\n")
 
       readline_count = 0
       allow(Readline).to receive(:readline) do
@@ -226,7 +273,7 @@ RSpec.describe RailsConsoleAi::Repl do
 
       capture_stdout { repl.interactive }
 
-      # Exactly 2 calls: original + one retry, no infinite loop
+      # Exactly 2 calls: original + one retry after error, no infinite loop
       expect(llm_call_count).to eq(2)
     end
   end
