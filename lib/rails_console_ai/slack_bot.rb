@@ -13,6 +13,7 @@ module RailsConsoleAi
   class SlackBot
     PING_INTERVAL = 30  # seconds — send ping if no data received
     PONG_TIMEOUT  = 60  # seconds — reconnect if no pong after ping
+    GREETINGS = %w[hi hey hello howdy yo sup hola].to_set.freeze
 
     def initialize
       @bot_token = RailsConsoleAi.configuration.slack_bot_token || ENV['SLACK_BOT_TOKEN']
@@ -332,13 +333,17 @@ module RailsConsoleAi
         return
       end
 
-      # Direct code execution: "> User.count" runs code without LLM
-      if text.strip.start_with?('>')
-        raw_code = text.strip.sub(/\A>\s*/, '')
-        unless raw_code.empty?
-          handle_direct_code(session, channel_id, thread_ts, raw_code, user_name)
-          return
-        end
+      # Quick greeting — no need to hit the LLM
+      if !session && GREETINGS.include?(command)
+        post_message(channel: channel_id, thread_ts: thread_ts, text: ":wave: Hey @#{user_name}! What would you like to look into today?")
+        return
+      end
+
+      # Direct code execution: code blocks or "> User.count" run code without LLM
+      raw_code = extract_direct_code(text.strip)
+      if raw_code
+        handle_direct_code(session, channel_id, thread_ts, raw_code, user_name)
+        return
       end
 
       if session
@@ -545,11 +550,35 @@ module RailsConsoleAi
       { "ok" => false, "error" => e.message }
     end
 
+    # Extract code for direct execution from code blocks or > prefix.
+    # Returns the code string, or nil if the message is not direct code.
+    def extract_direct_code(text)
+      # ```code``` or ```ruby\ncode```
+      if text.match?(/\A```/)
+        code = text.sub(/\A```/, '').sub(/```\z/, '')
+        # Strip optional language hint only when followed by a newline (e.g. ```ruby\n)
+        code = code.sub(/\A\w+\n/, '')
+        code = code.strip
+        return code unless code.empty?
+      end
+
+      # > code
+      if text.start_with?('>')
+        code = text.sub(/\A>\s*/, '')
+        return code unless code.empty?
+      end
+
+      nil
+    end
+
     def unescape_slack(text)
       return text unless text
-      text.gsub("&amp;", "&").gsub("&lt;", "<").gsub("&gt;", ">")
-          .gsub("\u2018", "'").gsub("\u2019", "'")   # smart single quotes → straight
-          .gsub("\u201C", '"').gsub("\u201D", '"')    # smart double quotes → straight
+      text
+        .gsub(/<((?:https?|mailto):[^|>]+)\|([^>]+)>/, '\2')  # <http://url|label> → label
+        .gsub(/<((?:https?|mailto):[^>]+)>/, '\1')             # <http://url> → url
+        .gsub("&amp;", "&").gsub("&lt;", "<").gsub("&gt;", ">")
+        .gsub("\u2018", "'").gsub("\u2019", "'")   # smart single quotes → straight
+        .gsub("\u201C", '"').gsub("\u201D", '"')    # smart double quotes → straight
     end
 
     def waiting_for_reply?(channel)
