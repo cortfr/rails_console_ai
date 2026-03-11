@@ -65,6 +65,14 @@ module RailsConsoleAi
     ANY_CODE_FENCE_REGEX = /```\w*\s*\n.*?```/m
 
     def display_response(response)
+      # Slack: display full response as-is (code fences render natively).
+      # Code execution happens via the execute_plan tool, not code-fence extraction.
+      if @channel&.mode == 'slack'
+        $stdout.puts
+        @channel.display(response.strip) unless response.strip.empty?
+        return ''
+      end
+
       code = extract_code(response)
       explanation = response.gsub(ANY_CODE_FENCE_REGEX, '').strip
 

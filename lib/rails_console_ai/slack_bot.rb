@@ -449,6 +449,7 @@ module RailsConsoleAi
           unless result_value.nil?
             display_text = "=> #{result_value}"
             display_text = display_text[0, 3000] + "\n... (truncated)" if display_text.length > 3000
+            puts "#{channel.instance_variable_get(:@log_prefix)} >> #{display_text}"
             post_message(channel: channel_id, thread_ts: thread_ts, text: "```#{display_text}```")
           end
           engine.send(:log_interactive_turn)
