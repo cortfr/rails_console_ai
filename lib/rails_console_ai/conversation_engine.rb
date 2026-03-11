@@ -771,7 +771,7 @@ module RailsConsoleAi
             tool_result = tools.execute(tc[:name], tc[:arguments])
           else
             args_display = format_tool_args(tc[:name], tc[:arguments])
-            $stdout.puts "\e[33m  -> #{tc[:name]}#{args_display}\e[0m"
+            @channel.display_tool_call("#{tc[:name]}#{args_display}")
 
             tool_result = tools.execute(tc[:name], tc[:arguments])
 

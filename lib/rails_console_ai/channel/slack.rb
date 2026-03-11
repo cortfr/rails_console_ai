@@ -56,9 +56,16 @@ module RailsConsoleAi
         post(":x: #{strip_ansi(text)}")
       end
 
-      def display_code(_code)
+      def display_tool_call(text)
+        @output_log.write("-> #{text}\n")
+        STDOUT.puts "#{@log_prefix} -> #{text}"
+      end
+
+      def display_code(code)
         # Don't post raw code/plan steps to Slack — non-technical users don't need to see Ruby
-        nil
+        # But do log to STDOUT so server logs show what was generated/executed
+        @output_log.write("# Generated code:\n#{code}\n")
+        STDOUT.puts "#{@log_prefix} (code)\n# Generated code:\n#{code}"
       end
 
       def display_result_output(output)

@@ -18,6 +18,10 @@ module RailsConsoleAi
         $stdout.puts "\e[2m#{text}\e[0m"
       end
 
+      def display_tool_call(text)
+        $stdout.puts "\e[33m  -> #{text}\e[0m"
+      end
+
       def display_warning(text)
         $stdout.puts colorize(text, :yellow)
       end

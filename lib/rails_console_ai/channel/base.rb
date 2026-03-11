@@ -7,6 +7,7 @@ module RailsConsoleAi
       def display_error(text);      raise NotImplementedError; end
       def display_code(code);       raise NotImplementedError; end
       def display_result(text);     raise NotImplementedError; end
+      def display_tool_call(text); end  # tool call: "-> name(args)"
       def display_result_output(text); end  # stdout output from code execution
       def prompt(text);             raise NotImplementedError; end
       def confirm(text);            raise NotImplementedError; end
