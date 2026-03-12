@@ -353,7 +353,7 @@ module RailsConsoleAi
 
       def display_model_info
         config = RailsConsoleAi.configuration
-        model = config.resolved_model
+        model = @engine.effective_model
         thinking = config.resolved_thinking_model
         pricing = Configuration::PRICING[model]
 

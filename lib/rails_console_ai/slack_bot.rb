@@ -567,7 +567,7 @@ module RailsConsoleAi
           end
         end
       when 'model'
-        summary = bang_model
+        summary = bang_model(engine)
         post_message(channel: channel_id, thread_ts: thread_ts, text: summary)
       when 'think'
         model = engine.upgrade_to_thinking_model
@@ -619,9 +619,9 @@ module RailsConsoleAi
       end
     end
 
-    def bang_model
+    def bang_model(engine = nil)
       config = RailsConsoleAi.configuration
-      model = config.resolved_model
+      model = engine ? engine.effective_model : config.resolved_model
       thinking = config.resolved_thinking_model
       pricing = Configuration::PRICING[model]
 

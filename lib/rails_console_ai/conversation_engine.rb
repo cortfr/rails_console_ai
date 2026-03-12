@@ -544,6 +544,7 @@ module RailsConsoleAi
           name:  @session_name
         )
         log_attrs[:slack_thread_ts] = @slack_thread_ts if @slack_thread_ts
+        log_attrs[:model] = effective_model
         if @channel.user_identity
           log_attrs[:user_name] = @channel.mode == 'slack' ? "slack:#{@channel.user_identity}" : @channel.user_identity
         end
@@ -863,7 +864,7 @@ module RailsConsoleAi
       @total_input_tokens += result.input_tokens || 0
       @total_output_tokens += result.output_tokens || 0
 
-      model = RailsConsoleAi.configuration.resolved_model
+      model = effective_model
       @token_usage[model][:input] += result.input_tokens || 0
       @token_usage[model][:output] += result.output_tokens || 0
       @token_usage[model][:cache_read] = (@token_usage[model][:cache_read] || 0) + (result.cache_read_input_tokens || 0)
@@ -907,7 +908,8 @@ module RailsConsoleAi
         attrs.merge(
           input_tokens: @total_input_tokens,
           output_tokens: @total_output_tokens,
-          duration_ms: duration_ms
+          duration_ms: duration_ms,
+          model: effective_model
         )
       )
     end
@@ -1063,7 +1065,7 @@ module RailsConsoleAi
 
       input_t = result.input_tokens || 0
       output_t = result.output_tokens || 0
-      model = RailsConsoleAi.configuration.resolved_model
+      model = effective_model
       pricing = Configuration::PRICING[model]
       pricing ||= { input: 0.0, output: 0.0 } if RailsConsoleAi.configuration.provider == :local
 

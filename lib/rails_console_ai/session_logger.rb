@@ -19,7 +19,7 @@ module RailsConsoleAi
           console_output: attrs[:console_output],
           executed:      attrs[:executed] || false,
           provider:      RailsConsoleAi.configuration.provider.to_s,
-          model:         RailsConsoleAi.configuration.resolved_model,
+          model:         attrs[:model] || RailsConsoleAi.configuration.resolved_model,
           duration_ms:   attrs[:duration_ms],
           created_at:    Time.respond_to?(:current) ? Time.current : Time.now
         }
