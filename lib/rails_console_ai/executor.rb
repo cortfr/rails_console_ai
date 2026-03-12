@@ -100,8 +100,13 @@ module RailsConsoleAi
       @last_safety_exception = nil
       captured_output = StringIO.new
       old_stdout = $stdout
-      # Tee output: capture it and also print to the real stdout
-      $stdout = TeeIO.new(old_stdout, captured_output)
+      # When a channel is present it handles display (with truncation), so capture only.
+      # Without a channel, tee so output appears live on the terminal.
+      $stdout = if @channel
+                  captured_output
+                else
+                  TeeIO.new(old_stdout, captured_output)
+                end
 
       RailsConsoleAi::SafetyError.clear!
 

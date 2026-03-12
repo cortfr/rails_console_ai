@@ -37,6 +37,33 @@ module RailsConsoleAi
         $stdout.puts
       end
 
+      def display_result_output(output)
+        text = output.to_s
+        return if text.strip.empty?
+
+        lines = text.lines
+        total_lines = lines.length
+        total_chars = text.length
+
+        if total_lines <= MAX_DISPLAY_LINES && total_chars <= MAX_DISPLAY_CHARS
+          $stdout.print text
+        else
+          truncated = lines.first(MAX_DISPLAY_LINES).join
+          truncated = truncated[0, MAX_DISPLAY_CHARS] if truncated.length > MAX_DISPLAY_CHARS
+          $stdout.print truncated
+
+          omitted_lines = [total_lines - MAX_DISPLAY_LINES, 0].max
+          omitted_chars = [total_chars - truncated.length, 0].max
+          parts = []
+          parts << "#{omitted_lines} lines" if omitted_lines > 0
+          parts << "#{omitted_chars} chars" if omitted_chars > 0
+
+          @omitted_counter += 1
+          @omitted_outputs[@omitted_counter] = text
+          $stdout.puts colorize("  (output truncated, omitting #{parts.join(', ')})  /expand #{@omitted_counter} to see all", :yellow)
+        end
+      end
+
       def display_result(result)
         full = "=> #{result.inspect}"
         lines = full.lines
