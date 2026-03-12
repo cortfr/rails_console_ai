@@ -72,8 +72,8 @@ module RailsConsoleAi
           text: extract_text(response),
           input_tokens: usage&.input_tokens,
           output_tokens: usage&.output_tokens,
-          cache_read_input_tokens: usage.respond_to?(:cache_read_input_token_count) ? usage.cache_read_input_token_count : nil,
-          cache_write_input_tokens: usage.respond_to?(:cache_write_input_token_count) ? usage.cache_write_input_token_count : nil,
+          cache_read_input_tokens: usage.respond_to?(:cache_read_input_tokens) ? usage.cache_read_input_tokens : nil,
+          cache_write_input_tokens: usage.respond_to?(:cache_write_input_tokens) ? usage.cache_write_input_tokens : nil,
           tool_calls: tool_calls,
           stop_reason: stop
         )
@@ -175,7 +175,9 @@ module RailsConsoleAi
 
         usage = response.usage
         if usage
-          $stderr.puts "\e[36m[debug] response: #{response.stop_reason} | in: #{usage.input_tokens} out: #{usage.output_tokens}\e[0m"
+          cache_r = usage.respond_to?(:cache_read_input_tokens) ? usage.cache_read_input_tokens : 'N/A'
+          cache_w = usage.respond_to?(:cache_write_input_tokens) ? usage.cache_write_input_tokens : 'N/A'
+          $stderr.puts "\e[36m[debug] response: #{response.stop_reason} | in: #{usage.input_tokens} out: #{usage.output_tokens} | cache_r: #{cache_r} cache_w: #{cache_w}\e[0m"
         end
       end
     end
