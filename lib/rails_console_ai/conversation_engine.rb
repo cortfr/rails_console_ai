@@ -419,16 +419,21 @@ module RailsConsoleAi
 
     def upgrade_to_thinking_model
       config = RailsConsoleAi.configuration
-      current = config.resolved_model
+      current = effective_model
       thinking = config.resolved_thinking_model
 
       if current == thinking
         $stdout.puts "\e[36m  Already using thinking model (#{current}).\e[0m"
       else
-        config.model = thinking
+        @model_override = thinking
         @provider = nil
         $stdout.puts "\e[36m  Switched to thinking model: #{thinking}\e[0m"
       end
+      effective_model
+    end
+
+    def effective_model
+      @model_override || RailsConsoleAi.configuration.resolved_model
     end
 
     def compact_history
@@ -621,7 +626,15 @@ module RailsConsoleAi
     end
 
     def provider
-      @provider ||= Providers.build
+      @provider ||= begin
+        if @model_override
+          config = RailsConsoleAi.configuration.dup
+          config.model = @model_override
+          Providers.build(config)
+        else
+          Providers.build
+        end
+      end
     end
 
     def context_builder

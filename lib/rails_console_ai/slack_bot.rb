@@ -570,8 +570,7 @@ module RailsConsoleAi
         summary = bang_model
         post_message(channel: channel_id, thread_ts: thread_ts, text: summary)
       when 'think'
-        engine.upgrade_to_thinking_model
-        model = RailsConsoleAi.configuration.resolved_model
+        model = engine.upgrade_to_thinking_model
         post_message(channel: channel_id, thread_ts: thread_ts,
           text: "Switched to thinking model: `#{model}`")
       when 'context'
