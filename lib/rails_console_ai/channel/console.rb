@@ -286,6 +286,8 @@ module RailsConsoleAi
           display_model_info
         when '/think'
           @engine.upgrade_to_thinking_model
+        when '/unthink'
+          @engine.downgrade_from_thinking_model
         when /\A\/expand/
           expand_id = input.sub('/expand', '').strip.to_i
           full_output = expand_output(expand_id)
@@ -396,6 +398,7 @@ module RailsConsoleAi
         end
         @real_stdout.puts "\e[2m    /model       Show provider, model, and pricing info\e[0m"
         @real_stdout.puts "\e[2m    /think       Switch to thinking model\e[0m"
+        @real_stdout.puts "\e[2m    /unthink     Switch back to default model\e[0m"
         @real_stdout.puts "\e[2m    /compact     Summarize conversation to reduce context\e[0m"
         @real_stdout.puts "\e[2m    /usage       Show session token totals\e[0m"
         @real_stdout.puts "\e[2m    /cost        Show cost estimate by model\e[0m"

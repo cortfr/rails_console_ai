@@ -573,6 +573,10 @@ module RailsConsoleAi
         model = engine.upgrade_to_thinking_model
         post_message(channel: channel_id, thread_ts: thread_ts,
           text: "Switched to thinking model: `#{model}`")
+      when 'unthink'
+        model = engine.downgrade_from_thinking_model
+        post_message(channel: channel_id, thread_ts: thread_ts,
+          text: "Switched to default model: `#{model}`")
       when 'context'
         summary = bang_context(engine)
         post_message(channel: channel_id, thread_ts: thread_ts, text: summary)
@@ -591,7 +595,7 @@ module RailsConsoleAi
           end
         end
       else
-        commands = %w[name usage cost model compact think context retry].map { |c| "`!#{c}`" }
+        commands = %w[name usage cost model compact think unthink context retry].map { |c| "`!#{c}`" }
         post_message(channel: channel_id, thread_ts: thread_ts,
           text: "Unknown command `!#{cmd}`. Available: #{commands.join(', ')}")
       end

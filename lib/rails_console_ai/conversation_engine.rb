@@ -432,6 +432,21 @@ module RailsConsoleAi
       effective_model
     end
 
+    def downgrade_from_thinking_model
+      config = RailsConsoleAi.configuration
+      default = config.resolved_model
+      current = effective_model
+
+      if current == default && @model_override.nil?
+        $stdout.puts "\e[36m  Already using default model (#{current}).\e[0m"
+      else
+        @model_override = nil
+        @provider = nil
+        $stdout.puts "\e[36m  Switched back to default model: #{default}\e[0m"
+      end
+      effective_model
+    end
+
     def effective_model
       @model_override || RailsConsoleAi.configuration.resolved_model
     end
