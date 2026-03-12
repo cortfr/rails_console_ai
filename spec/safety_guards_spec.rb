@@ -390,6 +390,45 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
       it 'gracefully handles unknown classes' do
         expect { guards.install_bypass_method!('NonexistentClass#foo') }.not_to raise_error
       end
+
+      it 'gracefully handles specs with no method name' do
+        expect { guards.install_bypass_method!('JustAClassName') }.not_to raise_error
+      end
+    end
+
+    context 'install_bypass_method! with class methods (dot notation)' do
+      let(:target_class) do
+        klass = Class.new do
+          def self.class_level_method
+            :original
+          end
+        end
+        stub_const('FakeClassMethodClass', klass)
+        klass
+      end
+
+      before { target_class }
+
+      after do
+        Thread.current[:rails_console_ai_bypass_methods] = nil
+      end
+
+      it 'installs bypass on the singleton class for dot-notation specs' do
+        guards.install_bypass_method!('FakeClassMethodClass.class_level_method')
+        result = nil
+        guards.wrap(additional_bypass_methods: Set.new(['FakeClassMethodClass.class_level_method'])) do
+          result = FakeClassMethodClass.class_level_method
+        end
+        expect(result).to eq(:original)
+      end
+
+      it 'is idempotent for class method specs' do
+        ancestor_count_before = target_class.singleton_class.ancestors.length
+        guards.install_bypass_method!('FakeClassMethodClass.class_level_method')
+        guards.install_bypass_method!('FakeClassMethodClass.class_level_method')
+        ancestor_count_after = target_class.singleton_class.ancestors.length
+        expect(ancestor_count_after - ancestor_count_before).to eq(1)
+      end
     end
 
     context 'channel-specific bypass methods' do

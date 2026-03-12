@@ -113,7 +113,16 @@ module RailsConsoleAi
       @installed_bypass_specs ||= Set.new
       return if @installed_bypass_specs.include?(spec)
 
-      class_name, method_name = spec.split('#')
+      if spec.include?('.')
+        class_name, method_name = spec.split('.')
+        class_method = true
+      else
+        class_name, method_name = spec.split('#')
+        class_method = false
+      end
+
+      return unless method_name && !method_name.empty?
+
       klass = Object.const_get(class_name) rescue return
       method_sym = method_name.to_sym
 
@@ -126,7 +135,12 @@ module RailsConsoleAi
           end
         end
       end
-      klass.prepend(bypass_mod)
+
+      if class_method
+        klass.singleton_class.prepend(bypass_mod)
+      else
+        klass.prepend(bypass_mod)
+      end
       @installed_bypass_specs << spec
     end
 
