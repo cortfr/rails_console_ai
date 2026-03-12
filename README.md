@@ -62,7 +62,8 @@ end
 | `ai!` | Enter interactive mode (multi-turn conversation) |
 | `ai? "query"` | Explain only, no execution |
 | `ai_init` | Generate app guide for better AI context |
-| `ai_setup` | Install session logging table |
+| `ai_db_setup` | Install session logging table + run migrations |
+| `ai_db_migrate` | Run pending session table migrations |
 | `ai_sessions` | List recent sessions |
 | `ai_resume` | Resume a session by name or ID |
 | `ai_memories` | Show stored memories |
@@ -100,7 +101,7 @@ Say "think harder" in any query to auto-upgrade to the thinking model for that s
 - **Skills** — predefined procedures with guard bypasses that the AI activates on demand
 - **Memories** — AI saves what it learns about your app across sessions
 - **App guide** — `ai_init` generates a guide injected into every system prompt
-- **Sessions** — name, list, and resume interactive conversations (`ai_setup` to enable)
+- **Sessions** — name, list, and resume interactive conversations (`ai_db_setup` to enable)
 - **History compaction** — `/compact` summarizes long conversations to reduce cost and latency
 - **Output trimming** — older execution outputs are automatically replaced with references; the LLM can recall them on demand via `recall_output`, and you can `/expand <id>` to see them
 - **Debug mode** — `/debug` shows context breakdown, token counts, and per-call cost estimates before and after each LLM call
@@ -296,7 +297,7 @@ Timeout is automatically raised to 300s minimum for local models to account for 
 RailsConsoleAi.configure do |config|
   config.provider = :anthropic       # :anthropic, :openai, :bedrock, :local
   config.auto_execute = false         # true to skip confirmations
-  config.session_logging = true       # requires ai_setup
+  config.session_logging = true       # requires ai_db_setup
   config.temperature = 0.2
   config.timeout = 30                 # HTTP timeout in seconds
   config.max_tool_rounds = 200        # safety cap on tool-use loops

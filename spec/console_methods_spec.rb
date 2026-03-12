@@ -122,11 +122,19 @@ RSpec.describe RailsConsoleAi::ConsoleMethods do
     end
   end
 
-  describe '#ai_setup' do
+  describe '#ai_db_setup' do
     it 'delegates to RailsConsoleAi.setup!' do
       allow(RailsConsoleAi).to receive(:setup!)
-      instance.ai_setup
+      instance.ai_db_setup
       expect(RailsConsoleAi).to have_received(:setup!)
+    end
+  end
+
+  describe '#ai_db_migrate' do
+    it 'delegates to RailsConsoleAi.migrate!' do
+      allow(RailsConsoleAi).to receive(:migrate!)
+      instance.ai_db_migrate
+      expect(RailsConsoleAi).to have_received(:migrate!)
     end
   end
 
@@ -136,7 +144,7 @@ RSpec.describe RailsConsoleAi::ConsoleMethods do
       expect(output).to include('ai_sessions')
       expect(output).to include('ai_resume')
       expect(output).to include('ai_name')
-      expect(output).to include('ai_setup')
+      expect(output).to include('ai_db_setup')
     end
   end
 end

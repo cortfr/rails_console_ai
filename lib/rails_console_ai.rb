@@ -93,10 +93,7 @@ module RailsConsoleAi
       conn = session_connection
       table = 'rails_console_ai_sessions'
 
-      if conn.table_exists?(table)
-        $stdout.puts "\e[32mRailsConsoleAi: #{table} already exists — checking for pending migrations.\e[0m"
-        migrate!
-      else
+      unless conn.table_exists?(table)
         conn.create_table(table) do |t|
           t.text    :query,         null: false
           t.text    :conversation,  null: false
@@ -112,6 +109,7 @@ module RailsConsoleAi
           t.string  :provider,      limit: 50
           t.string  :model,         limit: 100
           t.string  :name,          limit: 255
+          t.string  :slack_thread_ts, limit: 255
           t.integer :duration_ms
           t.datetime :created_at,   null: false
         end
@@ -119,9 +117,12 @@ module RailsConsoleAi
         conn.add_index(table, :created_at)
         conn.add_index(table, :user_name)
         conn.add_index(table, :name)
+        conn.add_index(table, :slack_thread_ts)
 
         $stdout.puts "\e[32mRailsConsoleAi: created #{table} table.\e[0m"
       end
+
+      migrate!
     rescue => e
       $stderr.puts "\e[31mRailsConsoleAi setup failed: #{e.class}: #{e.message}\e[0m"
     end
