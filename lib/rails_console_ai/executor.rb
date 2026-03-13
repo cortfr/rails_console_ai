@@ -234,31 +234,6 @@ module RailsConsoleAi
             $stdout.puts colorize("Executing with safety guards disabled.", :red)
           end
           return execute_unsafe(code)
-        when 'e', 'edit'
-          edited = if @channel && @channel.supports_editing?
-                     @channel.edit_code(code)
-                   else
-                     open_in_editor(code)
-                   end
-          if edited && edited != code
-            $stdout.puts colorize("# Edited code:", :yellow)
-            $stdout.puts highlight_code(edited)
-            if @channel
-              edit_answer = @channel.confirm("Execute edited code? [y/N] ")
-            else
-              $stdout.print colorize("Execute edited code? [y/N] ", :yellow)
-              edit_answer = $stdin.gets.to_s.strip.downcase
-              echo_stdin(edit_answer)
-            end
-            if edit_answer == 'y'
-              return execute(edited)
-            else
-              $stdout.puts colorize("Cancelled.", :yellow)
-              return nil
-            end
-          else
-            return execute(code)
-          end
         when 'n', 'no', ''
           $stdout.puts colorize("Cancelled.", :yellow)
           @last_cancelled = true
@@ -371,9 +346,9 @@ module RailsConsoleAi
     def execute_prompt
       guards = RailsConsoleAi.configuration.safety_guards
       if !guards.empty? && guards.enabled? && danger_allowed?
-        "Execute? [y/N/edit/danger] "
+        "Execute? [y/N/danger] "
       else
-        "Execute? [y/N/edit] "
+        "Execute? [y/N] "
       end
     end
 

@@ -12,7 +12,7 @@ irb> ai "find the 5 most recent orders over $100"
 
   Order.where("total > ?", 100).order(created_at: :desc).limit(5)
 
-Execute? [y/N/edit/danger] y
+Execute? [y/N/danger] y
 => [#<Order id: 4821, ...>, ...]
 ```
 
@@ -214,7 +214,7 @@ Skills and global `bypass_guards_for_methods` coexist — use config-level bypas
 ### Toggling Safe Mode
 
 - **`/danger`** in interactive mode toggles all guards off/on for the session
-- **`d`** at the `Execute? [y/N/edit/danger]` prompt disables guards for that single execution
+- **`d`** at the `Execute? [y/N/danger]` prompt disables guards for that single execution
 - When a guard blocks an operation, the user is prompted: `Re-run with safe mode disabled? [y/N]`
 
 ## LLM Providers
