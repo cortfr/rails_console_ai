@@ -803,6 +803,28 @@ module RailsConsoleAi
         last_tool_names = result.tool_calls.map { |tc| tc[:name] }
         result.tool_calls.each do |tc|
           break if @channel.cancelled?
+
+          # Intercept recall_output/recall_outputs: expand in place instead of adding large messages
+          if tc[:name] == 'recall_output' || tc[:name] == 'recall_outputs'
+            ids = if tc[:name] == 'recall_outputs'
+                    Array(tc[:arguments]['ids']).map(&:to_i)
+                  else
+                    [tc[:arguments]['id'].to_i]
+                  end
+            @channel.display_tool_call("#{tc[:name]}(#{ids.join(', ')})")
+            expanded = expand_outputs_in_place(messages, ids)
+            tool_result = if expanded.any?
+                            "Expanded #{expanded.length} output(s) in conversation. The full content is now visible in the original message(s) above."
+                          else
+                            "No matching outputs found with id(s) #{ids.join(', ')}."
+                          end
+            @channel.display_dim("     #{tool_result}")
+            tool_msg = provider.format_tool_result(tc[:id], tool_result)
+            messages << tool_msg
+            new_messages << tool_msg
+            next
+          end
+
           if tc[:name] == 'ask_user' || tc[:name] == 'execute_plan'
             # Display any pending LLM text before prompting the user
             if last_thinking
@@ -1110,16 +1132,14 @@ module RailsConsoleAi
                                .select { |m, _| m[:output_id] }
                                .map { |_, i| i }
 
-      if output_indices.length <= RECENT_OUTPUTS_TO_KEEP
-        return messages.map { |m| m.except(:output_id) }
-      end
+      return messages if output_indices.length <= RECENT_OUTPUTS_TO_KEEP
 
       trim_indices = output_indices[0..-(RECENT_OUTPUTS_TO_KEEP + 1)]
       messages.each_with_index.map do |msg, i|
         if trim_indices.include?(i)
           trim_message(msg)
         else
-          msg.except(:output_id)
+          msg
         end
       end
     end
@@ -1135,13 +1155,36 @@ module RailsConsoleAi
             block
           end
         end
-        { role: msg[:role], content: trimmed_content }
+        msg.merge(content: trimmed_content)
       elsif msg[:role].to_s == 'tool'
-        msg.except(:output_id).merge(content: ref)
+        msg.merge(content: ref)
       else
         first_line = msg[:content].to_s.lines.first&.strip || msg[:content]
-        { role: msg[:role], content: "#{first_line}\n#{ref}" }
+        msg.merge(content: "#{first_line}\n#{ref}")
       end
+    end
+
+    def expand_outputs_in_place(messages, ids)
+      expanded = []
+      messages.each do |msg|
+        next unless msg[:output_id] && ids.include?(msg[:output_id])
+        full_output = @executor.recall_output(msg[:output_id])
+        next unless full_output
+        # Replace content with full output (handle both Anthropic and OpenAI message formats)
+        if msg[:content].is_a?(Array)
+          msg[:content] = msg[:content].map do |block|
+            if block.is_a?(Hash) && block['type'] == 'tool_result'
+              block.merge('content' => full_output)
+            else
+              block
+            end
+          end
+        elsif msg[:role].to_s == 'tool'
+          msg[:content] = full_output
+        end
+        expanded << msg.delete(:output_id)
+      end
+      expanded
     end
 
     def extract_executed_code(history)

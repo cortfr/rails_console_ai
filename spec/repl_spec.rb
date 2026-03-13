@@ -539,10 +539,10 @@ RSpec.describe RailsConsoleAi::Repl do
       end
     end
 
-    it 'strips output_id from messages sent to LLM' do
+    it 'preserves output_id on messages' do
       history = [{ role: :user, content: "test", output_id: 1 }]
       trimmed = repl.send(:trim_old_outputs, history)
-      expect(trimmed.first).not_to have_key(:output_id)
+      expect(trimmed.first[:output_id]).to eq(1)
     end
 
     it 'trims Anthropic tool result messages' do
@@ -589,6 +589,71 @@ RSpec.describe RailsConsoleAi::Repl do
       trimmed = repl.send(:trim_old_outputs, history)
       expect(trimmed[0][:content]).to eq("hello")
       expect(trimmed[1][:content]).to eq("hi")
+    end
+  end
+
+  describe 'expand_outputs_in_place' do
+    let(:engine) { repl.instance_variable_get(:@engine) }
+    let(:executor) { engine.instance_variable_get(:@executor) }
+
+    it 'expands Anthropic tool_result messages in place' do
+      full_output = "full output data here"
+      output_id = executor.store_output(full_output)
+      messages = [
+        { role: 'user', content: [{ 'type' => 'tool_result', 'tool_use_id' => 'tool_1', 'content' => '[Output omitted]' }], output_id: output_id }
+      ]
+
+      expanded = engine.send(:expand_outputs_in_place, messages, [output_id])
+
+      expect(expanded).to eq([output_id])
+      expect(messages[0][:content][0]['content']).to eq(full_output)
+      expect(messages[0]).not_to have_key(:output_id)
+    end
+
+    it 'expands OpenAI tool messages in place' do
+      full_output = "openai full output"
+      output_id = executor.store_output(full_output)
+      messages = [
+        { role: 'tool', tool_call_id: 'tc_1', content: '[Output omitted]', output_id: output_id }
+      ]
+
+      expanded = engine.send(:expand_outputs_in_place, messages, [output_id])
+
+      expect(expanded).to eq([output_id])
+      expect(messages[0][:content]).to eq(full_output)
+      expect(messages[0]).not_to have_key(:output_id)
+    end
+
+    it 'removes output_id after expansion so trim_old_outputs ignores it' do
+      output_id = executor.store_output("data")
+      messages = [
+        { role: 'tool', content: '[Output omitted]', output_id: output_id }
+      ]
+
+      engine.send(:expand_outputs_in_place, messages, [output_id])
+
+      # After expansion, trim_old_outputs should not find any output_ids
+      trimmed = repl.send(:trim_old_outputs, messages)
+      expect(trimmed).to eq(messages)
+    end
+
+    it 'returns empty array when no matching ids found' do
+      messages = [
+        { role: 'tool', content: 'some content', output_id: 42 }
+      ]
+
+      expanded = engine.send(:expand_outputs_in_place, messages, [999])
+      expect(expanded).to be_empty
+    end
+
+    it 'skips messages where executor has no stored output' do
+      messages = [
+        { role: 'tool', content: '[Output omitted]', output_id: 999 }
+      ]
+
+      expanded = engine.send(:expand_outputs_in_place, messages, [999])
+      expect(expanded).to be_empty
+      expect(messages[0]).to have_key(:output_id)
     end
   end
 

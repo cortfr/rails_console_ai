@@ -76,6 +76,29 @@ RSpec.describe RailsConsoleAi::Tools::Registry do
     end
   end
 
+  describe 'recall_outputs tool' do
+    it 'is registered when executor is provided' do
+      executor = RailsConsoleAi::Executor.new(binding)
+      reg = described_class.new(executor: executor)
+      names = reg.definitions.map { |d| d[:name] }
+      expect(names).to include('recall_outputs')
+    end
+
+    it 'is not registered without an executor' do
+      names = registry.definitions.map { |d| d[:name] }
+      expect(names).not_to include('recall_outputs')
+    end
+
+    it 'has ids parameter as required array of integers' do
+      executor = RailsConsoleAi::Executor.new(binding)
+      reg = described_class.new(executor: executor)
+      defn = reg.definitions.find { |d| d[:name] == 'recall_outputs' }
+      expect(defn[:parameters]['required']).to eq(['ids'])
+      expect(defn[:parameters]['properties']['ids']['type']).to eq('array')
+      expect(defn[:parameters]['properties']['ids']['items']['type']).to eq('integer')
+    end
+  end
+
   describe 'activate_skill tool' do
     let(:tmpdir) { Dir.mktmpdir('rails_console_ai_test') }
     let(:storage) { RailsConsoleAi::Storage::FileStorage.new(tmpdir) }

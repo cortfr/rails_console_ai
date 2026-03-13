@@ -186,7 +186,7 @@ module RailsConsoleAi
         if @executor
           register(
             name: 'recall_output',
-            description: 'Retrieve a previous code execution output that was omitted from the conversation to save context. Use the output id shown in the "[Output omitted]" placeholder.',
+            description: 'Retrieve a previous code execution output that was omitted or truncated. The output will be expanded in place in the conversation. Use the output id shown in the "[Output omitted]" or "[Output truncated]" placeholder.',
             parameters: {
               'type' => 'object',
               'properties' => {
@@ -198,6 +198,19 @@ module RailsConsoleAi
               result = @executor.recall_output(args['id'].to_i)
               result || "No output found with id #{args['id']}"
             }
+          )
+
+          register(
+            name: 'recall_outputs',
+            description: 'Retrieve multiple previous code execution outputs that were omitted from the conversation. Use the output ids shown in "[Output omitted]" or "[Output truncated]" placeholders.',
+            parameters: {
+              'type' => 'object',
+              'properties' => {
+                'ids' => { 'type' => 'array', 'items' => { 'type' => 'integer' }, 'description' => 'The output ids to retrieve' }
+              },
+              'required' => ['ids']
+            },
+            handler: ->(args) { "recall_outputs handled by conversation engine" }
           )
         end
 
