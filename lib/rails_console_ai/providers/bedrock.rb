@@ -121,6 +121,8 @@ module RailsConsoleAi
                     else
                       [{ text: msg[:content].to_s }]
                     end
+          # Bedrock rejects empty text blocks in content arrays
+          content.reject! { |block| block.is_a?(Hash) && block.key?(:text) && !block.key?(:tool_use) && !block.key?(:tool_result) && block[:text].to_s.empty? }
           { role: msg[:role].to_s, content: content }
         end
 
