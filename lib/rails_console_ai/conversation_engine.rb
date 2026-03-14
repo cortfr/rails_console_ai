@@ -242,11 +242,16 @@ module RailsConsoleAi
       output_parts << "Return value: #{exec_result.inspect}" if exec_result
 
       result_str = output_parts.join("\n\n")
-      result_str = result_str[0..1000] + '...' if result_str.length > 1000
 
       context_msg = "User directly executed code: `#{raw_code}`"
-      context_msg += "\n#{result_str}" unless output_parts.empty?
-      output_id = output_parts.empty? ? nil : @executor.store_output(result_str)
+      if result_str.length > LARGE_OUTPUT_THRESHOLD
+        output_id = @executor.store_output(result_str)
+        preview = result_str[0, LARGE_OUTPUT_PREVIEW_CHARS]
+        context_msg += "\n#{preview}\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{result_str.length} chars — use recall_output tool with id #{output_id} to retrieve the full output]"
+      elsif !output_parts.empty?
+        output_id = @executor.store_output(result_str)
+        context_msg += "\n#{result_str}"
+      end
       @history << { role: :user, content: context_msg, output_id: output_id }
 
       @interactive_query ||= "> #{raw_code}"
@@ -314,9 +319,15 @@ module RailsConsoleAi
           output_parts << "Return value: #{exec_result.inspect}" if exec_result
           unless output_parts.empty?
             result_str = output_parts.join("\n\n")
-            result_str = result_str[0..1000] + '...' if result_str.length > 1000
             output_id = @executor.store_output(result_str)
-            @history << { role: :user, content: "Code was executed (safety override). #{result_str}", output_id: output_id }
+            context_msg = "Code was executed (safety override). "
+            if result_str.length > LARGE_OUTPUT_THRESHOLD
+              context_msg += result_str[0, LARGE_OUTPUT_PREVIEW_CHARS]
+              context_msg += "\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{result_str.length} chars — use recall_output tool with id #{output_id} to retrieve the full output]"
+            else
+              context_msg += result_str
+            end
+            @history << { role: :user, content: context_msg, output_id: output_id }
           end
           :success
         else
@@ -336,9 +347,15 @@ module RailsConsoleAi
 
         unless output_parts.empty?
           result_str = output_parts.join("\n\n")
-          result_str = result_str[0..1000] + '...' if result_str.length > 1000
           output_id = @executor.store_output(result_str)
-          @history << { role: :user, content: "Code was executed. #{result_str}", output_id: output_id }
+          context_msg = "Code was executed. "
+          if result_str.length > LARGE_OUTPUT_THRESHOLD
+            context_msg += result_str[0, LARGE_OUTPUT_PREVIEW_CHARS]
+            context_msg += "\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{result_str.length} chars — use recall_output tool with id #{output_id} to retrieve the full output]"
+          else
+            context_msg += result_str
+          end
+          @history << { role: :user, content: context_msg, output_id: output_id }
         end
 
         :success
@@ -872,6 +889,10 @@ module RailsConsoleAi
         exhausted = true if round == max_rounds - 1
       end
 
+      # Re-truncate any outputs that were expanded for the LLM — the LLM has
+      # seen them and responded, so collapse back to save context on future calls.
+      re_truncate_expanded(messages)
+
       if exhausted
         $stdout.puts "\e[33m  Hit tool round limit (#{max_rounds}). Forcing final answer. Increase with: RailsConsoleAi.configure { |c| c.max_tool_rounds = 200 }\e[0m"
         messages << { role: :user, content: "You've used all available tool rounds. Please provide your best answer now based on what you've learned so far." }
@@ -1172,7 +1193,9 @@ module RailsConsoleAi
         next unless msg[:output_id] && ids.include?(msg[:output_id])
         full_output = @executor.recall_output(msg[:output_id])
         next unless full_output
-        # Replace content with full output (handle both Anthropic and OpenAI message formats)
+        # Save original content so re_truncate_expanded can restore it
+        msg[:pre_expand_content] = msg[:content]
+        # Replace content with full output (handle Anthropic, OpenAI, and user message formats)
         if msg[:content].is_a?(Array)
           msg[:content] = msg[:content].map do |block|
             if block.is_a?(Hash) && block['type'] == 'tool_result'
@@ -1183,10 +1206,25 @@ module RailsConsoleAi
           end
         elsif msg[:role].to_s == 'tool'
           msg[:content] = full_output
+        else
+          # User messages (e.g., direct execution) — preserve first line, replace rest
+          first_line = msg[:content].to_s.lines.first&.chomp || ''
+          msg[:content] = "#{first_line}\n#{full_output}"
         end
-        expanded << msg.delete(:output_id)
+        msg[:expanded] = true
+        expanded << msg[:output_id]
       end
       expanded
+    end
+
+    # Restore messages that were temporarily expanded back to their original
+    # (preview/truncated) content. Called after the LLM has seen the expanded
+    # content and responded.
+    def re_truncate_expanded(messages)
+      messages.each do |msg|
+        next unless msg.delete(:expanded)
+        msg[:content] = msg.delete(:pre_expand_content)
+      end
     end
 
     def extract_executed_code(history)

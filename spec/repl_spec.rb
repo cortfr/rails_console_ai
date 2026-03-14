@@ -607,7 +607,8 @@ RSpec.describe RailsConsoleAi::Repl do
 
       expect(expanded).to eq([output_id])
       expect(messages[0][:content][0]['content']).to eq(full_output)
-      expect(messages[0]).not_to have_key(:output_id)
+      expect(messages[0][:output_id]).to eq(output_id)
+      expect(messages[0][:expanded]).to eq(true)
     end
 
     it 'expands OpenAI tool messages in place' do
@@ -621,20 +622,22 @@ RSpec.describe RailsConsoleAi::Repl do
 
       expect(expanded).to eq([output_id])
       expect(messages[0][:content]).to eq(full_output)
-      expect(messages[0]).not_to have_key(:output_id)
+      expect(messages[0][:output_id]).to eq(output_id)
+      expect(messages[0][:expanded]).to eq(true)
     end
 
-    it 'removes output_id after expansion so trim_old_outputs ignores it' do
-      output_id = executor.store_output("data")
+    it 'expands user messages (direct execution) in place' do
+      full_output = "full direct execution output"
+      output_id = executor.store_output(full_output)
       messages = [
-        { role: 'tool', content: '[Output omitted]', output_id: output_id }
+        { role: :user, content: "User directly executed code: `some_code`\ntruncated preview...", output_id: output_id }
       ]
 
-      engine.send(:expand_outputs_in_place, messages, [output_id])
+      expanded = engine.send(:expand_outputs_in_place, messages, [output_id])
 
-      # After expansion, trim_old_outputs should not find any output_ids
-      trimmed = repl.send(:trim_old_outputs, messages)
-      expect(trimmed).to eq(messages)
+      expect(expanded).to eq([output_id])
+      expect(messages[0][:content]).to eq("User directly executed code: `some_code`\n#{full_output}")
+      expect(messages[0][:expanded]).to eq(true)
     end
 
     it 'returns empty array when no matching ids found' do
@@ -654,6 +657,52 @@ RSpec.describe RailsConsoleAi::Repl do
       expanded = engine.send(:expand_outputs_in_place, messages, [999])
       expect(expanded).to be_empty
       expect(messages[0]).to have_key(:output_id)
+    end
+  end
+
+  describe 're_truncate_expanded' do
+    let(:engine) { repl.instance_variable_get(:@engine) }
+    let(:executor) { engine.instance_variable_get(:@executor) }
+
+    it 'restores original content after expansion' do
+      output_id = executor.store_output("full data here")
+      original_content = "truncated preview...\n[Output truncated — use recall_output]"
+      messages = [
+        { role: 'tool', content: original_content, output_id: output_id }
+      ]
+
+      # Expand then re-truncate
+      engine.send(:expand_outputs_in_place, messages, [output_id])
+      expect(messages[0][:content]).to eq("full data here")
+
+      engine.send(:re_truncate_expanded, messages)
+      expect(messages[0][:content]).to eq(original_content)
+      expect(messages[0]).not_to have_key(:expanded)
+      expect(messages[0]).not_to have_key(:pre_expand_content)
+      expect(messages[0][:output_id]).to eq(output_id)
+    end
+
+    it 'does not touch messages without expanded flag' do
+      messages = [
+        { role: 'tool', content: 'keep this', output_id: 1 }
+      ]
+
+      engine.send(:re_truncate_expanded, messages)
+
+      expect(messages[0][:content]).to eq('keep this')
+    end
+
+    it 'restores user message original content with preview' do
+      output_id = executor.store_output("full data")
+      original_content = "User directly executed code: `test`\npreview of data...\n[Output truncated]"
+      messages = [
+        { role: :user, content: original_content, output_id: output_id }
+      ]
+
+      engine.send(:expand_outputs_in_place, messages, [output_id])
+      engine.send(:re_truncate_expanded, messages)
+
+      expect(messages[0][:content]).to eq(original_content)
     end
   end
 
