@@ -95,9 +95,6 @@ module RailsConsoleAi
 
         RULES:
         - Give ONE concise answer. Do not offer multiple alternatives or variations.
-        - When execute_code succeeds and returns data, provide your answer IMMEDIATELY.
-          Do NOT re-run the same query with different output formatting (e.g. changing puts
-          to p, or wrapping in a hash). The first successful result is sufficient.
         - For multi-step tasks, use execute_plan to break the work into small, clear steps.
         - For simple queries, use the execute_code tool.
         - Before calling tools, briefly state what you're about to do (e.g., "Let me check the

@@ -7,8 +7,6 @@ module RailsConsoleAi
     LARGE_OUTPUT_PREVIEW_CHARS = 8_000   # chars — how much of the output the LLM sees upfront
     LOOP_WARN_THRESHOLD = 3              # same tool+args repeated → inject warning
     LOOP_BREAK_THRESHOLD = 5             # same tool+args repeated → break loop
-    CONSECUTIVE_EXEC_WARN = 3            # consecutive execute_code calls → nudge LLM to answer
-    CONSECUTIVE_EXEC_BREAK = 5           # consecutive execute_code calls → force stop
 
     def initialize(binding_context:, channel:, slack_thread_ts: nil, slack_channel_name: nil)
       @binding_context = binding_context
@@ -789,7 +787,6 @@ module RailsConsoleAi
 
       exhausted = false
       tool_call_counts = Hash.new(0)
-      consecutive_exec_count = 0
 
       max_rounds.times do |round|
         if @channel.cancelled?
@@ -917,23 +914,6 @@ module RailsConsoleAi
             @channel.display_status("  Warning: #{tc[:name]} called #{tool_call_counts[key]} times with same args — consider a different approach.")
             messages << { role: :user, content: "You are repeating the same tool call (#{tc[:name]}) with the same arguments. This is not making progress. Try a different approach or provide your answer now." }
           end
-        end
-        break if exhausted
-
-        # Consecutive execute_code detection: catch the LLM re-running similar code with minor tweaks
-        tool_names = result.tool_calls.map { |tc| tc[:name] }
-        if tool_names.all? { |n| n == 'execute_code' } && tool_names.any?
-          consecutive_exec_count += 1
-        else
-          consecutive_exec_count = 0
-        end
-
-        if consecutive_exec_count >= CONSECUTIVE_EXEC_BREAK
-          @channel.display_status("  Loop detected: #{consecutive_exec_count} consecutive execute_code calls — stopping.")
-          exhausted = true
-        elsif consecutive_exec_count >= CONSECUTIVE_EXEC_WARN
-          @channel.display_status("  Warning: #{consecutive_exec_count} consecutive execute_code calls — nudging LLM to answer.")
-          messages << { role: :user, content: "You have called execute_code #{consecutive_exec_count} times in a row. Your earlier executions already returned the data you need. Do NOT re-run the same query with different output formatting. Provide your answer NOW based on the results you already have." }
         end
         break if exhausted
 
