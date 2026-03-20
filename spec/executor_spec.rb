@@ -5,6 +5,10 @@ RSpec.describe RailsConsoleAi::Executor do
   let(:test_binding) { binding }
   subject(:executor) { described_class.new(test_binding) }
 
+  after do
+    Thread.current[:rails_console_ai_guards_disabled] = nil
+  end
+
   describe '#extract_code' do
     it 'extracts a single ruby code block' do
       response = <<~TEXT

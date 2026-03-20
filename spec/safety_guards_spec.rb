@@ -19,6 +19,12 @@ end
 RSpec.describe RailsConsoleAi::SafetyGuards do
   subject(:guards) { described_class.new }
 
+  after do
+    # Clean up thread-locals that disable!/enable!/allow now use
+    Thread.current[:rails_console_ai_guards_disabled] = nil
+    Thread.current[:rails_console_ai_allowlist] = nil
+  end
+
   describe '#add' do
     it 'registers a guard by name' do
       guards.add(:test_guard) { |&b| b.call }

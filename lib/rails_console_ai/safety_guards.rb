@@ -41,15 +41,15 @@ module RailsConsoleAi
     end
 
     def enabled?
-      @enabled
+      @enabled && !Thread.current[:rails_console_ai_guards_disabled]
     end
 
     def enable!
-      @enabled = true
+      Thread.current[:rails_console_ai_guards_disabled] = nil
     end
 
     def disable!
-      @enabled = false
+      Thread.current[:rails_console_ai_guards_disabled] = true
     end
 
     def empty?
@@ -60,33 +60,52 @@ module RailsConsoleAi
       @guards.keys
     end
 
-    def allow(guard_name, key)
+    # Add a permanent (config-time) allowlist entry visible to all threads.
+    def allow_global(guard_name, key)
       guard_name = guard_name.to_sym
       @allowlist[guard_name] ||= []
       @allowlist[guard_name] << key unless @allowlist[guard_name].include?(key)
     end
 
-    def allowed?(guard_name, key)
-      entries = @allowlist[guard_name.to_sym]
-      return false unless entries
+    # Add a thread-local allowlist entry (runtime "allow for this session").
+    def allow(guard_name, key)
+      thread_list = Thread.current[:rails_console_ai_allowlist] ||= {}
+      guard_name = guard_name.to_sym
+      thread_list[guard_name] ||= []
+      thread_list[guard_name] << key unless thread_list[guard_name].include?(key)
+    end
 
-      entries.any? do |entry|
-        case entry
-        when Regexp then key.match?(entry)
-        else entry.to_s == key.to_s
+    def allowed?(guard_name, key)
+      guard_name = guard_name.to_sym
+      match = ->(entries) {
+        entries&.any? do |entry|
+          case entry
+          when Regexp then key.match?(entry)
+          else entry.to_s == key.to_s
+          end
         end
-      end
+      }
+      # Check global (config-time) allowlist
+      return true if match.call(@allowlist[guard_name])
+      # Check thread-local (runtime session) allowlist
+      thread_list = Thread.current[:rails_console_ai_allowlist]
+      return true if thread_list && match.call(thread_list[guard_name])
+      false
     end
 
     def allowlist
-      @allowlist
+      thread_list = Thread.current[:rails_console_ai_allowlist]
+      return @allowlist unless thread_list
+      merged = @allowlist.dup
+      thread_list.each { |k, v| merged[k] = (merged[k] || []) + v }
+      merged
     end
 
     # Compose all guards around a block of code.
     # Each guard is an around-block: guard.call { inner }
     # Result: guard_1 { guard_2 { guard_3 { yield } } }
     def wrap(channel_mode: nil, additional_bypass_methods: nil, &block)
-      return yield unless @enabled && !@guards.empty?
+      return yield unless enabled? && !@guards.empty?
 
       install_skills_once!
       bypass_set = resolve_bypass_methods(channel_mode)

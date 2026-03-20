@@ -281,6 +281,19 @@ module RailsConsoleAi
       slack_api("chat.postMessage", channel: channel, thread_ts: thread_ts, text: text)
     end
 
+    # Cancel any in-progress thread on this session before spawning a new one.
+    # Prevents concurrent engine access when users send messages faster than
+    # the LLM can respond.
+    def replace_session_thread(session, &block)
+      old_thread = session[:thread]
+      if old_thread&.alive?
+        session[:channel].cancel!
+        old_thread.join(5) # wait up to 5s for graceful shutdown
+        session[:channel].instance_variable_set(:@cancelled, false)
+      end
+      session[:thread] = Thread.new(&block)
+    end
+
     # --- Event handling ---
 
     def handle_event(msg)
@@ -482,7 +495,7 @@ module RailsConsoleAi
       end
 
       # Otherwise treat as a new message in the conversation
-      session[:thread] = Thread.new do
+      replace_session_thread(session) do
         Thread.current.report_on_exception = false
         Thread.current[:log_prefix] = channel.instance_variable_get(:@log_prefix)
         begin
@@ -514,7 +527,7 @@ module RailsConsoleAi
       channel = session[:channel]
       engine = session[:engine]
 
-      session[:thread] = Thread.new do
+      replace_session_thread(session) do
         Thread.current.report_on_exception = false
         Thread.current[:log_prefix] = channel.instance_variable_get(:@log_prefix)
         begin
@@ -614,7 +627,7 @@ module RailsConsoleAi
         summary = bang_cost(engine)
         post_message(channel: channel_id, thread_ts: thread_ts, text: summary)
       when 'compact'
-        session[:thread] = Thread.new do
+        replace_session_thread(session) do
           Thread.current.report_on_exception = false
           begin
             before = engine.history.length
@@ -646,7 +659,7 @@ module RailsConsoleAi
         summary = bang_context(engine)
         post_message(channel: channel_id, thread_ts: thread_ts, text: summary)
       when 'retry'
-        session[:thread] = Thread.new do
+        replace_session_thread(session) do
           Thread.current.report_on_exception = false
           Thread.current[:log_prefix] = session[:channel].instance_variable_get(:@log_prefix)
           begin

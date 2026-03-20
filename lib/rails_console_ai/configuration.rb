@@ -135,7 +135,7 @@ module RailsConsoleAi
       end
 
       if allow
-        Array(allow).each { |key| safety_guards.allow(guard_name, key) }
+        Array(allow).each { |key| safety_guards.allow_global(guard_name, key) }
       end
     end
 
