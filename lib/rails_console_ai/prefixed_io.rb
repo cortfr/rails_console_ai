@@ -5,6 +5,9 @@ module RailsConsoleAi
     end
 
     def write(str)
+      if (capture = Thread.current[:capture_io])
+        return capture.write(str)
+      end
       prefix = Thread.current[:log_prefix]
       if prefix && str.is_a?(String) && !str.strip.empty?
         prefixed = str.gsub(/^(?=.)/, "#{prefix} ")
@@ -15,6 +18,9 @@ module RailsConsoleAi
     end
 
     def puts(*args)
+      if (capture = Thread.current[:capture_io])
+        return capture.puts(*args)
+      end
       prefix = Thread.current[:log_prefix]
       if prefix
         args = [""] if args.empty?
@@ -32,6 +38,9 @@ module RailsConsoleAi
     end
 
     def print(*args)
+      if (capture = Thread.current[:capture_io])
+        return capture.print(*args)
+      end
       @io.print(*args)
     end
 

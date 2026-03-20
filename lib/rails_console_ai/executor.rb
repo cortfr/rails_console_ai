@@ -100,13 +100,15 @@ module RailsConsoleAi
       @last_safety_exception = nil
       captured_output = StringIO.new
       old_stdout = $stdout
-      # When a channel is present it handles display (with truncation), so capture only.
-      # Without a channel, tee so output appears live on the terminal.
-      $stdout = if @channel
-                  captured_output
-                else
-                  TeeIO.new(old_stdout, captured_output)
-                end
+      # Use thread-local capture when a channel is present (multi-threaded Slack mode)
+      # to avoid capturing output from other threads (e.g. WebSocket ping/pong).
+      # Fall back to global $stdout swap for single-threaded console mode.
+      use_thread_local = !!@channel
+      if use_thread_local
+        Thread.current[:capture_io] = captured_output
+      else
+        $stdout = TeeIO.new(old_stdout, captured_output)
+      end
 
       RailsConsoleAi::SafetyError.clear!
 
@@ -114,7 +116,7 @@ module RailsConsoleAi
         binding_context.eval(code, "(rails_console_ai)", 1)
       end
 
-      $stdout = old_stdout
+      restore_stdout(use_thread_local, old_stdout)
 
       # Check if a SafetyError was raised but swallowed by a rescue inside the eval'd code
       if (swallowed = RailsConsoleAi::SafetyError.last_raised)
@@ -137,7 +139,7 @@ module RailsConsoleAi
       @last_output = captured_output.string
       result
     rescue RailsConsoleAi::SafetyError => e
-      $stdout = old_stdout if old_stdout
+      restore_stdout(use_thread_local, old_stdout)
       RailsConsoleAi::SafetyError.clear!
       @last_error = "SafetyError: #{e.message}"
       @last_safety_error = true
@@ -146,13 +148,13 @@ module RailsConsoleAi
       @last_output = captured_output&.string
       nil
     rescue SyntaxError => e
-      $stdout = old_stdout if old_stdout
+      restore_stdout(use_thread_local, old_stdout)
       @last_error = "SyntaxError: #{e.message}"
       log_execution_error(@last_error)
       @last_output = nil
       nil
     rescue => e
-      $stdout = old_stdout if old_stdout
+      restore_stdout(use_thread_local, old_stdout)
       # Check if a SafetyError is wrapped (e.g. ActiveRecord::StatementInvalid wrapping our error)
       if safety_error?(e)
         safety_exc = extract_safety_exception(e)
@@ -332,6 +334,14 @@ module RailsConsoleAi
     end
 
     private
+
+    def restore_stdout(use_thread_local, old_stdout)
+      if use_thread_local
+        Thread.current[:capture_io] = nil
+      else
+        $stdout = old_stdout if old_stdout
+      end
+    end
 
     def danger_allowed?
       @channel.nil? || @channel.supports_danger?
