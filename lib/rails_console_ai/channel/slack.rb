@@ -42,7 +42,7 @@ module RailsConsoleAi
           post(stripped)
         else
           @output_log.write("#{stripped}\n")
-          STDOUT.puts "#{@log_prefix} (status) #{stripped}"
+          log_prefixed("(status)", stripped)
         end
       end
 
@@ -56,7 +56,7 @@ module RailsConsoleAi
 
       def display_tool_call(text)
         @output_log.write("-> #{text}\n")
-        STDOUT.puts "#{@log_prefix} -> #{text}"
+        log_prefixed("->", text)
       end
 
       def display_code(code)
@@ -161,7 +161,7 @@ module RailsConsoleAi
       def post(text)
         return if text.nil? || text.strip.empty?
         @output_log.write("#{text}\n")
-        STDOUT.puts "#{@log_prefix} >> #{text}"
+        log_prefixed(">>", text)
         @slack_bot.send(:post_message,
           channel: @channel_id,
           thread_ts: @thread_ts,
@@ -169,6 +169,10 @@ module RailsConsoleAi
         )
       rescue => e
         RailsConsoleAi.logger.error("Slack post failed: #{e.message}")
+      end
+
+      def log_prefixed(tag, text)
+        text.each_line { |line| STDOUT.puts "#{@log_prefix} #{tag} #{line.rstrip}" }
       end
 
       def strip_ansi(text)
