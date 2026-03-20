@@ -100,12 +100,15 @@ module RailsConsoleAi
       @last_safety_exception = nil
       captured_output = StringIO.new
       old_stdout = $stdout
-      # Use thread-local capture when a channel is present (multi-threaded Slack mode)
-      # to avoid capturing output from other threads (e.g. WebSocket ping/pong).
-      # Fall back to global $stdout swap for single-threaded console mode.
-      use_thread_local = !!@channel
+      # Three capture strategies:
+      # 1. Slack mode (PrefixedIO active): thread-local capture to avoid cross-thread pollution
+      # 2. Console mode (channel present): capture-only, channel.display_result_output shows it after
+      # 3. No channel (tests/one-shot): TeeIO so output appears live AND is captured
+      use_thread_local = defined?(RailsConsoleAi::PrefixedIO) && $stdout.is_a?(RailsConsoleAi::PrefixedIO)
       if use_thread_local
         Thread.current[:capture_io] = captured_output
+      elsif @channel
+        $stdout = captured_output
       else
         $stdout = TeeIO.new(old_stdout, captured_output)
       end
