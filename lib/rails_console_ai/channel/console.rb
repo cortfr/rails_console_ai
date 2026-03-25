@@ -230,7 +230,16 @@ module RailsConsoleAi
           @interactive_console_capture.write("ai> #{input}\n")
           @engine.log_interactive_turn
 
-          status = @engine.send_and_execute
+          expected_stdout = $stdout
+          begin
+            status = @engine.send_and_execute
+          rescue Interrupt
+            $stdout = expected_stdout
+            $stdout.puts "\n\e[33m  Cancelled.\e[0m"
+            @engine.pop_last_message
+            @engine.log_interactive_turn
+            next
+          end
           if status == :interrupted
             @engine.pop_last_message
             @engine.log_interactive_turn
@@ -413,6 +422,7 @@ module RailsConsoleAi
         @real_stdout.puts "\e[2m    /debug       Toggle debug summaries (context stats, cost per call)\e[0m"
         @real_stdout.puts "\e[2m    /retry       Re-execute the last code block\e[0m"
         @real_stdout.puts "\e[2m    > code       Execute Ruby directly (skip LLM)\e[0m"
+        @real_stdout.puts "\e[2m    Ctrl-C       Cancel the current operation\e[0m"
         @real_stdout.puts "\e[2m    exit/quit    Leave interactive mode\e[0m"
       end
 

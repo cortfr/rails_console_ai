@@ -141,6 +141,10 @@ module RailsConsoleAi
 
       @last_output = captured_output.string
       result
+    rescue Interrupt
+      restore_stdout(use_thread_local, old_stdout)
+      @last_output = captured_output&.string
+      raise
     rescue RailsConsoleAi::SafetyError => e
       restore_stdout(use_thread_local, old_stdout)
       RailsConsoleAi::SafetyError.clear!
