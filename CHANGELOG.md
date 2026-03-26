@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.25.0]
+
+- Expand truncation limits
+- Allow any user on allow list to interact with Slack bot in a thread
+- Handle ctrl-c better in console
+- Fix stdout capture in Slack sessions
+- Improve Slack bot logging
+- Fix thread safety issues in Slack bot
+
 ## [0.24.0]
 
 - Refactor thinking text display and include in Slack with more technical detail
