@@ -507,7 +507,7 @@ RSpec.describe RailsConsoleAi::Repl do
   describe 'trim_large_outputs' do
     let(:engine) { repl.instance_variable_get(:@engine) }
     let(:executor) { engine.instance_variable_get(:@executor) }
-    let(:large_content) { 'x' * 11_000 }
+    let(:large_content) { 'x' * 21_000 }
 
     it 'trims all messages with large stored outputs' do
       history = []
