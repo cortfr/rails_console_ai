@@ -3,8 +3,8 @@ module RailsConsoleAi
     attr_reader :history, :total_input_tokens, :total_output_tokens,
                 :interactive_session_id, :session_name
 
-    LARGE_OUTPUT_THRESHOLD = 10_000      # chars — truncate tool results larger than this immediately
-    LARGE_OUTPUT_PREVIEW_CHARS = 8_000   # chars — how much of the output the LLM sees upfront
+    LARGE_OUTPUT_THRESHOLD = 20_000      # chars — truncate tool results larger than this immediately
+    LARGE_OUTPUT_PREVIEW_CHARS = 16_000  # chars — how much of the output the LLM sees upfront
     LOOP_WARN_THRESHOLD = 3              # same tool+args repeated → inject warning
     LOOP_BREAK_THRESHOLD = 5             # same tool+args repeated → break loop
 

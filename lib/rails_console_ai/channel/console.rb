@@ -127,8 +127,8 @@ module RailsConsoleAi
 
       # --- Omitted output tracking (shared with Executor) ---
 
-      MAX_DISPLAY_LINES = 10
-      MAX_DISPLAY_CHARS = 2000
+      MAX_DISPLAY_LINES = 20
+      MAX_DISPLAY_CHARS = 4000
 
       def init_omitted_tracking
         @omitted_outputs = {}
