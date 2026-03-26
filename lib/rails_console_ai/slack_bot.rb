@@ -327,17 +327,14 @@ module RailsConsoleAi
 
         session = @mutex.synchronize { @sessions[thread_ts] }
         if session
-          # Enforce session ownership
-          unless session[:owner_user_id] == user_id
-            # Non-owner: tell unrecognized users, silently ignore recognized non-owners
-            chk_name = resolve_user_name(user_id)
-            unless RailsConsoleAi.configuration.username_allowed?('slack', 'allowed_usernames', chk_name)
-              puts "[#{channel_id}/#{thread_ts}]#{channel_log_tag(channel_id)} @#{chk_name} << (ignored — not in allowed usernames)"
-              post_message(channel: channel_id, thread_ts: thread_ts, text: "Sorry, I don't recognize your username (@#{chk_name}). Ask an admin to add you to the allowed usernames list.")
-            end
+          # Any allowed user can interact with an existing session
+          chk_name = resolve_user_name(user_id)
+          unless RailsConsoleAi.configuration.username_allowed?('slack', 'allowed_usernames', chk_name)
+            puts "[#{channel_id}/#{thread_ts}]#{channel_log_tag(channel_id)} @#{chk_name} << (ignored — not in allowed usernames)"
+            post_message(channel: channel_id, thread_ts: thread_ts, text: "Sorry, I don't recognize your username (@#{chk_name}). Ask an admin to add you to the allowed usernames list.")
             return
           end
-          # Owner must @mention unless bot asked a question (waiting_for_reply?)
+          # Must @mention unless bot asked a question (waiting_for_reply?)
           return unless mentioned || waiting_for_reply?(session[:channel])
           # Log thread messages since last mention
           thread_msgs = fetch_thread_messages(channel_id, thread_ts, since_ts: session[:last_seen_ts], exclude_ts: event[:ts])
