@@ -105,7 +105,68 @@ Say "think harder" in any query to auto-upgrade to the thinking model for that s
 - **History compaction** — `/compact` summarizes long conversations to reduce cost and latency
 - **Output trimming** — older execution outputs are automatically replaced with references; the LLM can recall them on demand via `recall_output`, and you can `/expand <id>` to see them
 - **Debug mode** — `/debug` shows context breakdown, token counts, and per-call cost estimates before and after each LLM call
+- **Sub-agents** — delegate multi-step investigations to a separate LLM context that returns only a concise summary, keeping the main conversation lean
 - **Safe mode** — configurable guards that block side effects (DB writes, HTTP mutations, email delivery) during AI code execution
+
+## Sub-Agents
+
+Sub-agents solve the context bloat problem. When the AI needs to investigate something (find a user's shard, explore model relationships, search code), those intermediate tool calls can inflate the main conversation to 90K+ tokens, causing the LLM to cut corners. Sub-agents fork the investigation into a separate LLM conversation and return only a concise summary.
+
+The AI decides when to use sub-agents via the `delegate_task` tool. It can target a custom agent by name or use a general-purpose investigation.
+
+### Custom Agents
+
+Define agents as markdown files in `.rails_console_ai/agents/`:
+
+```markdown
+---
+name: Find shard
+description: Given a user ID, determines which database shard they are on
+max_rounds: 5
+tools:
+  - execute_code
+  - recall_memory
+---
+
+You are a shard finder for a sharded Rails application.
+
+Steps:
+1. Find the user: User.find(id)
+2. Check user.shard
+3. Report: "User {username} (ID {id}) is on shard {shard}."
+```
+
+**Frontmatter fields:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | yes | Agent name (shown in system prompt, used with `delegate_task`) |
+| `description` | yes | One-line description of what this agent does |
+| `max_rounds` | no | Max tool-use rounds (default: `sub_agent_max_rounds` config, default 15) |
+| `model` | no | Model override (e.g. use Haiku for simple lookups) |
+| `tools` | no | Array of tool names to include (default: all sub-agent tools) |
+
+The markdown body becomes additional system prompt instructions for the sub-agent.
+
+### How It Works
+
+1. Agent summaries appear in the AI's system prompt under `## Agents`
+2. The AI calls `delegate_task(task: "find user 56653's shard", agent: "Find shard")`
+3. A sub-agent spins up with its own context, tools, and provider
+4. It runs the investigation (up to `max_rounds` tool calls)
+5. The main conversation receives only: `"Sub-agent result: User 56653 is on shard 5."`
+
+Sub-agents have access to read-only memory tools (`recall_memory`, `recall_memories`), code execution (`execute_code`), and all schema/code introspection tools. They cannot ask the user questions, write memories, or spawn further sub-agents.
+
+### Configuration
+
+```ruby
+RailsConsoleAi.configure do |config|
+  config.sub_agent_max_rounds = 15         # default max rounds per sub-agent
+  config.sub_agent_model = nil             # nil = same model as main conversation
+  # config.sub_agent_model = 'claude-haiku-4-5-20251001'  # use a cheaper model
+end
+```
 
 ## Safety Guards
 

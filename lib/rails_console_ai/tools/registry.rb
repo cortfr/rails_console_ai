@@ -3,19 +3,21 @@ require 'json'
 module RailsConsoleAi
   module Tools
     class Registry
-      attr_reader :definitions
+      attr_reader :definitions, :last_sub_agent_usage
 
       # Tools that should never be cached (side effects or user interaction)
-      NO_CACHE = %w[ask_user save_memory delete_memory recall_memory execute_code execute_plan activate_skill save_skill delete_skill].freeze
+      NO_CACHE = %w[ask_user save_memory delete_memory recall_memory execute_code execute_plan activate_skill save_skill delete_skill delegate_task].freeze
 
-      def initialize(executor: nil, mode: :default, channel: nil)
+      def initialize(executor: nil, mode: :default, channel: nil, allowed_tools: nil)
         @executor = executor
         @mode = mode
         @channel = channel
+        @allowed_tools = allowed_tools
         @definitions = []
         @handlers = {}
         @cache = {}
         @last_cached = false
+        @last_sub_agent_usage = nil
         register_all
       end
 
@@ -215,23 +217,130 @@ module RailsConsoleAi
         end
 
         unless @mode == :init
-          register(
-            name: 'ask_user',
-            description: 'Ask the console user a clarifying question. Use this when you need specific information to write accurate code (e.g. which user they are, which record to target, what value to use). Do NOT generate placeholder values like YOUR_USER_ID — ask instead.',
-            parameters: {
-              'type' => 'object',
-              'properties' => {
-                'question' => { 'type' => 'string', 'description' => 'The question to ask the user' }
+          # Sub-agents get execute_code and read-only memory tools, but not ask_user,
+          # memory writes, skill writes, execute_plan, or delegate_task.
+          if @mode == :sub_agent
+            register_memory_recall_tools
+            register_execute_code
+          else
+            register(
+              name: 'ask_user',
+              description: 'Ask the console user a clarifying question. Use this when you need specific information to write accurate code (e.g. which user they are, which record to target, what value to use). Do NOT generate placeholder values like YOUR_USER_ID — ask instead.',
+              parameters: {
+                'type' => 'object',
+                'properties' => {
+                  'question' => { 'type' => 'string', 'description' => 'The question to ask the user' }
+                },
+                'required' => ['question']
               },
-              'required' => ['question']
-            },
-            handler: ->(args) { ask_user(args['question']) }
-          )
+              handler: ->(args) { ask_user(args['question']) }
+            )
 
-          register_memory_tools
-          register_skill_tools
-          register_execute_plan
+            register_memory_tools
+            register_skill_tools
+            register_execute_plan
+            register_delegate_task
+          end
         end
+      end
+
+      def register_memory_recall_tools
+        return unless RailsConsoleAi.configuration.memories_enabled
+
+        require 'rails_console_ai/tools/memory_tools'
+        memory = MemoryTools.new
+
+        register(
+          name: 'recall_memory',
+          description: 'Retrieve a specific memory by name.',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'name' => { 'type' => 'string', 'description' => 'The exact memory name' }
+            },
+            'required' => ['name']
+          },
+          handler: ->(args) { memory.recall_memory(name: args['name']) }
+        )
+
+        register(
+          name: 'recall_memories',
+          description: 'Search saved memories about this codebase. Call with no args to list all, or pass a query/tag to filter.',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'query' => { 'type' => 'string', 'description' => 'Search term to filter by name, description, or tags' },
+              'tag' => { 'type' => 'string', 'description' => 'Filter by a specific tag' }
+            }
+          },
+          handler: ->(args) { memory.recall_memories(query: args['query'], tag: args['tag']) }
+        )
+      end
+
+      def register_execute_code
+        return unless @executor
+
+        register(
+          name: 'execute_code',
+          description: 'Execute Ruby code in the Rails console and return the result.',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'code' => { 'type' => 'string', 'description' => 'Ruby code to execute' }
+            },
+            'required' => ['code']
+          },
+          handler: ->(args) { execute_code(args['code']) }
+        )
+      end
+
+      def register_delegate_task
+        return unless @executor
+
+        register(
+          name: 'delegate_task',
+          description: 'Delegate an investigation to a sub-agent that runs in a separate context. ' \
+            'Use this for tasks that require multiple tool calls to figure out ' \
+            '(e.g., "find which shard user X is on", "search the codebase for how URL generation works", ' \
+            '"describe the relationships between models A, B, and C"). ' \
+            'The sub-agent runs independently and returns only a concise summary, ' \
+            'keeping this conversation\'s context small and efficient.',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'task' => { 'type' => 'string', 'description' => 'What to investigate. Be specific about what you need to know.' },
+              'agent' => { 'type' => 'string', 'description' => 'Optional: name of a custom agent to use (see Agents list in system prompt). Omit for general investigation.' }
+            },
+            'required' => ['task']
+          },
+          handler: ->(args) { delegate_task(args['task'], args['agent']) }
+        )
+      end
+
+      def delegate_task(task, agent_name = nil)
+        require 'rails_console_ai/sub_agent'
+        require 'rails_console_ai/agent_loader'
+
+        agent_config = nil
+        if agent_name
+          loader = AgentLoader.new
+          agent_config = loader.find_agent(agent_name)
+          unless agent_config
+            available = loader.load_all_agents.map { |a| a['name'] }
+            return "Agent not found: \"#{agent_name}\". Available agents: #{available.join(', ')}"
+          end
+        end
+
+        sub = SubAgent.new(
+          task: task,
+          agent_config: agent_config,
+          binding_context: @executor.binding_context,
+          parent_channel: @channel,
+          executor: @executor
+        )
+        result = sub.run
+        @last_sub_agent_usage = { input: sub.input_tokens, output: sub.output_tokens, model: sub.model_used }
+        "Sub-agent result (#{sub.input_tokens + sub.output_tokens} tokens used):\n#{result}"
       end
 
       def register_memory_tools
@@ -412,7 +521,7 @@ module RailsConsoleAi
         # Show the code to the user
         @executor.display_code_block(code)
 
-        exec_result = if @channel&.mode == 'slack' || RailsConsoleAi.configuration.auto_execute
+        exec_result = if @channel&.mode == 'slack' || @channel&.mode == 'sub_agent' || RailsConsoleAi.configuration.auto_execute
                         @executor.execute(code)
                       else
                         @executor.confirm_and_execute(code)
@@ -609,6 +718,11 @@ module RailsConsoleAi
       end
 
       def register(name:, description:, parameters:, handler:)
+        # When allowed_tools is set (sub-agent with tool filter), skip tools not in the list
+        if @allowed_tools && !@allowed_tools.include?(name)
+          return
+        end
+
         @definitions << {
           name: name,
           description: description,

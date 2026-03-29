@@ -31,7 +31,9 @@ module RailsConsoleAi
                   :code_search_paths,
                   :channels,
                   :bypass_guards_for_methods,
-                  :user_extra_info
+                  :user_extra_info,
+                  :sub_agent_max_rounds,
+                  :sub_agent_model
 
     def initialize
       @provider     = :anthropic
@@ -64,6 +66,8 @@ module RailsConsoleAi
       @channels = {}
       @bypass_guards_for_methods = []
       @user_extra_info = {}
+      @sub_agent_max_rounds = 15
+      @sub_agent_model = nil
     end
 
     def resolve_user_extra_info(username)

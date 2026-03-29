@@ -20,6 +20,7 @@ module RailsConsoleAi
       parts << guide_context
       parts << trusted_methods_context
       parts << skills_context
+      parts << agents_context
       parts << user_extra_info_context
       parts << pinned_memory_context
       parts << memory_context
@@ -93,6 +94,14 @@ module RailsConsoleAi
           a new skill with a step-by-step recipe. Skills are procedures (how to do X); memories
           are facts (what you learned about X). Do NOT use save_memory when asked to create a skill.
 
+        You have a delegate_task tool to spawn sub-agents for investigation tasks:
+        - Use delegate_task when a task requires multiple tool calls to investigate
+          (e.g., finding a user's shard, exploring how a feature works in the code,
+          gathering data across multiple models).
+        - The sub-agent runs in a separate context and returns only a concise summary.
+        - This keeps your conversation context small and efficient.
+        - If a custom agent is available for the task (see Agents section), specify it by name.
+
         RULES:
         - Give ONE concise answer. Do not offer multiple alternatives or variations.
         - For multi-step tasks, use execute_plan to break the work into small, clear steps.
@@ -142,6 +151,19 @@ module RailsConsoleAi
       lines.join("\n")
     rescue => e
       RailsConsoleAi.logger.debug("RailsConsoleAi: skills context failed: #{e.message}")
+      nil
+    end
+
+    def agents_context
+      require 'rails_console_ai/agent_loader'
+      summaries = RailsConsoleAi::AgentLoader.new.agent_summaries
+      return nil if summaries.nil? || summaries.empty?
+
+      lines = ["## Agents (use delegate_task tool to invoke)"]
+      lines.concat(summaries)
+      lines.join("\n")
+    rescue => e
+      RailsConsoleAi.logger.debug("RailsConsoleAi: agents context failed: #{e.message}")
       nil
     end
 

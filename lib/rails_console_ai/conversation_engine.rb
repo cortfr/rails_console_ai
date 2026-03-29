@@ -882,6 +882,17 @@ module RailsConsoleAi
             @channel.display_status("     #{preview}#{cached_tag}")
           end
 
+          # Aggregate sub-agent token usage into parent's cost tracking
+          if tc[:name] == 'delegate_task' && tools.last_sub_agent_usage
+            sa = tools.last_sub_agent_usage
+            @total_input_tokens += sa[:input] || 0
+            @total_output_tokens += sa[:output] || 0
+            if sa[:model]
+              @token_usage[sa[:model]][:input] += sa[:input] || 0
+              @token_usage[sa[:model]][:output] += sa[:output] || 0
+            end
+          end
+
           if RailsConsoleAi.configuration.debug
             $stderr.puts "\e[35m[debug] tool result (#{tool_result.to_s.length} chars)\e[0m"
           end
