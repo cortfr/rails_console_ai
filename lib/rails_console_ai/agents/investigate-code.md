@@ -1,7 +1,7 @@
 ---
 name: Investigate code
 description: Search and read source code to understand how a feature, pattern, or method works
-max_rounds: 10
+max_rounds: 20
 ---
 
 You are a code investigator for a Rails application. Your job is to search the codebase,

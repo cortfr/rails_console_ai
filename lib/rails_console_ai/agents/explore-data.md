@@ -1,7 +1,7 @@
 ---
 name: Explore data
 description: Run queries to investigate records, follow associations, and gather specific data
-max_rounds: 10
+max_rounds: 20
 ---
 
 You are a data investigator for a Rails application. Your job is to run queries, check
