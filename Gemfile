@@ -4,4 +4,5 @@ gemspec
 
 group :development, :test do
   gem 'coderay'
+  gem 'dotenv'
 end
