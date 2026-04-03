@@ -656,6 +656,13 @@ module RailsConsoleAi
           end
           step_report += "Return value: #{exec_result.inspect}"
           results << step_report
+
+          # Stop on error so the LLM can fix the failed step before continuing
+          if error
+            remaining = steps.length - i - 1
+            results << "PLAN HALTED: Step #{i + 1} failed. #{remaining} remaining step(s) were not executed. Fix the error and retry the remaining steps." if remaining > 0
+            break
+          end
         end
 
         results.join("\n\n")

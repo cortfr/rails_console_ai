@@ -112,6 +112,27 @@ RSpec.describe 'execute_plan tool' do
       expect(result).to include('Return value: 84')
     end
 
+    it 'halts plan execution when a step fails' do
+      steps = {
+        'steps' => [
+          { 'description' => 'Good step', 'code' => '1 + 1' },
+          { 'description' => 'Bad step', 'code' => 'raise "something broke"' },
+          { 'description' => 'Should not run', 'code' => '3 + 3' }
+        ]
+      }
+
+      result = registry.execute('execute_plan', steps)
+
+      expect(result).to include('Step 1 (Good step)')
+      expect(result).to include('Return value: 2')
+      expect(result).to include('Step 2 (Bad step)')
+      expect(result).to include('ERROR:')
+      expect(result).to include('PLAN HALTED: Step 2 failed')
+      expect(result).to include('1 remaining step(s) were not executed')
+      expect(result).not_to include('Step 3')
+      expect(result).not_to include('Should not run')
+    end
+
     it 'stores nil step results without error' do
       steps = {
         'steps' => [
