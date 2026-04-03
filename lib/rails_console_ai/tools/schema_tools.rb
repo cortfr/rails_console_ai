@@ -18,18 +18,19 @@ module RailsConsoleAi
         return "Error: table_name is required." if table_name.nil? || table_name.strip.empty?
 
         table_name = table_name.strip
-        unless connection.tables.include?(table_name)
+        conn = connection_for_table(table_name)
+        unless conn.tables.include?(table_name)
           return "Table '#{table_name}' not found. Use list_tables to see available tables."
         end
 
-        cols = connection.columns(table_name).map do |c|
+        cols = conn.columns(table_name).map do |c|
           parts = ["#{c.name}:#{c.type}"]
           parts << "nullable" if c.null
           parts << "default=#{c.default}" unless c.default.nil?
           parts.join(" ")
         end
 
-        indexes = connection.indexes(table_name).map do |idx|
+        indexes = conn.indexes(table_name).map do |idx|
           unique = idx.unique ? "UNIQUE " : ""
           "#{unique}INDEX on (#{idx.columns.join(', ')})"
         end
@@ -50,6 +51,22 @@ module RailsConsoleAi
 
       def ar_connected?
         defined?(ActiveRecord::Base) && ActiveRecord::Base.connected?
+      end
+
+      # Find the best connection for a table by checking if any model maps to it.
+      # Models may use a different connection (e.g. sharded databases).
+      def connection_for_table(table_name)
+        if defined?(ActiveRecord::Base) && ActiveRecord::Base.is_a?(Class)
+          base = defined?(ApplicationRecord) ? ApplicationRecord : ActiveRecord::Base
+          model = ObjectSpace.each_object(Class).detect { |c|
+            c < base && !c.abstract_class? && c.name &&
+              begin; c.table_name == table_name; rescue; false; end
+          }
+          return model.connection if model
+        end
+        connection
+      rescue
+        connection
       end
 
       def connection

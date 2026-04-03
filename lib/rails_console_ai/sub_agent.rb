@@ -49,6 +49,7 @@ module RailsConsoleAi
       result = nil
       tool_call_counts = Hash.new(0)
       exhausted = false
+      last_thinking = nil
 
       max_rounds.times do |round|
         break if channel.cancelled?
@@ -67,6 +68,13 @@ module RailsConsoleAi
 
         break if channel.cancelled?
         break unless result.tool_use?
+
+        # Display the LLM's reasoning text before executing its tool calls
+        if result.text && !result.text.strip.empty?
+          result.text.strip.split("\n").each do |line|
+            channel.display_thinking("  #{line}")
+          end
+        end
 
         assistant_msg = provider.format_assistant_message(result)
         messages << assistant_msg

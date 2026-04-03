@@ -37,8 +37,8 @@ module RailsConsoleAi
 
         # Columns and indexes from the database table
         begin
-          if ActiveRecord::Base.connected?
-            conn = ActiveRecord::Base.connection
+          conn = model.connection
+          if conn
             if conn.tables.include?(model.table_name)
               cols = conn.columns(model.table_name).map do |c|
                 parts = ["#{c.name}:#{c.type}"]

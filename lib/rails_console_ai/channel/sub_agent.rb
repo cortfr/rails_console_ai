@@ -13,25 +13,23 @@ module RailsConsoleAi
       end
 
       def display_thinking(text)
-        # Swallowed
+        @parent.display_thinking(text)
       end
 
       def display_status(text)
-        stripped = text.to_s.strip
-        return if stripped.empty?
-        @parent.display_status("  [sub-agent#{@label ? ": #{@label}" : ""}] #{stripped}")
+        @parent.display_status(text)
       end
 
       def display_warning(text)
-        # Swallowed
+        @parent.display_warning(text)
       end
 
       def display_error(text)
-        display_status("error: #{text}")
+        @parent.display_error(text)
       end
 
       def display_tool_call(text)
-        display_status("-> #{text}")
+        @parent.display_tool_call(text)
       end
 
       def display_code(code)
@@ -39,11 +37,11 @@ module RailsConsoleAi
       end
 
       def display_result_output(output)
-        # Swallowed
+        @parent.display_result_output(output)
       end
 
       def display_result(result)
-        # Swallowed
+        # Swallowed — sub-agent return values aren't useful to show
       end
 
       def prompt(text)

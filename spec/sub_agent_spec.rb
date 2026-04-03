@@ -130,11 +130,26 @@ RSpec.describe RailsConsoleAi::Channel::SubAgent do
 
   before do
     allow(parent_channel).to receive(:display_status)
+    allow(parent_channel).to receive(:display_thinking)
+    allow(parent_channel).to receive(:display_tool_call)
+    allow(parent_channel).to receive(:display_warning)
+    allow(parent_channel).to receive(:display_error)
+    allow(parent_channel).to receive(:display_result_output)
   end
 
-  it 'forwards status to parent with label' do
-    channel.display_status('Thinking...')
-    expect(parent_channel).to have_received(:display_status).with('  [sub-agent: Find shard] Thinking...')
+  it 'forwards thinking to parent' do
+    channel.display_thinking('Let me check the model...')
+    expect(parent_channel).to have_received(:display_thinking).with('Let me check the model...')
+  end
+
+  it 'forwards status to parent' do
+    channel.display_status('some status')
+    expect(parent_channel).to have_received(:display_status).with('some status')
+  end
+
+  it 'forwards tool calls to parent' do
+    channel.display_tool_call('search_code("reschedule_fee")')
+    expect(parent_channel).to have_received(:display_tool_call).with('search_code("reschedule_fee")')
   end
 
   it 'auto-confirms everything' do
@@ -158,12 +173,18 @@ RSpec.describe RailsConsoleAi::Channel::SubAgent do
     expect(channel.user_identity).to eq('frank')
   end
 
-  it 'swallows display calls' do
+  it 'swallows display and display_result' do
     expect { channel.display('hello') }.not_to raise_error
-    expect { channel.display_thinking('thinking') }.not_to raise_error
     expect { channel.display_code('code') }.not_to raise_error
     expect { channel.display_result('result') }.not_to raise_error
-    expect { channel.display_result_output('output') }.not_to raise_error
-    expect { channel.display_warning('warn') }.not_to raise_error
+    # These should NOT have been forwarded to parent
+    expect(parent_channel).not_to have_received(:display_status)
+  end
+
+  it 'forwards warnings and errors to parent' do
+    channel.display_warning('watch out')
+    channel.display_error('something broke')
+    expect(parent_channel).to have_received(:display_warning).with('watch out')
+    expect(parent_channel).to have_received(:display_error).with('something broke')
   end
 end

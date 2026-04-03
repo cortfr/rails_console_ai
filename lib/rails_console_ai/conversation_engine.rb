@@ -1044,6 +1044,11 @@ module RailsConsoleAi
       when 'execute_plan'
         steps = args['steps']
         steps ? "(#{steps.length} steps)" : ''
+      when 'delegate_task'
+        task_preview = args['task'].to_s[0, 100]
+        task_preview += '...' if args['task'].to_s.length > 100
+        agent = args['agent'] ? ", agent: \"#{args['agent']}\"" : ''
+        "(\"#{task_preview}\"#{agent})"
       else ''
       end
     end
@@ -1115,6 +1120,9 @@ module RailsConsoleAi
       when 'execute_plan'
         steps_done = result.scan(/^Step \d+/).length
         steps_done > 0 ? "#{steps_done} steps executed" : truncate(result, 80)
+      when 'delegate_task'
+        # Show the full sub-agent result — this is the whole point of delegation
+        result
       else
         truncate(result, 80)
       end
