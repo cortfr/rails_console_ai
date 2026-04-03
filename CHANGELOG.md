@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.26.0]
+
+- Add sub-agent support
+- Add integration tests
+- Increase max conversation rounds
+- Fix sub-agent model resolution
+- Improve plan step failure handling
+
 ## [0.25.0]
 
 - Expand truncation limits
