@@ -207,6 +207,7 @@ module RailsConsoleAi
           break if input.nil?
 
           input = input.strip
+          input = input.force_encoding('UTF-8') if input.encoding == Encoding::ASCII_8BIT
           break if input.downcase == 'exit' || input.downcase == 'quit'
           next if input.empty?
 
