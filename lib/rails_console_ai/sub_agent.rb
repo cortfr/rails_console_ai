@@ -12,12 +12,15 @@ module RailsConsoleAi
 
     attr_reader :input_tokens, :output_tokens, :model_used
 
-    def initialize(task:, agent_config:, binding_context:, parent_channel:, executor:)
+    def initialize(task:, agent_config:, binding_context:, parent_channel:, executor:,
+                   output_payload: nil, output_local_name: :output)
       @task = task
       @agent_config = agent_config || {}
       @binding_context = binding_context
       @parent_channel = parent_channel
       @parent_executor = executor
+      @output_payload = output_payload
+      @output_local_name = output_local_name
       @input_tokens = 0
       @output_tokens = 0
       @model_used = nil
@@ -29,7 +32,16 @@ module RailsConsoleAi
         task_label: @agent_config['name']
       )
 
-      executor = Executor.new(@binding_context, channel: channel)
+      effective_binding =
+        if @output_payload
+          b = @binding_context.eval("proc { binding }.call")
+          b.local_variable_set(@output_local_name, @output_payload)
+          b
+        else
+          @binding_context
+        end
+
+      executor = Executor.new(effective_binding, channel: channel)
       allowed_tools = @agent_config['tools'] ? Array(@agent_config['tools']) : nil
       tools = Tools::Registry.new(executor: executor, mode: :sub_agent, channel: channel, allowed_tools: allowed_tools)
       provider = build_provider

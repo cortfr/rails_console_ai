@@ -99,6 +99,48 @@ RSpec.describe RailsConsoleAi::Tools::Registry do
     end
   end
 
+  describe 'explore_output tool' do
+    it 'is registered when executor is provided in main mode' do
+      executor = RailsConsoleAi::Executor.new(binding)
+      reg = described_class.new(executor: executor)
+      names = reg.definitions.map { |d| d[:name] }
+      expect(names).to include('explore_output')
+    end
+
+    it 'is NOT registered in sub_agent mode' do
+      executor = RailsConsoleAi::Executor.new(binding)
+      reg = described_class.new(executor: executor, mode: :sub_agent)
+      names = reg.definitions.map { |d| d[:name] }
+      expect(names).not_to include('explore_output')
+    end
+
+    it 'is not registered without an executor' do
+      names = registry.definitions.map { |d| d[:name] }
+      expect(names).not_to include('explore_output')
+    end
+
+    it 'requires output_id and task parameters' do
+      executor = RailsConsoleAi::Executor.new(binding)
+      reg = described_class.new(executor: executor)
+      defn = reg.definitions.find { |d| d[:name] == 'explore_output' }
+      expect(defn[:parameters]['required']).to contain_exactly('output_id', 'task')
+      expect(defn[:parameters]['properties']['output_id']['type']).to eq('integer')
+      expect(defn[:parameters]['properties']['task']['type']).to eq('string')
+    end
+
+    it 'returns error without spawning sub-agent when output_id is unknown' do
+      executor = RailsConsoleAi::Executor.new(binding)
+      reg = described_class.new(executor: executor)
+      expect(RailsConsoleAi::SubAgent).not_to receive(:new) if defined?(RailsConsoleAi::SubAgent)
+      result = reg.execute('explore_output', { 'output_id' => 999, 'task' => 'anything' })
+      expect(result).to include('No output found with id 999')
+    end
+
+    it 'is excluded from the cache' do
+      expect(described_class::NO_CACHE).to include('explore_output')
+    end
+  end
+
   describe 'activate_skill tool' do
     let(:tmpdir) { Dir.mktmpdir('rails_console_ai_test') }
     let(:storage) { RailsConsoleAi::Storage::FileStorage.new(tmpdir) }

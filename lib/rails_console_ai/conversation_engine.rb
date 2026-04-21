@@ -249,7 +249,7 @@ module RailsConsoleAi
       output_id = @executor.store_output(result_str)
       if result_str.length > LARGE_OUTPUT_THRESHOLD
         preview = result_str[0, LARGE_OUTPUT_PREVIEW_CHARS]
-        context_msg += "\n#{preview}\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{result_str.length} chars — use recall_output tool with id #{output_id} to retrieve the full output]"
+        context_msg += "\n#{preview}\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{result_str.length} chars — use explore_output with output_id=#{output_id} for focused queries, or recall_output to expand in place]"
       elsif !output_parts.empty?
         context_msg += "\n#{result_str}"
       end
@@ -332,7 +332,7 @@ module RailsConsoleAi
             context_msg = "Code was executed (safety override). "
             if result_str.length > LARGE_OUTPUT_THRESHOLD
               context_msg += result_str[0, LARGE_OUTPUT_PREVIEW_CHARS]
-              context_msg += "\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{result_str.length} chars — use recall_output tool with id #{output_id} to retrieve the full output]"
+              context_msg += "\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{result_str.length} chars — use explore_output with output_id=#{output_id} for focused queries, or recall_output to expand in place]"
             else
               context_msg += result_str
             end
@@ -360,7 +360,7 @@ module RailsConsoleAi
           context_msg = "Code was executed. "
           if result_str.length > LARGE_OUTPUT_THRESHOLD
             context_msg += result_str[0, LARGE_OUTPUT_PREVIEW_CHARS]
-            context_msg += "\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{result_str.length} chars — use recall_output tool with id #{output_id} to retrieve the full output]"
+            context_msg += "\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{result_str.length} chars — use explore_output with output_id=#{output_id} for focused queries, or recall_output to expand in place]"
           else
             context_msg += result_str
           end
@@ -903,7 +903,7 @@ module RailsConsoleAi
           tool_msg[:output_id] = output_id
           if full_text.length > LARGE_OUTPUT_THRESHOLD
             truncated = full_text[0, LARGE_OUTPUT_PREVIEW_CHARS]
-            truncated += "\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{full_text.length} chars — use recall_output tool with id #{output_id} to retrieve the full output]"
+            truncated += "\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{full_text.length} chars — use explore_output with output_id=#{output_id} for focused queries, or recall_output to expand in place]"
             tool_msg = provider.format_tool_result(tc[:id], truncated)
             tool_msg[:output_id] = output_id
           end
@@ -1041,6 +1041,10 @@ module RailsConsoleAi
       when 'save_skill'     then "(\"#{args['name']}\")"
       when 'delete_skill'   then "(\"#{args['name']}\")"
       when 'recall_output'   then "(#{args['id']})"
+      when 'explore_output'
+        task_preview = args['task'].to_s[0, 80]
+        task_preview += '...' if args['task'].to_s.length > 80
+        "(id: #{args['output_id']}, \"#{task_preview}\")"
       when 'execute_plan'
         steps = args['steps']
         steps ? "(#{steps.length} steps)" : ''
@@ -1409,7 +1413,7 @@ module RailsConsoleAi
     end
 
     def trim_message(msg)
-      ref = "[Output omitted — use recall_output tool with id #{msg[:output_id]} to retrieve]"
+      ref = "[Output omitted — use explore_output with output_id=#{msg[:output_id]} for focused queries, or recall_output to expand in place]"
 
       if msg[:content].is_a?(Array)
         trimmed_content = msg[:content].map do |block|

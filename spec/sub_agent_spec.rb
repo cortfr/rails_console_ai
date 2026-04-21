@@ -102,6 +102,77 @@ RSpec.describe RailsConsoleAi::SubAgent do
       expect(parent_channel).to have_received(:display_status).at_least(:once)
     end
 
+    it 'binds output_payload to a local variable visible to execute_code' do
+      payload = 'a' * 5000
+      allow(parent_channel).to receive(:display_tool_call)
+      allow(parent_channel).to receive(:display_thinking)
+      allow(parent_channel).to receive(:display_warning)
+      allow(parent_channel).to receive(:display_error)
+      allow(parent_channel).to receive(:display_result_output)
+
+      tool_call_result = RailsConsoleAi::Providers::ChatResult.new(
+        text: nil,
+        input_tokens: 10,
+        output_tokens: 5,
+        stop_reason: :tool_use,
+        tool_calls: [{ id: 'tu1', name: 'execute_code', arguments: { 'code' => 'output.length' } }]
+      )
+      final_result = RailsConsoleAi::Providers::ChatResult.new(
+        text: 'done',
+        input_tokens: 10,
+        output_tokens: 5,
+        stop_reason: :end_turn
+      )
+
+      call_count = 0
+      observed_messages = []
+      allow(provider).to receive(:chat_with_tools) do |msgs, **_kwargs|
+        observed_messages << Marshal.load(Marshal.dump(msgs))
+        call_count += 1
+        call_count == 1 ? tool_call_result : final_result
+      end
+      allow(provider).to receive(:format_assistant_message).and_return({ role: :assistant, content: [] })
+      allow(provider).to receive(:format_tool_result) { |id, content| { role: :tool, tool_use_id: id, content: content } }
+
+      sub = described_class.new(
+        task: 'how long is the output?',
+        agent_config: { 'tools' => ['execute_code'], 'max_rounds' => 3 },
+        binding_context: binding_context,
+        parent_channel: parent_channel,
+        executor: executor,
+        output_payload: payload
+      )
+
+      result = sub.run
+      expect(result).to eq('done')
+
+      # On the second provider call, the messages should include the execute_code tool result
+      # containing the payload's length (5000) — proving `output` was bound.
+      second_call_msgs = observed_messages[1]
+      expect(second_call_msgs).not_to be_nil, "expected sub-agent to make a second provider call"
+      tool_msg = second_call_msgs.last
+      expect(tool_msg[:content].to_s).to include('5000')
+    end
+
+    it 'does not leak output local back into the parent binding' do
+      parent_binding = Object.new.instance_eval { binding }
+      parent_executor = RailsConsoleAi::Executor.new(parent_binding, channel: parent_channel)
+
+      allow(provider).to receive(:chat_with_tools).and_return(chat_result)
+
+      sub = described_class.new(
+        task: 'noop',
+        agent_config: { 'tools' => ['execute_code'], 'max_rounds' => 1 },
+        binding_context: parent_binding,
+        parent_channel: parent_channel,
+        executor: parent_executor,
+        output_payload: 'some payload'
+      )
+      sub.run
+
+      expect(parent_binding.local_variables).not_to include(:output)
+    end
+
     it 'includes agent body in system prompt' do
       agent_config = { 'name' => 'Find shard', 'body' => 'Check user.shard column.' }
 

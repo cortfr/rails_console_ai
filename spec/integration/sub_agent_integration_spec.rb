@@ -154,6 +154,59 @@ RSpec.describe 'Sub-agent integration' do
     end
   end
 
+  describe 'explore_output tool' do
+    it 'binds output payload to local variable and returns a concise answer' do
+      channel = IntegrationHelpers::CaptureChannel.new
+      binding_context = Object.new.instance_eval { binding }
+      executor = RailsConsoleAi::Executor.new(binding_context, channel: channel)
+
+      RailsConsoleAi.configure do |c|
+        c.provider = :anthropic
+        c.api_key = ENV['ANTHROPIC_API_KEY']
+        c.model = 'claude-sonnet-4-6'
+        c.temperature = 0.0
+        c.storage_adapter = storage
+        c.sub_agent_max_rounds = 5
+      end
+
+      payload = (1..1000).map { |i| "line-#{i}" }.join("\n")
+
+      sub = RailsConsoleAi::SubAgent.new(
+        task: 'How many lines are in `output`? Use execute_code with output.lines.count, then report only the number.',
+        agent_config: RailsConsoleAi::Tools::Registry::EXPLORE_OUTPUT_AGENT_CONFIG,
+        binding_context: binding_context,
+        parent_channel: channel,
+        executor: executor,
+        output_payload: payload
+      )
+
+      result = sub.run
+
+      expect(result).to include('1000'),
+        "Expected sub-agent to report 1000 lines, got: #{result}"
+    end
+
+    it 'LLM prefers explore_output over recall_output for focused queries', :slow do
+      channel = IntegrationHelpers::CaptureChannel.new
+      engine = build_engine(storage: storage, channel: channel)
+
+      # Seed a large, truncatable output in the executor's store and inject a
+      # fake tool-result message into history so the main LLM sees the placeholder.
+      large_payload = (1..20_000).map { |i| "item-#{i}" }.join("\n")
+      output_id = engine.instance_variable_get(:@executor).store_output(large_payload)
+
+      engine.add_user_message(
+        "The output with output_id=#{output_id} contains 20,000 lines of the form 'item-N'. " \
+        "What is the item at line 12345? Use explore_output to answer — do NOT use recall_output."
+      )
+      engine.send_and_execute
+
+      tools_called = tool_names_called(channel)
+      expect(tools_called).to include('explore_output'),
+        "Expected LLM to call explore_output, but it called: #{tools_called.inspect}"
+    end
+  end
+
   describe 'guide context' do
     it 'sub-agent can access the application guide' do
       storage.write(RailsConsoleAi::GUIDE_KEY, <<~GUIDE)

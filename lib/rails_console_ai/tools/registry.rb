@@ -6,7 +6,7 @@ module RailsConsoleAi
       attr_reader :definitions, :last_sub_agent_usage
 
       # Tools that should never be cached (side effects or user interaction)
-      NO_CACHE = %w[ask_user save_memory delete_memory recall_memory execute_code execute_plan activate_skill save_skill delete_skill delegate_task].freeze
+      NO_CACHE = %w[ask_user save_memory delete_memory recall_memory execute_code execute_plan activate_skill save_skill delete_skill delegate_task explore_output].freeze
 
       def initialize(executor: nil, mode: :default, channel: nil, allowed_tools: nil)
         @executor = executor
@@ -188,7 +188,7 @@ module RailsConsoleAi
         if @executor
           register(
             name: 'recall_output',
-            description: 'Retrieve a previous code execution output that was omitted or truncated. The output will be expanded in place in the conversation. Use the output id shown in the "[Output omitted]" or "[Output truncated]" placeholder.',
+            description: 'Expand a previously omitted/truncated output back into this conversation\'s context, where it will persist for the rest of the session. Prefer `explore_output` if you only need a specific answer about the output — that keeps this conversation lean. Use `recall_output` only when you need the full content alongside other context here. Use the output id shown in the "[Output omitted]" or "[Output truncated]" placeholder.',
             parameters: {
               'type' => 'object',
               'properties' => {
@@ -204,7 +204,7 @@ module RailsConsoleAi
 
           register(
             name: 'recall_outputs',
-            description: 'Retrieve multiple previous code execution outputs that were omitted from the conversation. Use the output ids shown in "[Output omitted]" or "[Output truncated]" placeholders.',
+            description: 'Expand multiple previously omitted outputs back into this conversation. Prefer `explore_output` per-id for focused queries. Use the output ids shown in "[Output omitted]" or "[Output truncated]" placeholders.',
             parameters: {
               'type' => 'object',
               'properties' => {
@@ -214,6 +214,22 @@ module RailsConsoleAi
             },
             handler: ->(args) { "recall_outputs handled by conversation engine" }
           )
+
+          if @mode != :sub_agent
+            register(
+              name: 'explore_output',
+              description: 'Prefer this over recall_output when you have a specific question about a large omitted/truncated output (e.g. "find the item where X", "how many match Y", "what is the value at index N", "parse the JSON and return field Z"). Spawns a sub-agent with the full output bound to the local Ruby variable `output` (a String); the sub-agent runs execute_code against it and returns a concise answer. The full output does NOT enter this conversation.',
+              parameters: {
+                'type' => 'object',
+                'properties' => {
+                  'output_id' => { 'type' => 'integer', 'description' => 'The output id shown in the "[Output omitted]" or "[Output truncated]" placeholder.' },
+                  'task' => { 'type' => 'string', 'description' => 'The specific question or task. Be concrete — the sub-agent only sees this task and the output.' }
+                },
+                'required' => ['output_id', 'task']
+              },
+              handler: ->(args) { explore_output(args['output_id'].to_i, args['task']) }
+            )
+          end
         end
 
         unless @mode == :init
@@ -315,6 +331,45 @@ module RailsConsoleAi
           },
           handler: ->(args) { delegate_task(args['task'], args['agent']) }
         )
+      end
+
+      EXPLORE_OUTPUT_AGENT_CONFIG = {
+        'name' => 'output-explorer',
+        'tools' => ['execute_code'],
+        'max_rounds' => 8,
+        'body' => <<~PROMPT.freeze
+          You are exploring a single chunk of captured tool output on behalf of the main assistant.
+
+          The full output is bound to the local variable `output` (a String). You do NOT see it
+          directly — it lives in Ruby memory. Use `execute_code` with Ruby to query it:
+            - `output.length`, `output.lines.count`
+            - `output[start, len]`, `output.lines[n]`
+            - `output.scan(/pattern/)`, `output.include?("...")`
+            - `JSON.parse(output)` if it looks like JSON, then drill in
+            - any other Ruby string/collection methods
+
+          Print only the specific slice or summary the task requires — never dump the whole `output`.
+          Return a concise factual answer. No preamble.
+        PROMPT
+      }.freeze
+
+      def explore_output(output_id, task)
+        require 'rails_console_ai/sub_agent'
+
+        payload = @executor.recall_output(output_id)
+        return "No output found with id #{output_id}" unless payload
+
+        sub = SubAgent.new(
+          task: task,
+          agent_config: EXPLORE_OUTPUT_AGENT_CONFIG,
+          binding_context: @executor.binding_context,
+          parent_channel: @channel,
+          executor: @executor,
+          output_payload: payload.dup
+        )
+        result = sub.run
+        @last_sub_agent_usage = { input: sub.input_tokens, output: sub.output_tokens, model: sub.model_used }
+        "Exploration result (#{sub.input_tokens + sub.output_tokens} tokens used, #{payload.length} chars explored):\n#{result}"
       end
 
       def delegate_task(task, agent_name = nil)
