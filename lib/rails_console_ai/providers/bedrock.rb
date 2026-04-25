@@ -41,13 +41,13 @@ module RailsConsoleAi
       private
 
       def call_api(messages, system_prompt: nil, tools: nil)
+        inference = { max_tokens: config.resolved_max_tokens }
+        temp = config.resolved_temperature
+        inference[:temperature] = temp unless temp.nil?
         params = {
           model_id: config.resolved_model,
           messages: format_messages(messages),
-          inference_config: {
-            max_tokens: config.resolved_max_tokens,
-            temperature: config.temperature
-          }
+          inference_config: inference
         }
         if system_prompt
           sys_blocks = [{ text: system_prompt }]

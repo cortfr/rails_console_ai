@@ -352,6 +352,39 @@ end
 
 Timeout is automatically raised to 300s minimum for local models to account for slower inference.
 
+### Testing a new model
+
+Before adopting a new Claude model, smoke-test it against the Anthropic or Bedrock provider with `bin/smoke_model.rb`. The script runs four checks and exits non-zero on any failure:
+
+| check    | what it verifies                                                                 |
+| -------- | -------------------------------------------------------------------------------- |
+| plain    | the model returns text for a basic prompt                                        |
+| tool     | a single tool call → tool result → final answer round-trip works                 |
+| parallel | the model issues multiple tool calls in one response when asked                  |
+| cache    | a long system prompt is written to and read from the prompt cache (with retry)  |
+
+```bash
+# Anthropic — provider inferred from the `claude-` prefix
+ANTHROPIC_API_KEY=sk-ant-... bin/smoke_model.rb --model claude-opus-4-7
+
+# Bedrock — provider inferred from the regional `us.anthropic.` prefix.
+# Requires the aws-sdk-bedrockruntime gem and AWS credentials in the environment.
+bin/smoke_model.rb --model us.anthropic.claude-opus-4-7
+
+# Bedrock in another region
+bin/smoke_model.rb --model eu.anthropic.claude-opus-4-7 --region eu-west-1
+
+# Subset of checks, e.g. when iterating on cache behavior
+bin/smoke_model.rb --model claude-sonnet-4-6 --checks cache
+
+# Force a provider when the model ID is ambiguous
+bin/smoke_model.rb --provider anthropic --model claude-opus-4-7
+```
+
+`DEBUG=1` enables the providers' raw request/response logging.
+
+If the model rejects a parameter the gem sends by default (e.g. opus-4-7 deprecated `temperature`), add the model ID to `Configuration::MODELS_WITHOUT_TEMPERATURE` in `lib/rails_console_ai/configuration.rb` so the providers omit the field.
+
 ## Configuration
 
 ```ruby

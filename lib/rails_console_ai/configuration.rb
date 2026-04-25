@@ -1,3 +1,5 @@
+require 'set'
+
 module RailsConsoleAi
   class Configuration
     PROVIDERS = %i[anthropic openai local bedrock].freeze
@@ -17,6 +19,17 @@ module RailsConsoleAi
       'claude-haiku-4-5-20251001' => 16_000,
       'claude-opus-4-6'   => 4_096,
     }.freeze
+
+    # Models that reject the `temperature` parameter. Configuration#resolved_temperature
+    # returns nil for these so providers can omit the field from the request.
+    MODELS_WITHOUT_TEMPERATURE = Set.new(%w[
+      claude-opus-4-7
+      anthropic.claude-opus-4-7
+      us.anthropic.claude-opus-4-7
+      eu.anthropic.claude-opus-4-7
+      jp.anthropic.claude-opus-4-7
+      global.anthropic.claude-opus-4-7
+    ]).freeze
 
     attr_accessor :provider, :api_key, :model, :thinking_model, :max_tokens,
                   :auto_execute, :temperature,
@@ -177,6 +190,13 @@ module RailsConsoleAi
       return @max_tokens if @max_tokens
 
       DEFAULT_MAX_TOKENS.fetch(resolved_model, 4096)
+    end
+
+    # Returns nil for models that reject the `temperature` parameter (e.g. opus-4-7).
+    # Providers should use this in place of @temperature.
+    def resolved_temperature
+      return nil if MODELS_WITHOUT_TEMPERATURE.include?(resolved_model)
+      @temperature
     end
 
     def resolved_thinking_model

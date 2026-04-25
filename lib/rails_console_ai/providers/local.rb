@@ -21,9 +21,10 @@ module RailsConsoleAi
         body = {
           model: config.resolved_model,
           max_tokens: config.resolved_max_tokens,
-          temperature: config.temperature,
           messages: formatted
         }
+        temp = config.resolved_temperature
+        body[:temperature] = temp unless temp.nil?
         body[:tools] = tools.to_openai_format if tools
 
         estimated_input_tokens = estimate_tokens(formatted, system_prompt, tools)

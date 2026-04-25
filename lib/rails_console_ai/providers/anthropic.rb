@@ -51,9 +51,10 @@ module RailsConsoleAi
         body = {
           model: config.resolved_model,
           max_tokens: config.resolved_max_tokens,
-          temperature: config.temperature,
           messages: format_messages(messages)
         }
+        temp = config.resolved_temperature
+        body[:temperature] = temp unless temp.nil?
         if system_prompt
           body[:system] = [
             { 'type' => 'text', 'text' => system_prompt, 'cache_control' => { 'type' => 'ephemeral' } }
