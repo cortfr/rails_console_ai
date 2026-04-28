@@ -110,6 +110,7 @@ module RailsConsoleAi
       init_interactive unless @interactive_start
       @channel.log_input(text) if @channel.respond_to?(:log_input)
       @interactive_query ||= text
+      maybe_auto_upgrade_thinking(text)
       @history << { role: :user, content: text }
 
       status = send_and_execute
@@ -448,6 +449,13 @@ module RailsConsoleAi
       parts << @channel.system_instructions
       parts << binding_variable_summary
       parts.compact.join("\n\n")
+    end
+
+    AUTO_THINK_PATTERN = /\bthink\s+(harder|deeper|hard|carefully|more\s+carefully)\b/i
+
+    def maybe_auto_upgrade_thinking(text)
+      return unless text.is_a?(String) && text =~ AUTO_THINK_PATTERN
+      upgrade_to_thinking_model
     end
 
     def upgrade_to_thinking_model

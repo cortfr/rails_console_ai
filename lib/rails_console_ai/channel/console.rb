@@ -223,8 +223,7 @@ module RailsConsoleAi
           # Add to Readline history
           Readline::HISTORY.push(input) unless input == Readline::HISTORY.to_a.last
 
-          # Auto-upgrade to thinking model on "think harder" phrases
-          @engine.upgrade_to_thinking_model if input =~ /think\s*harder/i
+          @engine.maybe_auto_upgrade_thinking(input)
 
           @engine.set_interactive_query(input)
           @engine.add_user_message(input)
