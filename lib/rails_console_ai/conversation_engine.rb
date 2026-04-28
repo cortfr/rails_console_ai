@@ -796,18 +796,20 @@ module RailsConsoleAi
 
         if round == 0
           @channel.display_status("  Thinking...")
-        else
-          if last_thinking
-            last_thinking.split("\n").each do |line|
-              @channel.display_thinking("  #{line}")
-            end
+        elsif last_thinking
+          last_thinking.split("\n").each do |line|
+            @channel.display_thinking("  #{line}")
           end
-          @channel.display_status("  #{llm_status(round, messages, total_input, last_thinking, last_tool_names)}")
         end
 
         # Trim large tool outputs between rounds to prevent context explosion.
         # The LLM can still retrieve omitted outputs via recall_output.
         messages = trim_large_outputs(messages) if round > 0
+
+        if round > 0
+          req_tokens = estimate_request_tokens(messages)
+          @channel.display_status("  #{llm_status(round, messages, req_tokens, total_input, last_thinking, last_tool_names)}")
+        end
 
         if RailsConsoleAi.configuration.debug
           debug_pre_call(round, messages, active_system_prompt, tools, total_input, total_output)
@@ -1012,6 +1014,11 @@ module RailsConsoleAi
 
     # --- Formatting helpers ---
 
+    def estimate_request_tokens(messages)
+      chars = messages.sum { |m| (m[:content] || m['content']).to_s.length }
+      chars / 4
+    end
+
     def format_tokens(count)
       if count >= 1_000_000
         "#{(count / 1_000_000.0).round(1)}M"
@@ -1136,9 +1143,10 @@ module RailsConsoleAi
       str.length > max ? str[0..max] + '...' : str
     end
 
-    def llm_status(round, messages, tokens_so_far, last_thinking = nil, last_tool_names = [])
+    def llm_status(round, messages, req_tokens, total_billed, last_thinking = nil, last_tool_names = [])
       status = "Calling LLM (round #{round + 1}, #{messages.length} msgs"
-      status += ", ~#{format_tokens(tokens_so_far)} ctx" if tokens_so_far > 0
+      status += ", ~#{format_tokens(req_tokens)} ctx" if req_tokens > 0
+      status += ", ~#{format_tokens(total_billed)} total" if total_billed > 0
       status += ")"
       if !last_thinking && last_tool_names.any?
         counts = last_tool_names.tally
