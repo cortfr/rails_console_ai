@@ -271,6 +271,17 @@ RSpec.describe RailsConsoleAi::Executor do
     end
   end
 
+  describe '#reset_cancelled!' do
+    it 'clears the sticky last_cancelled flag set by a declined confirm_and_execute' do
+      allow($stdin).to receive(:gets).and_return("n\n")
+      executor.confirm_and_execute('1 + 1')
+      expect(executor.last_cancelled?).to be true
+
+      executor.reset_cancelled!
+      expect(executor.last_cancelled?).to be false
+    end
+  end
+
   describe '#offer_danger_retry' do
     it 'adds to allowlist when user chooses a' do
       # Simulate a safety error with metadata

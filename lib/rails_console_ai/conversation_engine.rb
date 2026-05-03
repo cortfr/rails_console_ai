@@ -785,6 +785,7 @@ module RailsConsoleAi
       require 'rails_console_ai/tools/registry'
       tools = tools_override || Tools::Registry.new(executor: @executor, channel: @channel)
       active_system_prompt = system_prompt || context
+      @executor.reset_cancelled! if @executor
       max_rounds = RailsConsoleAi.configuration.max_tool_rounds
       total_input = 0
       total_output = 0

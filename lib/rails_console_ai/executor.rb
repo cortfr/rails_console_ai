@@ -206,6 +206,10 @@ module RailsConsoleAi
       @last_cancelled
     end
 
+    def reset_cancelled!
+      @last_cancelled = false
+    end
+
     def confirm_and_execute(code)
       return nil if code.nil? || code.strip.empty?
 
