@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.28.0]
+
+- Add `bin/smoke_model.rb` to smoke-test new models (plain, tool, parallel, cache checks)
+- Support Claude Opus 4.7 by omitting the `temperature` parameter for models that reject it
+- Show both estimated request tokens and total billed tokens in LLM round status
+- Auto-upgrade to thinking model on "think harder/deeper/carefully" phrases in Slack as well as console
+- Fix cancelled code execution state persisting into the next user turn
+
 ## [0.26.0]
 
 - Add sub-agent support
