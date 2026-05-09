@@ -491,6 +491,14 @@ module RailsConsoleAi
         return
       end
 
+      # If the engine is mid-run, treat the message as steering guidance to be
+      # folded in at the next tool-loop boundary instead of restarting.
+      if session[:thread]&.alive? && channel.respond_to?(:add_guidance)
+        channel.add_guidance(text)
+        channel.display("Got it. One moment.")
+        return
+      end
+
       # Otherwise treat as a new message in the conversation
       replace_session_thread(session) do
         Thread.current.report_on_exception = false

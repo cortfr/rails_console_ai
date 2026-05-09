@@ -11,6 +11,9 @@ module RailsConsoleAi
         @thread_ts = thread_ts
         @user_name = user_name
         @reply_queue = Queue.new
+        @guidance_main = []
+        @guidance_sub = []
+        @guidance_mutex = Mutex.new
         @cancelled = false
         @log_prefix = "[#{@channel_id}/#{@thread_ts}] @#{@user_name}"
         @output_log = StringIO.new
@@ -18,6 +21,36 @@ module RailsConsoleAi
 
       def cancel!
         @cancelled = true
+        @guidance_mutex.synchronize do
+          @guidance_main.clear
+          @guidance_sub.clear
+        end
+      end
+
+      # Guidance is broadcast to both the main-engine queue and the sub-agent queue
+      # so a steering message arriving during a sub-agent run is seen by both layers
+      # (sub-agent reacts immediately; main engine reacts after delegate_task returns).
+      def add_guidance(text)
+        @guidance_mutex.synchronize do
+          @guidance_main << text
+          @guidance_sub << text
+        end
+      end
+
+      def drain_guidance(scope: :main)
+        @guidance_mutex.synchronize do
+          arr = scope == :sub ? @guidance_sub : @guidance_main
+          pending = arr.dup
+          arr.clear
+          pending
+        end
+      end
+
+      def pending_guidance?(scope: :main)
+        @guidance_mutex.synchronize do
+          arr = scope == :sub ? @guidance_sub : @guidance_main
+          !arr.empty?
+        end
       end
 
       def cancelled?

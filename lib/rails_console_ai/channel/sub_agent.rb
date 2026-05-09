@@ -64,6 +64,18 @@ module RailsConsoleAi
         @parent.cancelled?
       end
 
+      def pending_guidance?
+        @parent.respond_to?(:pending_guidance?) && @parent.pending_guidance?(scope: :sub)
+      end
+
+      def drain_guidance
+        @parent.respond_to?(:drain_guidance) ? @parent.drain_guidance(scope: :sub) : []
+      end
+
+      def add_guidance(text)
+        @parent.add_guidance(text) if @parent.respond_to?(:add_guidance)
+      end
+
       def supports_danger?
         false  # Sub-agents must never silently bypass safety guards
       end

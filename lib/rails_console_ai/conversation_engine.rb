@@ -803,6 +803,15 @@ module RailsConsoleAi
           break
         end
 
+        if round > 0 && @channel.respond_to?(:pending_guidance?) && @channel.pending_guidance?
+          pending = @channel.drain_guidance
+          guidance_text = format_user_interruption(pending)
+          guidance_msg = { role: :user, content: guidance_text }
+          messages << guidance_msg
+          new_messages << guidance_msg
+          @channel.display_status("  Steering: incorporating user guidance.")
+        end
+
         if round == 0
           @channel.display_status("  Thinking...")
         elsif last_thinking
@@ -1150,6 +1159,28 @@ module RailsConsoleAi
 
     def truncate(str, max)
       str.length > max ? str[0..max] + '...' : str
+    end
+
+    # Wraps mid-task user messages with explicit framing so the model treats them
+    # as a real-time interruption that supersedes the prior task, rather than as
+    # a reply to the most recent tool result.
+    def format_user_interruption(messages)
+      joined = messages.map { |t| t.to_s.strip }.reject(&:empty?).join("\n\n")
+      <<~MSG.strip
+        [INTERRUPTION FROM USER — REAL-TIME MESSAGE]
+
+        The user sent the following message while you were working on the previous step.
+        They sent it before seeing the result of your last tool call, so it is NOT a
+        reply to that result. It is your most recent direction from the user and
+        supersedes the prior task.
+
+        If they are telling you to stop, halt completely and acknowledge — do not
+        autonomously switch to a different method to accomplish the original task.
+        If their instruction is unclear, ask them what they want before continuing.
+
+        User message:
+        "#{joined}"
+      MSG
     end
 
     def llm_status(round, messages, req_tokens, total_billed, last_thinking = nil, last_tool_names = [])

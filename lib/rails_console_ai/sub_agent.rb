@@ -66,6 +66,12 @@ module RailsConsoleAi
       max_rounds.times do |round|
         break if channel.cancelled?
 
+        if round > 0 && channel.respond_to?(:pending_guidance?) && channel.pending_guidance?
+          pending = channel.drain_guidance
+          messages << { role: :user, content: format_user_interruption(pending) }
+          channel.display_status("  Steering: incorporating user guidance.")
+        end
+
         if round == 0
           channel.display_status("Thinking...")
         end
@@ -145,6 +151,25 @@ module RailsConsoleAi
       end
 
       result&.text || '(sub-agent returned no result)'
+    end
+
+    def format_user_interruption(messages)
+      joined = messages.map { |t| t.to_s.strip }.reject(&:empty?).join("\n\n")
+      <<~MSG.strip
+        [INTERRUPTION FROM USER — REAL-TIME MESSAGE]
+
+        The user sent the following message while you were working. They sent it
+        before seeing your latest tool result, so it is NOT a reply to that result.
+        It is your most recent direction from the user and supersedes the prior task.
+
+        If they are telling you to stop, halt immediately and finish with a brief
+        acknowledgement — do not switch to a different method to accomplish the
+        original task on your own. If unclear, return what you have so far and let
+        the parent agent ask the user.
+
+        User message:
+        "#{joined}"
+      MSG
     end
 
     def build_provider
