@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.29.0]
+
+- Allow steering Slack conversations mid-run by sending follow-up messages that are folded in as user guidance at the next tool-loop boundary
+- Propagate steering guidance into sub-agent runs so interruptions are seen by both the main engine and any active sub-agent
+
 ## [0.28.0]
 
 - Add `bin/smoke_model.rb` to smoke-test new models (plain, tool, parallel, cache checks)
