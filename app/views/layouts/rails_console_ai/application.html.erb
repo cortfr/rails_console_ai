@@ -70,14 +70,87 @@
     .pagination a:hover { background: #f8f9fa; text-decoration: none; }
     .pagination .disabled { padding: 6px 14px; font-size: 13px; color: #ccc; }
     .pagination .page-info { font-size: 13px; color: #888; }
+    .nav-links a { margin-left: 16px; }
+    .btn {
+      display: inline-block; padding: 7px 14px; border-radius: 4px;
+      background: #4a6fa5; color: #fff !important; border: 0;
+      font-size: 13px; cursor: pointer; text-decoration: none;
+    }
+    .btn:hover { background: #3a5a85; text-decoration: none; }
+    .btn-secondary { background: #6c757d; }
+    .btn-secondary:hover { background: #5a6268; }
+    .btn-danger { background: #dc3545; }
+    .btn-danger:hover { background: #c82333; }
+    .btn-bar { display: flex; gap: 8px; margin: 16px 0; flex-wrap: wrap; }
+    .source-db { background: #cce5ff; color: #004085; }
+    .source-file { background: #e2e3e5; color: #383d41; }
+    .form-row { margin-bottom: 14px; }
+    .form-row label {
+      display: block; font-size: 12px; font-weight: 600;
+      color: #555; text-transform: uppercase; margin-bottom: 4px;
+    }
+    .form-row input[type="text"], .form-row textarea {
+      width: 100%; padding: 8px 10px; font-size: 14px;
+      border: 1px solid #ccc; border-radius: 4px;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    .form-row textarea {
+      font-family: "SF Mono", "Monaco", "Menlo", "Consolas", monospace;
+      font-size: 13px;
+    }
+    .form-row .hint { font-size: 12px; color: #888; margin-top: 4px; }
+    .form-card {
+      background: #fff; border-radius: 8px; padding: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 24px;
+    }
+    .flash { padding: 12px 16px; border-radius: 4px; margin-bottom: 16px; font-size: 14px; }
+    .flash-notice { background: #d4edda; color: #155724; }
+    .flash-alert { background: #f8d7da; color: #721c24; }
+    .markdown-body {
+      background: #fff; border-radius: 8px; padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px;
+      white-space: pre-wrap; font-family: "SF Mono", monospace; font-size: 13px;
+    }
+    .versions-list { background: #fff; border-radius: 8px; padding: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .versions-list .ver-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px; border-bottom: 1px solid #f0f0f0; font-size: 13px;
+    }
+    .versions-list .ver-row:last-child { border-bottom: 0; }
+    .versions-list .ver-meta { color: #888; font-size: 12px; }
+    .diff-table {
+      width: 100%; border-collapse: collapse; background: #fff;
+      border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .diff-table th { background: #f8f9fa; padding: 8px 12px; text-align: left; font-size: 12px; }
+    .diff-table td {
+      vertical-align: top; padding: 0; width: 50%; border-bottom: 1px solid #f0f0f0;
+    }
+    .diff-table pre {
+      margin: 0; padding: 4px 12px; font-family: "SF Mono", monospace;
+      font-size: 12px; white-space: pre-wrap; word-break: break-word;
+    }
+    .diff-add { background: #d4edda; }
+    .diff-del { background: #f8d7da; }
+    .tag {
+      display: inline-block; padding: 2px 8px; margin-right: 4px;
+      background: #e9ecef; color: #495057; border-radius: 10px; font-size: 11px;
+    }
+    .inline-form { display: inline; }
   </style>
 </head>
 <body>
   <div class="header">
     <h1>RailsConsoleAi Admin</h1>
-    <a href="<%= rails_console_ai.root_path %>">Sessions</a>
+    <div class="nav-links">
+      <a href="<%= rails_console_ai.root_path %>">Sessions</a>
+      <a href="<%= rails_console_ai.skills_path %>">Skills</a>
+      <a href="<%= rails_console_ai.memories_path %>">Memories</a>
+    </div>
   </div>
   <div class="container">
+    <% if flash[:notice] %><div class="flash flash-notice"><%= flash[:notice] %></div><% end %>
+    <% if flash[:alert]  %><div class="flash flash-alert"><%= flash[:alert] %></div><% end %>
     <%= yield %>
   </div>
 </body>

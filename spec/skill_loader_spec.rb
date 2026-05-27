@@ -162,4 +162,66 @@ RSpec.describe RailsConsoleAi::SkillLoader do
       expect(result).to include('No skill found')
     end
   end
+
+  describe 'DB + file union (DatabaseStorage stubbed)' do
+    let(:db_skill) do
+      {
+        'id'                        => 42,
+        'name'                      => 'DB-only skill',
+        'description'               => 'lives in the database',
+        'body'                      => '## Recipe\n1. do thing',
+        'tags'                      => ['db'],
+        'bypass_guards_for_methods' => [],
+        'source'                    => :db
+      }
+    end
+
+    before do
+      allow(RailsConsoleAi::Storage::DatabaseStorage).to receive(:available?).and_return(true)
+      allow(RailsConsoleAi::Storage::DatabaseStorage).to receive(:all_skills).and_return([db_skill])
+      storage.write('skills/file-only.md', skill_content)
+    end
+
+    it 'returns the union of DB and file skills, alphabetized' do
+      names = loader.load_all_skills.map { |s| s['name'] }
+      expect(names).to include('DB-only skill')
+      expect(names).to include('Approve Changes')
+    end
+
+    it 'tags each skill with its source' do
+      sources = loader.load_all_skills.each_with_object({}) { |s, h| h[s['name']] = s['source'] }
+      expect(sources['DB-only skill']).to eq(:db)
+      expect(sources['Approve Changes']).to eq(:file)
+    end
+
+    it 'shadows file skills with same-named DB skills (DB wins)' do
+      storage.write('skills/db-only-skill.md', "---\nname: DB-only skill\ndescription: shadowed\ntags: []\n---\n\nshadowed body")
+      results = loader.load_all_skills.select { |s| s['name'] == 'DB-only skill' }
+      expect(results.length).to eq(1)
+      expect(results.first['source']).to eq(:db)
+    end
+
+    it 'routes save_skill to DB by default' do
+      record = double('Skill', id: 99, name: 'DB-only skill')
+      expect(RailsConsoleAi::Storage::DatabaseStorage).to receive(:save_skill)
+        .with(hash_including(name: 'New', description: 'd', body: 'b'))
+        .and_return([record, true])
+      result = loader.save_skill(name: 'New', description: 'd', body: 'b')
+      expect(result).to include('Skill created (db)')
+    end
+
+    it 'routes save_skill to file when target: :file' do
+      expect(RailsConsoleAi::Storage::DatabaseStorage).not_to receive(:save_skill)
+      result = loader.save_skill(name: 'FileSkill', description: 'd', body: 'b', target: :file)
+      expect(result).to start_with('Skill created:')
+      expect(storage.read('skills/fileskill.md')).to include('FileSkill')
+    end
+
+    it 'falls back to file when DB target is requested but tables are missing' do
+      allow(RailsConsoleAi::Storage::DatabaseStorage).to receive(:available?).and_return(false)
+      expect(RailsConsoleAi::Storage::DatabaseStorage).not_to receive(:save_skill)
+      result = loader.save_skill(name: 'FallbackSkill', description: 'd', body: 'b', target: :db)
+      expect(result).to start_with('Skill created:')
+    end
+  end
 end

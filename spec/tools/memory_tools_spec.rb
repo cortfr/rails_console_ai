@@ -203,4 +203,52 @@ RSpec.describe RailsConsoleAi::Tools::MemoryTools do
       expect(summaries).to include('- Auth')
     end
   end
+
+  describe 'DB + file union (DatabaseStorage stubbed)' do
+    let(:db_memory) { { 'id' => 7, 'name' => 'DB Mem', 'description' => 'from db', 'tags' => ['db'], 'source' => :db } }
+
+    before do
+      allow(RailsConsoleAi::Storage::DatabaseStorage).to receive(:memories_available?).and_return(true)
+      allow(RailsConsoleAi::Storage::DatabaseStorage).to receive(:all_memories).and_return([db_memory])
+      tools.save_memory(name: 'File Mem', description: 'on disk', tags: ['file'], target: :file)
+    end
+
+    it 'load_all_memories returns DB + file records with source labels' do
+      results = tools.load_all_memories
+      names = results.map { |m| m['name'] }
+      expect(names).to include('DB Mem', 'File Mem')
+      sources = results.each_with_object({}) { |m, h| h[m['name']] = m['source'] }
+      expect(sources['DB Mem']).to eq(:db)
+      expect(sources['File Mem']).to eq(:file)
+    end
+
+    it 'shadows file memories with same-named DB memories' do
+      tools.save_memory(name: 'DB Mem', description: 'shadowed', tags: ['file'], target: :file)
+      results = tools.load_all_memories.select { |m| m['name'] == 'DB Mem' }
+      expect(results.length).to eq(1)
+      expect(results.first['source']).to eq(:db)
+    end
+
+    it 'routes save_memory to DB by default' do
+      record = double('Memory', id: 11, name: 'New Mem')
+      expect(RailsConsoleAi::Storage::DatabaseStorage).to receive(:save_memory)
+        .with(hash_including(name: 'New Mem', description: 'd'))
+        .and_return([record, true])
+      result = tools.save_memory(name: 'New Mem', description: 'd')
+      expect(result).to include('Memory saved (db)')
+    end
+
+    it 'routes save_memory to file when target: :file' do
+      expect(RailsConsoleAi::Storage::DatabaseStorage).not_to receive(:save_memory)
+      result = tools.save_memory(name: 'Disk Mem', description: 'd', target: :file)
+      expect(result).to start_with('Memory saved:')
+    end
+
+    it 'falls back to file when DB target is requested but tables are missing' do
+      allow(RailsConsoleAi::Storage::DatabaseStorage).to receive(:memories_available?).and_return(false)
+      expect(RailsConsoleAi::Storage::DatabaseStorage).not_to receive(:save_memory)
+      result = tools.save_memory(name: 'Fallback Mem', description: 'd', target: :db)
+      expect(result).to start_with('Memory saved:')
+    end
+  end
 end

@@ -21,4 +21,5 @@ Gem::Specification.new do |s|
   s.add_development_dependency 'rspec',    '~> 3.0'
   s.add_development_dependency 'webmock',  '~> 3.0'
   s.add_development_dependency 'rake',     '>= 12.0'
+  s.add_development_dependency 'sqlite3',  '>= 1.4'
 end

@@ -156,9 +156,80 @@ module RailsConsoleAi
         $stdout.puts "\e[32mRailsConsoleAi: created #{table} table.\e[0m"
       end
 
+      setup_skills_tables!(conn)
+      setup_memories_tables!(conn)
+
       migrate!
     rescue => e
       $stderr.puts "\e[31mRailsConsoleAi setup failed: #{e.class}: #{e.message}\e[0m"
+    end
+
+    def setup_skills_tables!(conn)
+      skills_table   = 'rails_console_ai_skills'
+      versions_table = 'rails_console_ai_skill_versions'
+
+      unless conn.table_exists?(skills_table)
+        conn.create_table(skills_table) do |t|
+          t.string   :name,        limit: 255, null: false
+          t.text     :description
+          t.text     :body
+          t.text     :tags
+          t.text     :bypass_guards_for_methods
+          t.datetime :created_at,  null: false
+          t.datetime :updated_at,  null: false
+        end
+        conn.add_index(skills_table, :name, unique: true)
+        $stdout.puts "\e[32mRailsConsoleAi: created #{skills_table} table.\e[0m"
+      end
+
+      unless conn.table_exists?(versions_table)
+        conn.create_table(versions_table) do |t|
+          t.integer  :skill_id
+          t.string   :name,        limit: 255
+          t.text     :description
+          t.text     :body
+          t.text     :tags
+          t.text     :bypass_guards_for_methods
+          t.string   :edited_by,   limit: 255
+          t.text     :change_note
+          t.datetime :created_at,  null: false
+        end
+        conn.add_index(versions_table, :skill_id)
+        conn.add_index(versions_table, :created_at)
+        $stdout.puts "\e[32mRailsConsoleAi: created #{versions_table} table.\e[0m"
+      end
+    end
+
+    def setup_memories_tables!(conn)
+      memories_table = 'rails_console_ai_memories'
+      versions_table = 'rails_console_ai_memory_versions'
+
+      unless conn.table_exists?(memories_table)
+        conn.create_table(memories_table) do |t|
+          t.string   :name,        limit: 255, null: false
+          t.text     :description
+          t.text     :tags
+          t.datetime :created_at,  null: false
+          t.datetime :updated_at,  null: false
+        end
+        conn.add_index(memories_table, :name, unique: true)
+        $stdout.puts "\e[32mRailsConsoleAi: created #{memories_table} table.\e[0m"
+      end
+
+      unless conn.table_exists?(versions_table)
+        conn.create_table(versions_table) do |t|
+          t.integer  :memory_id
+          t.string   :name,        limit: 255
+          t.text     :description
+          t.text     :tags
+          t.string   :edited_by,   limit: 255
+          t.text     :change_note
+          t.datetime :created_at,  null: false
+        end
+        conn.add_index(versions_table, :memory_id)
+        conn.add_index(versions_table, :created_at)
+        $stdout.puts "\e[32mRailsConsoleAi: created #{versions_table} table.\e[0m"
+      end
     end
 
     def migrate!
@@ -207,6 +278,22 @@ module RailsConsoleAi
       unless conn.index_exists?(table, [:mode, :status], name: 'idx_rca_sessions_mode_status')
         conn.add_index(table, [:mode, :status], name: 'idx_rca_sessions_mode_status')
         migrations << 'idx_rca_sessions_mode_status'
+      end
+
+      # Ensure skills/memories tables exist (idempotent — adds them on existing installs).
+      %w[rails_console_ai_skills rails_console_ai_skill_versions].each do |t|
+        unless conn.table_exists?(t)
+          setup_skills_tables!(conn)
+          migrations << t
+          break
+        end
+      end
+      %w[rails_console_ai_memories rails_console_ai_memory_versions].each do |t|
+        unless conn.table_exists?(t)
+          setup_memories_tables!(conn)
+          migrations << t
+          break
+        end
       end
 
       if migrations.empty?

@@ -1,0 +1,68 @@
+<%
+  # @skill can be either a Skill AR record or a Hash from a file source.
+  is_db = @skill.is_a?(RailsConsoleAi::Skill)
+  name = is_db ? @skill.name : @skill['name']
+  description = is_db ? @skill.description : @skill['description']
+  body = is_db ? @skill.body : @skill['body']
+  tags = is_db ? Array(@skill.tags) : Array(@skill['tags'])
+  bypass = is_db ? Array(@skill.bypass_guards_for_methods) : Array(@skill['bypass_guards_for_methods'])
+  file_key = is_db ? nil : @skill['file_key']
+%>
+
+<%= link_to '← All skills', skills_path, class: 'back-link' %>
+
+<div class="meta-card">
+  <h2 style="margin-bottom:8px;">
+    <%= name %>
+    <% if is_db %>
+      <span class="badge source-db">DB</span>
+    <% else %>
+      <span class="badge source-file">FILE</span>
+    <% end %>
+  </h2>
+  <p class="text-muted"><%= description %></p>
+  <div class="meta-grid" style="margin-top:16px;">
+    <div class="meta-item"><label>Tags</label><span><%= tags.empty? ? '—' : tags.join(', ') %></span></div>
+    <div class="meta-item"><label>Bypass guards</label><span><%= bypass.empty? ? '—' : bypass.join(', ') %></span></div>
+    <% if is_db %>
+      <div class="meta-item"><label>Updated</label><span><%= @skill.updated_at.strftime('%Y-%m-%d %H:%M') %></span></div>
+      <div class="meta-item"><label>Versions</label><span><%= @skill.versions.count %></span></div>
+    <% else %>
+      <div class="meta-item"><label>Path</label><span class="mono"><%= file_key %></span></div>
+    <% end %>
+  </div>
+</div>
+
+<div class="btn-bar">
+  <% if is_db %>
+    <%= link_to 'Edit', edit_skill_path(@skill), class: 'btn' %>
+    <%= link_to 'Versions', skill_versions_path(@skill), class: 'btn btn-secondary' %>
+    <%= button_to 'Delete', skill_path(@skill), method: :delete, class: 'btn btn-danger', form: { style: 'display:inline' },data: { confirm: 'Delete this skill? Past versions remain in history.' } %>
+  <% end %>
+</div>
+
+<h3 style="margin-bottom:8px;">Recipe</h3>
+<div class="markdown-body"><%= body %></div>
+
+<% if is_db && @versions && @versions.any? %>
+  <h3 style="margin:24px 0 8px;">Recent versions</h3>
+  <div class="versions-list">
+    <% @versions.first(5).each do |v| %>
+      <div class="ver-row">
+        <div>
+          <strong>v<%= v.id %></strong>
+          <span class="ver-meta">— <%= v.created_at.strftime('%Y-%m-%d %H:%M') %> by <%= v.edited_by || 'unknown' %></span>
+          <% if v.change_note.present? %><div class="ver-meta"><%= v.change_note %></div><% end %>
+        </div>
+        <div>
+          <%= link_to 'View', skill_version_path(@skill, v) %>
+          ·
+          <%= link_to 'Diff vs current', diff_skills_path(skill_id: @skill.id, from: v.id) %>
+        </div>
+      </div>
+    <% end %>
+  </div>
+  <% if @versions.size > 5 %>
+    <p style="margin-top:8px;"><%= link_to "See all #{@versions.size} versions →", skill_versions_path(@skill) %></p>
+  <% end %>
+<% end %>

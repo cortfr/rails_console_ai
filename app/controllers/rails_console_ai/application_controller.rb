@@ -1,5 +1,10 @@
 module RailsConsoleAi
   class ApplicationController < ActionController::Base
+    # Pin to the engine's layout. Without this, Rails layout auto-resolution can
+    # fall back to the host app's `layouts/application` (which usually references
+    # host-only helpers like `logout_url`).
+    layout 'rails_console_ai/application'
+
     protect_from_forgery with: :exception
 
     before_action :rails_console_ai_authenticate!

@@ -1,0 +1,7 @@
+<%= link_to '← Back to memory', memory_path(@memory), class: 'back-link' %>
+<h2 style="margin-bottom:16px;">Edit memory</h2>
+<%= render 'form',
+      form_url: memory_path(@memory),
+      form_method: :patch,
+      submit_label: 'Save changes',
+      cancel_path: memory_path(@memory) %>

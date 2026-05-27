@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+- Skills and memories can now be stored in the database (in addition to the existing on-disk `.rails_console_ai/skills` and `.rails_console_ai/memories` files). DB-backed records are versioned — every save creates a `SkillVersion` / `MemoryVersion` row with `edited_by` and an optional change note
+- `SkillLoader#load_all_skills` and `MemoryTools#load_all_memories` now return the union of DB and file records (DB wins on name collision)
+- `save_skill` / `save_memory` AI tools accept an optional `target` parameter (`"db"` default, `"file"` to write to disk) plus `change_note`
+- New web UI sections at `/rails_console_ai/skills` and `/rails_console_ai/memories` provide list, view, create, edit, delete, version history, side-by-side diff, and restore. File-sourced records are surfaced but read-only in the UI
+- `ai_db_setup` / `ai_db_migrate` now create the new `rails_console_ai_skills`, `rails_console_ai_skill_versions`, `rails_console_ai_memories`, and `rails_console_ai_memory_versions` tables idempotently
+
 ## [0.29.0]
 
 - Allow steering Slack conversations mid-run by sending follow-up messages that are folded in as user guidance at the next tool-loop boundary

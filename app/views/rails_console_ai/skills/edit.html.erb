@@ -1,0 +1,7 @@
+<%= link_to '← Back to skill', skill_path(@skill), class: 'back-link' %>
+<h2 style="margin-bottom:16px;">Edit skill</h2>
+<%= render 'form',
+      form_url: skill_path(@skill),
+      form_method: :patch,
+      submit_label: 'Save changes',
+      cancel_path: skill_path(@skill) %>

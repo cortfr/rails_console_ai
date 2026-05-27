@@ -1,0 +1,119 @@
+require 'rails_console_ai/tools/memory_tools'
+
+module RailsConsoleAi
+  class MemoriesController < ApplicationController
+    before_action :load_memory, only: [:show, :edit, :update, :destroy]
+
+    def index
+      @memories = Tools::MemoryTools.new.load_all_memories
+      @q = params[:q].to_s.strip
+      unless @q.empty?
+        needle = @q.downcase
+        @memories = @memories.select { |m|
+          [m['name'], m['description'], Array(m['tags']).join(' ')].compact.join(' ').downcase.include?(needle)
+        }
+      end
+    end
+
+    def show
+      @versions = @memory.versions if @memory.is_a?(Memory)
+    end
+
+    def new
+      @memory = Memory.new
+    end
+
+    def create
+      @memory = Memory.new
+      attrs = memory_params
+      begin
+        @memory.update_with_version!(
+          attrs,
+          edited_by: edited_by_param,
+          change_note: params[:change_note].presence
+        )
+        redirect_to memory_path(@memory), notice: 'Memory created.'
+      rescue ActiveRecord::RecordInvalid => e
+        flash.now[:alert] = e.message
+        render :new
+      end
+    end
+
+    def edit
+      redirect_to memories_path, alert: file_memory_message and return unless @memory.is_a?(Memory)
+    end
+
+    def update
+      redirect_to memories_path, alert: file_memory_message and return unless @memory.is_a?(Memory)
+
+      begin
+        @memory.update_with_version!(
+          memory_params,
+          edited_by: edited_by_param,
+          change_note: params[:change_note].presence
+        )
+        redirect_to memory_path(@memory), notice: 'Memory updated.'
+      rescue ActiveRecord::RecordInvalid => e
+        flash.now[:alert] = e.message
+        render :edit
+      end
+    end
+
+    def destroy
+      if @memory.is_a?(Memory)
+        @memory.destroy
+        redirect_to memories_path, notice: 'Memory deleted. Past versions remain in history.'
+      else
+        redirect_to memories_path, alert: file_memory_message
+      end
+    end
+
+    def diff
+      @memory = Memory.find(params[:memory_id])
+      @from = @memory.versions.find(params[:from])
+      @to   = params[:to].present? ? @memory.versions.find(params[:to]) : nil
+      @to_label = @to ? "Version ##{@to.id}" : 'Current'
+      @to_description = @to ? @to.description : @memory.description
+      @to_tags = @to ? Array(@to.tags) : Array(@memory.tags)
+    end
+
+    private
+
+    def load_memory
+      if params[:id].to_s =~ /\A\d+\z/
+        @memory = Memory.find(params[:id])
+      else
+        all = Tools::MemoryTools.new.load_all_memories
+        @memory = all.find { |m| slugify(m['name']) == params[:id] || m['name'] == params[:id] }
+        raise ActiveRecord::RecordNotFound, "Memory not found: #{params[:id]}" unless @memory
+      end
+    end
+
+    def memory_params
+      {
+        name:        params.require(:memory)[:name],
+        description: params[:memory][:description],
+        tags:        split_csv(params[:memory][:tags])
+      }
+    end
+
+    def edited_by_param
+      params[:edited_by].presence || 'web'
+    end
+
+    def split_csv(str)
+      str.to_s.split(',').map(&:strip).reject(&:empty?)
+    end
+
+    def slugify(name)
+      name.to_s.downcase.strip
+        .gsub(/[^a-z0-9\s-]/, '')
+        .gsub(/[\s]+/, '-')
+        .gsub(/-+/, '-')
+    end
+
+    def file_memory_message
+      'This memory lives on disk under .rails_console_ai/memories/. Edit the file directly to change it.'
+    end
+  end
+end

@@ -406,18 +406,26 @@ module RailsConsoleAi
 
         register(
           name: 'save_memory',
-          description: 'Save a fact or pattern you learned about this codebase for future sessions. Use after discovering how something works (e.g. sharding, auth, custom business logic).',
+          description: 'Save a fact or pattern you learned about this codebase for future sessions. Use after discovering how something works (e.g. sharding, auth, custom business logic). Defaults to the versioned DB store; pass target: "file" to write to the on-disk .rails_console_ai/memories directory instead.',
           parameters: {
             'type' => 'object',
             'properties' => {
               'name' => { 'type' => 'string', 'description' => 'Short name for this memory (e.g. "Sharding architecture")' },
               'description' => { 'type' => 'string', 'description' => 'Detailed description of what you learned' },
-              'tags' => { 'type' => 'array', 'items' => { 'type' => 'string' }, 'description' => 'Optional tags (e.g. ["database", "sharding"])' }
+              'tags' => { 'type' => 'array', 'items' => { 'type' => 'string' }, 'description' => 'Optional tags (e.g. ["database", "sharding"])' },
+              'target' => { 'type' => 'string', 'enum' => ['db', 'file'], 'description' => 'Where to store this memory. "db" (default) is versioned and editable via the web UI; "file" writes a Markdown file under .rails_console_ai/memories/.' },
+              'change_note' => { 'type' => 'string', 'description' => 'Optional one-line note describing this edit (DB store only).' }
             },
             'required' => ['name', 'description']
           },
           handler: ->(args) {
-            memory.save_memory(name: args['name'], description: args['description'], tags: args['tags'] || [])
+            memory.save_memory(
+              name: args['name'],
+              description: args['description'],
+              tags: args['tags'] || [],
+              target: (args['target'] || 'db').to_sym,
+              change_note: args['change_note']
+            )
           }
         )
 
@@ -492,7 +500,7 @@ module RailsConsoleAi
 
         register(
           name: 'save_skill',
-          description: 'Create or update a skill — a reusable procedure for a specific operation. Use when the user asks you to create a skill, recipe, or runbook. Skills differ from memories: a skill is a step-by-step procedure to follow, while a memory is a fact or pattern you learned.',
+          description: 'Create or update a skill — a reusable procedure for a specific operation. Use when the user asks you to create a skill, recipe, or runbook. Skills differ from memories: a skill is a step-by-step procedure to follow, while a memory is a fact or pattern you learned. Defaults to the versioned DB store; pass target: "file" to write to the on-disk .rails_console_ai/skills directory instead.',
           parameters: {
             'type' => 'object',
             'properties' => {
@@ -500,7 +508,9 @@ module RailsConsoleAi
               'description' => { 'type' => 'string', 'description' => 'One-line description of when to use this skill' },
               'body' => { 'type' => 'string', 'description' => 'The full skill recipe in markdown. Include: ## When to use, ## Recipe (numbered steps with code blocks), ## Notes (optional).' },
               'tags' => { 'type' => 'array', 'items' => { 'type' => 'string' }, 'description' => 'Optional tags for categorization (e.g. ["booking-page", "admin"])' },
-              'bypass_guards_for_methods' => { 'type' => 'array', 'items' => { 'type' => 'string' }, 'description' => 'Methods that should bypass safety guards when this skill is active (e.g. ["BookingPage#save!", "BookingPage#ensure_subdomain_set!"])' }
+              'bypass_guards_for_methods' => { 'type' => 'array', 'items' => { 'type' => 'string' }, 'description' => 'Methods that should bypass safety guards when this skill is active (e.g. ["BookingPage#save!", "BookingPage#ensure_subdomain_set!"])' },
+              'target' => { 'type' => 'string', 'enum' => ['db', 'file'], 'description' => 'Where to store this skill. "db" (default) is versioned and editable via the web UI; "file" writes a Markdown file under .rails_console_ai/skills/.' },
+              'change_note' => { 'type' => 'string', 'description' => 'Optional one-line note describing this edit (DB store only).' }
             },
             'required' => %w[name description body]
           },
@@ -510,7 +520,9 @@ module RailsConsoleAi
               description: args['description'],
               body: args['body'],
               tags: args['tags'] || [],
-              bypass_guards_for_methods: args['bypass_guards_for_methods'] || []
+              bypass_guards_for_methods: args['bypass_guards_for_methods'] || [],
+              target: (args['target'] || 'db').to_sym,
+              change_note: args['change_note']
             )
           }
         )

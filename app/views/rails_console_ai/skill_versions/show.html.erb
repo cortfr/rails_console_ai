@@ -1,0 +1,23 @@
+<%= link_to '← All versions', skill_versions_path(@skill), class: 'back-link' %>
+
+<div class="meta-card">
+  <h2 style="margin-bottom:8px;"><%= @version.name %> <span class="badge source-db">v<%= @version.id %></span></h2>
+  <p class="text-muted"><%= @version.description %></p>
+  <div class="meta-grid" style="margin-top:16px;">
+    <div class="meta-item"><label>Edited by</label><span><%= @version.edited_by || '—' %></span></div>
+    <div class="meta-item"><label>At</label><span><%= @version.created_at.strftime('%Y-%m-%d %H:%M:%S') %></span></div>
+    <div class="meta-item"><label>Tags</label><span><%= Array(@version.tags).join(', ').presence || '—' %></span></div>
+    <div class="meta-item"><label>Bypass guards</label><span><%= Array(@version.bypass_guards_for_methods).join(', ').presence || '—' %></span></div>
+  </div>
+  <% if @version.change_note.present? %>
+    <p style="margin-top:12px;"><strong>Change note:</strong> <%= @version.change_note %></p>
+  <% end %>
+</div>
+
+<div class="btn-bar">
+  <%= button_to "Restore this version", restore_skill_version_path(@skill, @version), method: :post, class: 'btn btn-danger', data: { confirm: "Restore version ##{@version.id}? Current skill will be overwritten." } %>
+  <%= link_to 'Diff vs current', diff_skills_path(skill_id: @skill.id, from: @version.id), class: 'btn btn-secondary' %>
+</div>
+
+<h3 style="margin-top:24px; margin-bottom:8px;">Recipe</h3>
+<div class="markdown-body"><%= @version.body %></div>

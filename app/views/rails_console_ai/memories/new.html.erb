@@ -1,0 +1,7 @@
+<%= link_to '← All memories', memories_path, class: 'back-link' %>
+<h2 style="margin-bottom:16px;">New memory</h2>
+<%= render 'form',
+      form_url: memories_path,
+      form_method: :post,
+      submit_label: 'Create memory',
+      cancel_path: memories_path %>

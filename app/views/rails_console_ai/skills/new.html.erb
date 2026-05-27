@@ -1,0 +1,7 @@
+<%= link_to '← All skills', skills_path, class: 'back-link' %>
+<h2 style="margin-bottom:16px;">New skill</h2>
+<%= render 'form',
+      form_url: skills_path,
+      form_method: :post,
+      submit_label: 'Create skill',
+      cancel_path: skills_path %>

@@ -1,0 +1,49 @@
+<div class="btn-bar">
+  <%= link_to 'New memory', new_memory_path, class: 'btn' %>
+  <form method="get" action="<%= memories_path %>" style="margin-left:auto;">
+    <input type="text" name="q" value="<%= @q %>" placeholder="Search memories…" style="padding:6px 10px; border:1px solid #ccc; border-radius:4px;">
+  </form>
+</div>
+
+<% if @memories.empty? %>
+  <div class="meta-card">
+    <p class="text-muted">No memories yet. <%= link_to 'Create one', new_memory_path %> or drop a Markdown file in <code>.rails_console_ai/memories/</code>.</p>
+  </div>
+<% else %>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Description</th>
+        <th>Tags</th>
+        <th>Source</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @memories.each do |m| %>
+        <% link_id = m['id'] || m['name'] %>
+        <tr>
+          <td><strong><%= link_to m['name'], memory_path(link_id) %></strong></td>
+          <td class="query-cell"><%= m['description'].to_s[0, 140] %></td>
+          <td>
+            <% Array(m['tags']).each do |t| %><span class="tag"><%= t %></span><% end %>
+          </td>
+          <td>
+            <% if m['source'] == :db %>
+              <span class="badge source-db">DB</span>
+            <% else %>
+              <span class="badge source-file">FILE</span>
+            <% end %>
+          </td>
+          <td>
+            <%= link_to 'View', memory_path(link_id) %>
+            <% if m['source'] == :db %>
+              · <%= link_to 'Edit', edit_memory_path(m['id']) %>
+            <% end %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% end %>

@@ -1,0 +1,48 @@
+<%= form_with model: @skill, url: form_url, method: form_method, local: true do |f| %>
+  <div class="form-card">
+    <div class="form-row">
+      <label>Name</label>
+      <%= f.text_field :name, value: @skill.name, required: true %>
+    </div>
+
+    <div class="form-row">
+      <label>Description</label>
+      <%= f.text_field :description, value: @skill.description, placeholder: 'One-line description of when to use this skill' %>
+    </div>
+
+    <div class="form-row">
+      <label>Body (markdown)</label>
+      <%= f.text_area :body, value: @skill.body, rows: 18 %>
+      <div class="hint">Include "## When to use", "## Recipe" (numbered steps with code blocks), "## Notes".</div>
+    </div>
+
+    <div class="form-row">
+      <label>Tags (comma-separated)</label>
+      <%= f.text_field :tags, value: Array(@skill.tags).join(', '), placeholder: 'booking-page, admin' %>
+    </div>
+
+    <div class="form-row">
+      <label>Bypass guards for methods (one per line)</label>
+      <%= f.text_area :bypass_guards_for_methods, value: Array(@skill.bypass_guards_for_methods).join("\n"), rows: 4 %>
+      <div class="hint">e.g. <code>BookingPage#save!</code> — these methods skip safety guards while this skill is active.</div>
+    </div>
+
+    <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+
+    <div class="form-row">
+      <label>Edited by</label>
+      <input type="text" name="edited_by" value="<%= params[:edited_by] || cookies[:rca_edited_by] %>" placeholder="Your name or handle">
+      <div class="hint">Recorded with this version. Free text — the gem does not assume authentication beyond the admin login.</div>
+    </div>
+
+    <div class="form-row">
+      <label>Change note (optional)</label>
+      <input type="text" name="change_note" value="" placeholder="What did you change and why?">
+    </div>
+  </div>
+
+  <div class="btn-bar">
+    <%= f.submit submit_label, class: 'btn' %>
+    <%= link_to 'Cancel', cancel_path, class: 'btn btn-secondary' %>
+  </div>
+<% end %>

@@ -1,0 +1,49 @@
+<div class="btn-bar">
+  <%= link_to 'New skill', new_skill_path, class: 'btn' %>
+  <form method="get" action="<%= skills_path %>" style="margin-left:auto;">
+    <input type="text" name="q" value="<%= @q %>" placeholder="Search skills…" style="padding:6px 10px; border:1px solid #ccc; border-radius:4px;">
+  </form>
+</div>
+
+<% if @skills.empty? %>
+  <div class="meta-card">
+    <p class="text-muted">No skills yet. <%= link_to 'Create one', new_skill_path %> or drop a Markdown file in <code>.rails_console_ai/skills/</code>.</p>
+  </div>
+<% else %>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Description</th>
+        <th>Tags</th>
+        <th>Source</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @skills.each do |s| %>
+        <% link_id = s['id'] || s['name'] %>
+        <tr>
+          <td><strong><%= link_to s['name'], skill_path(link_id) %></strong></td>
+          <td class="query-cell"><%= s['description'] %></td>
+          <td>
+            <% Array(s['tags']).each do |t| %><span class="tag"><%= t %></span><% end %>
+          </td>
+          <td>
+            <% if s['source'] == :db %>
+              <span class="badge source-db">DB</span>
+            <% else %>
+              <span class="badge source-file">FILE</span>
+            <% end %>
+          </td>
+          <td>
+            <%= link_to 'View', skill_path(link_id) %>
+            <% if s['source'] == :db %>
+              · <%= link_to 'Edit', edit_skill_path(s['id']) %>
+            <% end %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% end %>
