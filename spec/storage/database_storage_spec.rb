@@ -127,6 +127,59 @@ RSpec.describe RailsConsoleAi::Storage::DatabaseStorage, if: SQLITE3_AVAILABLE d
     end
   end
 
+  describe 'approval workflow' do
+    it 'creates new skills in the proposed state' do
+      r, _ = described_class.save_skill(name: 'NeedApproval', description: 'd', body: 'b')
+      expect(r.status).to eq('proposed')
+      expect(r.proposed?).to be(true)
+      expect(r.approved?).to be(false)
+      expect(r.approved_by).to be_nil
+      expect(r.approved_at).to be_nil
+    end
+
+    it 'marks the version row with the post-save status' do
+      r, _ = described_class.save_skill(name: 'WithStatus', description: 'd', body: 'b')
+      expect(r.versions.first.status).to eq('proposed')
+    end
+
+    it 'flips to approved via approve!, recording approver + timestamp' do
+      r, _ = described_class.save_skill(name: 'ToApprove', description: 'd', body: 'b')
+      r.approve!(approved_by: 'alice')
+      r.reload
+      expect(r.approved?).to be(true)
+      expect(r.approved_by).to eq('alice')
+      expect(r.approved_at).not_to be_nil
+      expect(r.versions.first.status).to eq('approved')
+      expect(r.versions.first.change_note).to include('Approved by alice')
+    end
+
+    it 'reverts to proposed when an approved skill is edited' do
+      r, _ = described_class.save_skill(name: 'Editable', description: 'd', body: 'v1')
+      r.approve!(approved_by: 'alice')
+      described_class.save_skill(name: 'Editable', description: 'd', body: 'v2')
+      r.reload
+      expect(r.proposed?).to be(true)
+      expect(r.approved_by).to be_nil
+      expect(r.approved_at).to be_nil
+    end
+
+    it 'keeps approval when assign_attributes does not touch content fields' do
+      r, _ = described_class.save_skill(name: 'StaysApproved', description: 'd', body: 'b')
+      r.approve!(approved_by: 'alice')
+      # Approving again is a no-op on content; status should stay approved.
+      r.approve!(approved_by: 'bob')
+      r.reload
+      expect(r.approved?).to be(true)
+      expect(r.approved_by).to eq('bob')
+    end
+
+    it 'approve! refuses empty approver names' do
+      r, _ = described_class.save_skill(name: 'Whoever', description: 'd', body: 'b')
+      expect { r.approve!(approved_by: '') }.to raise_error(ArgumentError)
+      expect { r.approve!(approved_by: '   ') }.to raise_error(ArgumentError)
+    end
+  end
+
   describe 'restore (via Skill#update_with_version!)' do
     it 'overwrites current state from a chosen version and records a new version row' do
       r, _ = described_class.save_skill(name: 'R', description: 'd', body: 'old')

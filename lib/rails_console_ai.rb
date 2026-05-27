@@ -158,6 +158,7 @@ module RailsConsoleAi
 
       setup_skills_tables!(conn)
       setup_memories_tables!(conn)
+      setup_agents_tables!(conn)
 
       migrate!
     rescue => e
@@ -175,11 +176,27 @@ module RailsConsoleAi
           t.text     :body
           t.text     :tags
           t.text     :bypass_guards_for_methods
+          t.string   :status,      limit: 20,  default: 'proposed', null: false
+          t.string   :approved_by, limit: 255
+          t.datetime :approved_at
           t.datetime :created_at,  null: false
           t.datetime :updated_at,  null: false
         end
         conn.add_index(skills_table, :name, unique: true)
+        conn.add_index(skills_table, :status)
         $stdout.puts "\e[32mRailsConsoleAi: created #{skills_table} table.\e[0m"
+      else
+        # Idempotent column-add probes for existing installs.
+        unless conn.column_exists?(skills_table, :status)
+          conn.add_column(skills_table, :status, :string, limit: 20, default: 'proposed', null: false)
+          conn.add_index(skills_table, :status) unless conn.index_exists?(skills_table, :status)
+        end
+        unless conn.column_exists?(skills_table, :approved_by)
+          conn.add_column(skills_table, :approved_by, :string, limit: 255)
+        end
+        unless conn.column_exists?(skills_table, :approved_at)
+          conn.add_column(skills_table, :approved_at, :datetime)
+        end
       end
 
       unless conn.table_exists?(versions_table)
@@ -190,6 +207,7 @@ module RailsConsoleAi
           t.text     :body
           t.text     :tags
           t.text     :bypass_guards_for_methods
+          t.string   :status,      limit: 20
           t.string   :edited_by,   limit: 255
           t.text     :change_note
           t.datetime :created_at,  null: false
@@ -197,6 +215,10 @@ module RailsConsoleAi
         conn.add_index(versions_table, :skill_id)
         conn.add_index(versions_table, :created_at)
         $stdout.puts "\e[32mRailsConsoleAi: created #{versions_table} table.\e[0m"
+      else
+        unless conn.column_exists?(versions_table, :status)
+          conn.add_column(versions_table, :status, :string, limit: 20)
+        end
       end
     end
 

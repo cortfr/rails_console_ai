@@ -224,4 +224,53 @@ RSpec.describe RailsConsoleAi::SkillLoader do
       expect(result).to start_with('Skill created:')
     end
   end
+
+  describe 'approval gating (DatabaseStorage stubbed)' do
+    let(:proposed_skill) do
+      { 'id' => 1, 'name' => 'Proposed thing', 'description' => 'desc', 'body' => '...', 'tags' => [],
+        'bypass_guards_for_methods' => [], 'status' => 'proposed', 'source' => :db }
+    end
+    let(:approved_skill) do
+      { 'id' => 2, 'name' => 'Approved thing', 'description' => 'desc', 'body' => '...', 'tags' => [],
+        'bypass_guards_for_methods' => [], 'status' => 'approved', 'source' => :db }
+    end
+
+    before do
+      allow(RailsConsoleAi::Storage::DatabaseStorage).to receive(:available?).and_return(true)
+      allow(RailsConsoleAi::Storage::DatabaseStorage).to receive(:all_skills)
+        .and_return([proposed_skill, approved_skill])
+    end
+
+    it 'load_all_skills returns everything (UI surface)' do
+      names = loader.load_all_skills.map { |s| s['name'] }
+      expect(names).to include('Proposed thing', 'Approved thing')
+    end
+
+    it 'load_activatable_skills hides proposed DB skills' do
+      names = loader.load_activatable_skills.map { |s| s['name'] }
+      expect(names).to include('Approved thing')
+      expect(names).not_to include('Proposed thing')
+    end
+
+    it 'find_skill (AI-facing) refuses proposed DB skills' do
+      expect(loader.find_skill('Proposed thing')).to be_nil
+      expect(loader.find_skill('Approved thing')).not_to be_nil
+    end
+
+    it 'find_any_skill (UI-facing) still resolves proposed DB skills' do
+      expect(loader.find_any_skill('Proposed thing')).not_to be_nil
+    end
+
+    it 'skill_summaries omits proposed skills (so the AI never sees them)' do
+      summaries = loader.skill_summaries
+      expect(summaries.join("\n")).to include('Approved thing')
+      expect(summaries.join("\n")).not_to include('Proposed thing')
+    end
+
+    it 'file skills are always activatable regardless of status field' do
+      storage.write('skills/file-only.md', skill_content)
+      names = loader.load_activatable_skills.map { |s| s['name'] }
+      expect(names).to include('Approve Changes')
+    end
+  end
 end

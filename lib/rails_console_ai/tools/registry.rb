@@ -488,6 +488,12 @@ module RailsConsoleAi
           handler: ->(args) {
             skill = loader.find_skill(args['name'])
             unless skill
+              # Distinguish "doesn't exist" from "exists but isn't approved yet".
+              proposed = loader.find_any_skill(args['name'])
+              if proposed && proposed['source'] == :db && proposed['status'] != 'approved'
+                return "Skill \"#{args['name']}\" exists but is awaiting human approval and cannot be activated yet. " \
+                       "Ask the user to approve it in the web UI at /rails_console_ai/skills."
+              end
               return "Skill not found: \"#{args['name']}\". Use the skills listed in the system prompt."
             end
 
@@ -500,7 +506,7 @@ module RailsConsoleAi
 
         register(
           name: 'save_skill',
-          description: 'Create or update a skill — a reusable procedure for a specific operation. Use when the user asks you to create a skill, recipe, or runbook. Skills differ from memories: a skill is a step-by-step procedure to follow, while a memory is a fact or pattern you learned. Defaults to the versioned DB store; pass target: "file" to write to the on-disk .rails_console_ai/skills directory instead.',
+          description: 'Create or update a skill — a reusable procedure for a specific operation. Use when the user asks you to create a skill, recipe, or runbook. Skills differ from memories: a skill is a step-by-step procedure to follow, while a memory is a fact or pattern you learned. Defaults to the versioned DB store; pass target: "file" to write to the on-disk .rails_console_ai/skills directory instead. IMPORTANT: skills saved to the DB start in "proposed" state and must be approved by a human in the web UI before you can activate them. Edits to an approved skill also revert it to proposed. Tell the user to visit /rails_console_ai/skills to approve.',
           parameters: {
             'type' => 'object',
             'properties' => {

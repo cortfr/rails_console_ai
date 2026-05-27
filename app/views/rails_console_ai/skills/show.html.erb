@@ -7,15 +7,28 @@
   tags = is_db ? Array(@skill.tags) : Array(@skill['tags'])
   bypass = is_db ? Array(@skill.bypass_guards_for_methods) : Array(@skill['bypass_guards_for_methods'])
   file_key = is_db ? nil : @skill['file_key']
+  status   = is_db ? @skill.status : 'approved'  # file skills are implicitly approved
 %>
 
 <%= link_to '← All skills', skills_path, class: 'back-link' %>
+
+<% if is_db && !@skill.approved? %>
+  <div class="flash flash-alert" style="margin-bottom:16px;">
+    <strong>Awaiting approval.</strong> The AI cannot activate this skill until a human approves it.
+    Review the recipe and bypass-guard list below, then click <strong>Approve</strong>.
+  </div>
+<% end %>
 
 <div class="meta-card">
   <h2 style="margin-bottom:8px;">
     <%= name %>
     <% if is_db %>
       <span class="badge source-db">DB</span>
+      <% if @skill.approved? %>
+        <span class="badge status-approved">APPROVED</span>
+      <% else %>
+        <span class="badge status-proposed">PROPOSED</span>
+      <% end %>
     <% else %>
       <span class="badge source-file">FILE</span>
     <% end %>
@@ -27,6 +40,10 @@
     <% if is_db %>
       <div class="meta-item"><label>Updated</label><span><%= @skill.updated_at.strftime('%Y-%m-%d %H:%M') %></span></div>
       <div class="meta-item"><label>Versions</label><span><%= @skill.versions.count %></span></div>
+      <% if @skill.approved? %>
+        <div class="meta-item"><label>Approved by</label><span><%= @skill.approved_by || '—' %></span></div>
+        <div class="meta-item"><label>Approved at</label><span><%= @skill.approved_at&.strftime('%Y-%m-%d %H:%M') || '—' %></span></div>
+      <% end %>
     <% else %>
       <div class="meta-item"><label>Path</label><span class="mono"><%= file_key %></span></div>
     <% end %>
@@ -35,9 +52,15 @@
 
 <div class="btn-bar">
   <% if is_db %>
+    <% unless @skill.approved? %>
+      <%= form_with url: approve_skill_path(@skill), method: :post, local: true, style: 'display:inline' do %>
+        <input type="text" name="approved_by" placeholder="Your name (required)" style="padding:7px 10px; border:1px solid #ccc; border-radius:4px; margin-right:6px;">
+        <button type="submit" class="btn btn-danger" data-confirm="Approve this skill? The AI will then be able to activate it and use its guard bypasses.">Approve</button>
+      <% end %>
+    <% end %>
     <%= link_to 'Edit', edit_skill_path(@skill), class: 'btn' %>
     <%= link_to 'Versions', skill_versions_path(@skill), class: 'btn btn-secondary' %>
-    <%= button_to 'Delete', skill_path(@skill), method: :delete, class: 'btn btn-danger', form: { style: 'display:inline' },data: { confirm: 'Delete this skill? Past versions remain in history.' } %>
+    <%= button_to 'Delete', skill_path(@skill), method: :delete, class: 'btn btn-danger', form: { style: 'display:inline' }, data: { confirm: 'Delete this skill? Past versions remain in history.' } %>
   <% end %>
 </div>
 
@@ -52,6 +75,7 @@
         <div>
           <strong>v<%= v.id %></strong>
           <span class="ver-meta">— <%= v.created_at.strftime('%Y-%m-%d %H:%M') %> by <%= v.edited_by || 'unknown' %></span>
+          <% if v.status == 'approved' %><span class="badge status-approved">APPROVED</span><% end %>
           <% if v.change_note.present? %><div class="ver-meta"><%= v.change_note %></div><% end %>
         </div>
         <div>

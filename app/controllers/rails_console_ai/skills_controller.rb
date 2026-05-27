@@ -68,6 +68,26 @@ module RailsConsoleAi
       end
     end
 
+    def approve
+      redirect_to skills_path, alert: file_skill_message and return unless @skill.is_a?(Skill)
+
+      approver = params[:approved_by].presence ||
+                 (request.respond_to?(:remote_user) && request.remote_user.presence) ||
+                 'web'
+
+      if @skill.approved?
+        redirect_to skill_path(@skill), notice: 'Skill is already approved.'
+        return
+      end
+
+      begin
+        @skill.approve!(approved_by: approver)
+        redirect_to skill_path(@skill), notice: "Approved by #{approver}. The AI can now activate this skill."
+      rescue ArgumentError, ActiveRecord::RecordInvalid => e
+        redirect_to skill_path(@skill), alert: "Could not approve: #{e.message}"
+      end
+    end
+
     # GET /skills/diff?skill_id=&from=&to=
     def diff
       @skill = Skill.find(params[:skill_id])

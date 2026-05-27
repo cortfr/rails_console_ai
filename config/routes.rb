@@ -3,6 +3,9 @@ RailsConsoleAi::Engine.routes.draw do
   resources :sessions, only: [:index, :show]
 
   resources :skills do
+    member do
+      post :approve
+    end
     collection do
       get :diff
     end

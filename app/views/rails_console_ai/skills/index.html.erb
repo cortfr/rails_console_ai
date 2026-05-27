@@ -5,6 +5,13 @@
   </form>
 </div>
 
+<% proposed_count = @skills.count { |s| s['source'] == :db && s['status'] != 'approved' } %>
+<% if proposed_count > 0 %>
+  <div class="flash flash-alert" style="margin-bottom:16px;">
+    <strong><%= proposed_count %></strong> skill<%= proposed_count == 1 ? '' : 's' %> awaiting approval. The AI cannot activate them until a human approves.
+  </div>
+<% end %>
+
 <% if @skills.empty? %>
   <div class="meta-card">
     <p class="text-muted">No skills yet. <%= link_to 'Create one', new_skill_path %> or drop a Markdown file in <code>.rails_console_ai/skills/</code>.</p>
@@ -16,7 +23,7 @@
         <th>Name</th>
         <th>Description</th>
         <th>Tags</th>
-        <th>Source</th>
+        <th>Source / Status</th>
         <th></th>
       </tr>
     </thead>
@@ -32,6 +39,11 @@
           <td>
             <% if s['source'] == :db %>
               <span class="badge source-db">DB</span>
+              <% if s['status'] == 'approved' %>
+                <span class="badge status-approved">APPROVED</span>
+              <% else %>
+                <span class="badge status-proposed">PROPOSED</span>
+              <% end %>
             <% else %>
               <span class="badge source-file">FILE</span>
             <% end %>

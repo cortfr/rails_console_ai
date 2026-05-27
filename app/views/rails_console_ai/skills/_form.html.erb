@@ -1,3 +1,13 @@
+<% if @skill.persisted? && @skill.respond_to?(:approved?) && @skill.approved? %>
+  <div class="flash flash-alert" style="margin-bottom:16px;">
+    Heads up: this skill is currently <strong>approved</strong>. Editing it will revert its status to <strong>proposed</strong> and the AI won't be able to activate it again until someone re-approves it.
+  </div>
+<% elsif !@skill.persisted? %>
+  <div class="flash flash-notice" style="margin-bottom:16px;">
+    New DB skills start as <strong>proposed</strong>. After saving, an approver (likely you) needs to click the Approve button on the show page before the AI can activate this skill.
+  </div>
+<% end %>
+
 <%= form_with model: @skill, url: form_url, method: form_method, local: true do |f| %>
   <div class="form-card">
     <div class="form-row">
@@ -24,7 +34,14 @@
     <div class="form-row">
       <label>Bypass guards for methods (one per line)</label>
       <%= f.text_area :bypass_guards_for_methods, value: Array(@skill.bypass_guards_for_methods).join("\n"), rows: 4 %>
-      <div class="hint">e.g. <code>BookingPage#save!</code> — these methods skip safety guards while this skill is active.</div>
+      <div class="hint">
+        Two forms accepted — anything else is ignored:
+        <ul style="margin:6px 0 0 18px; padding:0;">
+          <li><code>ClassName#method</code> — instance method, e.g. <code>BookingPage#save!</code></li>
+          <li><code>ClassName.method</code> — class (singleton) method, e.g. <code>User.create_admin!</code></li>
+        </ul>
+        Namespaced classes work: <code>Acme::Booking#destroy</code>. The <code>!</code> is part of the match, so <code>save</code> and <code>save!</code> are different specs. While the skill is active, calls to these methods skip the configured safety guards (DB writes, HTTP mutations, email, etc.) <strong>for that tool-call only</strong>.
+      </div>
     </div>
 
     <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">

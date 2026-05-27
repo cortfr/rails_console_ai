@@ -11,6 +11,8 @@
         <div>
           <strong>v<%= v.id %></strong>
           <span class="ver-meta">— <%= v.created_at.strftime('%Y-%m-%d %H:%M:%S') %> by <%= v.edited_by || 'unknown' %></span>
+          <% if v.status == 'approved' %><span class="badge status-approved">APPROVED</span>
+          <% elsif v.status == 'proposed' %><span class="badge status-proposed">PROPOSED</span><% end %>
           <% if v.change_note.present? %><div class="ver-meta"><%= v.change_note %></div><% end %>
         </div>
         <div>
@@ -18,7 +20,7 @@
           ·
           <%= link_to 'Diff vs current', diff_skills_path(skill_id: @skill.id, from: v.id) %>
           ·
-          <%= button_to 'Restore', restore_skill_version_path(@skill, v), method: :post, class: 'btn btn-secondary', form: { style: 'display:inline' },data: { confirm: "Restore version ##{v.id}? A new version row will be created from this snapshot." } %>
+          <%= button_to 'Restore', restore_skill_version_path(@skill, v), method: :post, class: 'btn btn-secondary', form: { style: 'display:inline' }, data: { confirm: "Restore version ##{v.id}? Restoring reverts the skill to PROPOSED and a new version row will be created." } %>
         </div>
       </div>
     <% end %>

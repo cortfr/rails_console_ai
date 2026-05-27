@@ -12,6 +12,10 @@ module RailsConsoleAi
     # Returns the union of DB-backed skills and file-backed skills.
     # When the same name appears in both, the DB record wins and the file
     # record is shadowed (but the file isn't touched).
+    #
+    # Includes proposed (unapproved) DB skills — they show up in the admin UI
+    # with a "PROPOSED" badge. The AI-facing surface (#skill_summaries, #find_skill)
+    # filters them out, so an unapproved skill can never be activated.
     def load_all_skills
       db = safe_load_db_skills
       file = safe_load_file_skills
@@ -22,8 +26,16 @@ module RailsConsoleAi
       (db + file).sort_by { |s| s['name'].to_s.downcase }
     end
 
+    # Skills the AI is allowed to see / activate: approved DB skills + all file skills.
+    # File skills are considered pre-approved because they're git-tracked.
+    def load_activatable_skills
+      # Use string literal so this doesn't require the AR model to be autoloaded
+      # in environments that don't reference it.
+      load_all_skills.reject { |s| s['source'] == :db && s['status'] != 'approved' }
+    end
+
     def skill_summaries
-      skills = load_all_skills
+      skills = load_activatable_skills
       return nil if skills.empty?
 
       skills.map { |s|
@@ -34,6 +46,11 @@ module RailsConsoleAi
     end
 
     def find_skill(name)
+      load_activatable_skills.find { |s| s['name'].to_s.downcase == name.to_s.downcase }
+    end
+
+    # UI-facing: includes proposed skills too, with name-collision DB wins.
+    def find_any_skill(name)
       load_all_skills.find { |s| s['name'].to_s.downcase == name.to_s.downcase }
     end
 
@@ -64,10 +81,15 @@ module RailsConsoleAi
           tags: tags, bypass_guards_for_methods: bypass_guards_for_methods,
           edited_by: edited_by || 'ai', change_note: change_note
         )
+        status_note = if record.respond_to?(:proposed?) && record.proposed?
+                        ' — status: PROPOSED. A human must approve it at /rails_console_ai/skills before it can be activated.'
+                      else
+                        ''
+                      end
         if was_new
-          "Skill created (db): \"#{record.name}\" (id=#{record.id})"
+          "Skill created (db): \"#{record.name}\" (id=#{record.id})#{status_note}"
         else
-          "Skill updated (db): \"#{record.name}\" (id=#{record.id})"
+          "Skill updated (db): \"#{record.name}\" (id=#{record.id})#{status_note}"
         end
       end
     rescue Storage::StorageError, ::ActiveRecord::RecordInvalid => e
