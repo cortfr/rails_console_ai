@@ -36,7 +36,7 @@ module RailsConsoleAi
 
     # --- Public API for channels ---
 
-    def one_shot(query)
+    def one_shot(query, existing_session_id: nil)
       start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       console_capture = StringIO.new
       exec_result = with_console_capture(console_capture) do
@@ -61,7 +61,8 @@ module RailsConsoleAi
           code_output: executed ? @executor.last_output : nil,
           code_result: executed && exec_result ? exec_result.inspect : nil,
           executed: executed,
-          start_time: start_time
+          start_time: start_time,
+          existing_session_id: existing_session_id
         }
 
         exec_result
@@ -1016,18 +1017,23 @@ module RailsConsoleAi
 
     def log_session(attrs)
       require 'rails_console_ai/session_logger'
-      start_time = attrs.delete(:start_time)
-      duration_ms = if start_time
-                      ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
-                    end
-      SessionLogger.log(
-        attrs.merge(
-          input_tokens: @total_input_tokens,
-          output_tokens: @total_output_tokens,
-          duration_ms: duration_ms,
-          model: effective_model
-        )
+      start_time   = attrs.delete(:start_time)
+      existing_id  = attrs.delete(:existing_session_id)
+      duration_ms  = if start_time
+                       ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
+                     end
+      merged = attrs.merge(
+        input_tokens: @total_input_tokens,
+        output_tokens: @total_output_tokens,
+        duration_ms: duration_ms,
+        model: effective_model
       )
+      if existing_id
+        SessionLogger.update(existing_id, merged)
+        existing_id
+      else
+        SessionLogger.log(merged)
+      end
     end
 
     # --- Formatting helpers ---

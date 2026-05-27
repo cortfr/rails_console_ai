@@ -504,6 +504,54 @@ This starts a long-running process (run it separately from your web server). The
 - **Channels** — the bot only responds when @mentioned. @mention it in any channel message or thread to start a session. The person who first @mentions the bot owns the session — only they can continue the conversation, and they must @mention the bot on each message. Exception: when the bot asks a question, the owner can reply without @mentioning.
 - **Joining threads** — when @mentioned mid-thread, the bot reads the thread history for context so it understands what's already been discussed.
 
+## Background Agents
+
+Fire off agent runs from your application code and pick up the result later. Useful when you want to delegate a question (or a multi-step task) to the AI from a controller action, a job, a webhook handler, or any place where blocking on an LLM round-trip is undesirable.
+
+```ruby
+id = RailsConsoleAi.run_agent("How many users signed up yesterday?", name: 'daily-stats', user_name: 'cron')
+# => 4821 (Integer session id, returned immediately)
+
+RailsConsoleAi.check_agent(id)
+# => 'queued' | 'running' | 'ready' | 'failed' | nil
+
+RailsConsoleAi.get_agent_response(id)
+# => { status: 'ready', result: "1,432 users signed up yesterday.\n", error: nil }
+```
+
+`run_agent` enqueues a row in the sessions table with `mode='agent_api'` and `status='queued'`. A separate long-running rake task picks them up and runs each in its own thread using the same engine that powers `ai "..."` in the console.
+
+### Running the background runner
+
+```bash
+bundle exec rake rails_console_ai:agents
+# AGENT_CONCURRENCY=3 by default; bump it for more parallelism
+AGENT_CONCURRENCY=8 bundle exec rake rails_console_ai:agents
+```
+
+The background runner polls every 2 seconds, claims queued rows atomically (only one worker wins a row), and updates each row to `status='ready'` with the result, or `status='failed'` with an error message. SIGINT/SIGTERM triggers a graceful drain — up to 60 seconds for in-flight jobs, then any stragglers are marked `failed`.
+
+Run it separately from your web server, alongside (or instead of) the Slack bot. If the process crashes mid-job, rows stuck in `status='running'` are left as-is — no built-in reaper yet.
+
+### Requirements
+
+- `RailsConsoleAi.setup!` must have been run so the sessions table has the `status`, `result`, and `error_message` columns. `ai_db_setup` (or `ai_db_migrate` on existing installs) handles this.
+- `session_logging` must be enabled (it is by default).
+
+### Behavior notes
+
+- The agent runs with `Channel::Api`, a non-interactive channel — `prompt` returns `''` and `confirm` auto-yes, so the agent never blocks waiting for human input. Safety guards are always on (`supports_danger?` is `false`), and `bypass_guards_for_methods` still applies as usual.
+- `result` is composed from the agent's prose answer plus the inspected return value of any code it executed:
+
+  ```
+  Let me query the users table for signups from yesterday.
+
+  Result: 1432
+  ```
+
+  If the agent answers without running code, you get just the prose. The raw code, its stdout, and the raw return value also live on the session row as `code_executed` / `code_output` / `code_result` if you need them.
+- The queue row and the result row are the same row, so the existing session viewer at `/rails_console_ai` shows background runs alongside REPL and Slack sessions.
+
 ## Requirements
 
 Ruby >= 2.5, Rails >= 5.0, Faraday >= 1.0. For Bedrock: `aws-sdk-bedrockruntime` (loaded lazily, not a hard dependency).

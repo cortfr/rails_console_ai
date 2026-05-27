@@ -134,6 +134,30 @@ RSpec.describe RailsConsoleAi::SessionLogger do
         hash_including(name: nil)
       )
     end
+
+    it 'passes status when provided' do
+      described_class.log(attrs.merge(status: 'queued'))
+
+      expect(mock_session).to have_received(:create!).with(
+        hash_including(status: 'queued')
+      )
+    end
+
+    it 'omits status when not provided (legacy rows stay NULL)' do
+      described_class.log(attrs)
+
+      expect(mock_session).to have_received(:create!) do |params|
+        expect(params).not_to have_key(:status)
+      end
+    end
+
+    it 'passes result and error_message when provided' do
+      described_class.log(attrs.merge(result: 'final answer', error_message: 'boom'))
+
+      expect(mock_session).to have_received(:create!).with(
+        hash_including(result: 'final answer', error_message: 'boom')
+      )
+    end
   end
 
   describe '.update' do
@@ -189,6 +213,22 @@ RSpec.describe RailsConsoleAi::SessionLogger do
 
       expect(mock_relation).to have_received(:update_all).with(
         hash_including(name: 'renamed_session')
+      )
+    end
+
+    it 'updates status when provided' do
+      described_class.update(42, status: 'ready')
+
+      expect(mock_relation).to have_received(:update_all).with(
+        hash_including(status: 'ready')
+      )
+    end
+
+    it 'updates result and error_message when provided' do
+      described_class.update(42, result: 'all done', error_message: nil)
+
+      expect(mock_relation).to have_received(:update_all).with(
+        hash_including(result: 'all done', error_message: nil)
       )
     end
 

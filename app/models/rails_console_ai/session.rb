@@ -4,7 +4,7 @@ module RailsConsoleAi
 
     validates :query, presence: true
     validates :conversation, presence: true
-    validates :mode, presence: true, inclusion: { in: %w[one_shot interactive explain slack] }
+    validates :mode, presence: true, inclusion: { in: %w[one_shot interactive explain slack agent_api] }
 
     scope :recent, -> { order(created_at: :desc) }
     scope :named, ->(name) { where(name: name) }

@@ -25,6 +25,9 @@ module RailsConsoleAi
         }
         create_attrs[:slack_thread_ts] = attrs[:slack_thread_ts] if attrs[:slack_thread_ts]
         create_attrs[:slack_channel_name] = attrs[:slack_channel_name] if attrs[:slack_channel_name]
+        create_attrs[:status]            = attrs[:status]            if attrs.key?(:status)
+        create_attrs[:result]            = attrs[:result]            if attrs.key?(:result)
+        create_attrs[:error_message]     = attrs[:error_message]     if attrs.key?(:error_message)
         record = session_class.create!(create_attrs)
         record.id
       rescue => e
@@ -59,6 +62,9 @@ module RailsConsoleAi
         updates[:executed]      = attrs[:executed]       if attrs.key?(:executed)
         updates[:duration_ms]   = attrs[:duration_ms]    if attrs.key?(:duration_ms)
         updates[:name]          = attrs[:name]           if attrs.key?(:name)
+        updates[:status]        = attrs[:status]         if attrs.key?(:status)
+        updates[:result]        = attrs[:result]         if attrs.key?(:result)
+        updates[:error_message] = attrs[:error_message]  if attrs.key?(:error_message)
 
         session_class.where(id: id).update_all(updates) unless updates.empty?
       rescue => e

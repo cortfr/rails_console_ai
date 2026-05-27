@@ -55,6 +55,39 @@ module RailsConsoleAi
       @current_user = name
     end
 
+    # Enqueue an agent run. Returns the Integer session id immediately;
+    # the actual work is picked up by `rake rails_console_ai:agents`.
+    def run_agent(query, name: nil, user_name: nil)
+      require 'rails_console_ai/session_logger'
+      id = SessionLogger.log(
+        query: query,
+        conversation: [],
+        mode: 'agent_api',
+        name: name,
+        user_name: user_name,
+        status: 'queued',
+        executed: false
+      )
+      raise 'Failed to enqueue agent run (session logging disabled or table missing)' unless id
+      id
+    end
+
+    # Returns the current status string for an enqueued agent run, or nil
+    # if the session id is not found. Status is one of:
+    # 'queued' | 'running' | 'ready' | 'failed'.
+    def check_agent(session_id)
+      Session.where(id: session_id).pluck(:status).first
+    end
+
+    # Returns a hash describing an agent run:
+    #   { status:, result:, error: }
+    # All three keys are nil when the session id is not found.
+    def get_agent_response(session_id)
+      row = Session.where(id: session_id).select(:status, :result, :error_message).first
+      return { status: nil, result: nil, error: nil } unless row
+      { status: row.status, result: row.result, error: row.error_message }
+    end
+
     def status
       c = configuration
       key = c.resolved_api_key
@@ -154,6 +187,26 @@ module RailsConsoleAi
       unless conn.column_exists?(table, :slack_channel_name)
         conn.add_column(table, :slack_channel_name, :string, limit: 255)
         migrations << 'slack_channel_name'
+      end
+
+      unless conn.column_exists?(table, :status)
+        conn.add_column(table, :status, :string, limit: 20)
+        migrations << 'status'
+      end
+
+      unless conn.column_exists?(table, :result)
+        conn.add_column(table, :result, :text)
+        migrations << 'result'
+      end
+
+      unless conn.column_exists?(table, :error_message)
+        conn.add_column(table, :error_message, :text)
+        migrations << 'error_message'
+      end
+
+      unless conn.index_exists?(table, [:mode, :status], name: 'idx_rca_sessions_mode_status')
+        conn.add_index(table, [:mode, :status], name: 'idx_rca_sessions_mode_status')
+        migrations << 'idx_rca_sessions_mode_status'
       end
 
       if migrations.empty?
