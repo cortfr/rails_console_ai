@@ -51,7 +51,7 @@ if [[ "$update_changelog" =~ ^[Yy]$ ]]; then
     ${EDITOR:-vi} CHANGELOG.md
   else
     echo "Please review the CHANGELOG.md changes:"
-    git diff CHANGELOG.md
+    git --no-pager diff CHANGELOG.md
     echo ""
     read -rp "Accept changelog? [Y/n] " changelog_confirm
     changelog_confirm=${changelog_confirm:-Y}
