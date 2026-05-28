@@ -40,6 +40,8 @@
     <% if is_db %>
       <div class="meta-item"><label>Updated</label><span><%= @skill.updated_at.strftime('%Y-%m-%d %H:%M') %></span></div>
       <div class="meta-item"><label>Versions</label><span><%= @skill.versions.count %></span></div>
+      <div class="meta-item"><label>Times activated</label><span><%= @skill.use_count %></span></div>
+      <div class="meta-item"><label>Last activated</label><span><%= @skill.last_used_at&.strftime('%Y-%m-%d %H:%M') || 'never' %></span></div>
       <% if @skill.approved? %>
         <div class="meta-item"><label>Approved by</label><span><%= @skill.approved_by || '—' %></span></div>
         <div class="meta-item"><label>Approved at</label><span><%= @skill.approved_at&.strftime('%Y-%m-%d %H:%M') || '—' %></span></div>

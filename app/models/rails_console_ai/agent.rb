@@ -63,20 +63,42 @@ module RailsConsoleAi
     def proposed?; status.to_s == STATUS_PROPOSED; end
     def approved?; status.to_s == STATUS_APPROVED; end
 
+    def use_count
+      has_attribute?(:use_count) ? (read_attribute(:use_count) || 0) : 0
+    end
+
+    def last_used_at
+      has_attribute?(:last_used_at) ? read_attribute(:last_used_at) : nil
+    end
+
+    def self.record_use!(id)
+      return false unless connection.column_exists?(table_name, :use_count)
+      where(id: id).update_all([
+        'use_count = COALESCE(use_count, 0) + 1, last_used_at = ?',
+        Time.now.utc
+      ])
+      true
+    rescue ::ActiveRecord::ActiveRecordError => e
+      RailsConsoleAi.logger.warn("RailsConsoleAi::Agent.record_use!(#{id.inspect}) failed: #{e.message}")
+      false
+    end
+
     def to_hash
       {
-        'id'          => id,
-        'name'        => name,
-        'description' => description,
-        'body'        => body,
-        'max_rounds'  => max_rounds,
-        'model'       => model,
-        'tools'       => tools,
-        'status'      => status,
-        'approved_by' => approved_by,
-        'approved_at' => approved_at,
-        'source'      => :db,
-        'updated_at'  => updated_at
+        'id'           => id,
+        'name'         => name,
+        'description'  => description,
+        'body'         => body,
+        'max_rounds'   => max_rounds,
+        'model'        => model,
+        'tools'        => tools,
+        'status'       => status,
+        'approved_by'  => approved_by,
+        'approved_at'  => approved_at,
+        'use_count'    => use_count,
+        'last_used_at' => last_used_at,
+        'source'       => :db,
+        'updated_at'   => updated_at
       }
     end
 

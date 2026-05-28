@@ -22,6 +22,8 @@
     <% if is_db %>
       <div class="meta-item"><label>Updated</label><span><%= @memory.updated_at.strftime('%Y-%m-%d %H:%M') %></span></div>
       <div class="meta-item"><label>Versions</label><span><%= @memory.versions.count %></span></div>
+      <div class="meta-item"><label>Times recalled</label><span><%= @memory.use_count %></span></div>
+      <div class="meta-item"><label>Last recalled</label><span><%= @memory.last_used_at&.strftime('%Y-%m-%d %H:%M') || 'never' %></span></div>
     <% else %>
       <div class="meta-item"><label>Path</label><span class="mono"><%= file_key %></span></div>
     <% end %>

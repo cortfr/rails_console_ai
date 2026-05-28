@@ -179,6 +179,8 @@ module RailsConsoleAi
           t.string   :status,      limit: 20,  default: 'proposed', null: false
           t.string   :approved_by, limit: 255
           t.datetime :approved_at
+          t.integer  :use_count,   default: 0, null: false
+          t.datetime :last_used_at
           t.datetime :created_at,  null: false
           t.datetime :updated_at,  null: false
         end
@@ -196,6 +198,12 @@ module RailsConsoleAi
         end
         unless conn.column_exists?(skills_table, :approved_at)
           conn.add_column(skills_table, :approved_at, :datetime)
+        end
+        unless conn.column_exists?(skills_table, :use_count)
+          conn.add_column(skills_table, :use_count, :integer, default: 0, null: false)
+        end
+        unless conn.column_exists?(skills_table, :last_used_at)
+          conn.add_column(skills_table, :last_used_at, :datetime)
         end
       end
 
@@ -231,11 +239,20 @@ module RailsConsoleAi
           t.string   :name,        limit: 255, null: false
           t.text     :description
           t.text     :tags
+          t.integer  :use_count,   default: 0, null: false
+          t.datetime :last_used_at
           t.datetime :created_at,  null: false
           t.datetime :updated_at,  null: false
         end
         conn.add_index(memories_table, :name, unique: true)
         $stdout.puts "\e[32mRailsConsoleAi: created #{memories_table} table.\e[0m"
+      else
+        unless conn.column_exists?(memories_table, :use_count)
+          conn.add_column(memories_table, :use_count, :integer, default: 0, null: false)
+        end
+        unless conn.column_exists?(memories_table, :last_used_at)
+          conn.add_column(memories_table, :last_used_at, :datetime)
+        end
       end
 
       unless conn.table_exists?(versions_table)
@@ -269,6 +286,8 @@ module RailsConsoleAi
           t.string   :status,      limit: 20,  default: 'proposed', null: false
           t.string   :approved_by, limit: 255
           t.datetime :approved_at
+          t.integer  :use_count,   default: 0, null: false
+          t.datetime :last_used_at
           t.datetime :created_at,  null: false
           t.datetime :updated_at,  null: false
         end
@@ -285,6 +304,12 @@ module RailsConsoleAi
         end
         unless conn.column_exists?(agents_table, :approved_at)
           conn.add_column(agents_table, :approved_at, :datetime)
+        end
+        unless conn.column_exists?(agents_table, :use_count)
+          conn.add_column(agents_table, :use_count, :integer, default: 0, null: false)
+        end
+        unless conn.column_exists?(agents_table, :last_used_at)
+          conn.add_column(agents_table, :last_used_at, :datetime)
         end
       end
 

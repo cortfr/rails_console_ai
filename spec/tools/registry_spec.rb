@@ -186,6 +186,27 @@ RSpec.describe RailsConsoleAi::Tools::Registry do
       result = reg.execute('activate_skill', { 'name' => 'Nonexistent' })
       expect(result).to include('Skill not found')
     end
+
+    it 'does NOT record usage for file-backed skills (no DB row to update)' do
+      reg = described_class.new(executor: executor)
+      stub_const('RailsConsoleAi::Skill', Class.new) unless defined?(RailsConsoleAi::Skill)
+      expect(RailsConsoleAi::Skill).not_to receive(:record_use!)
+      reg.execute('activate_skill', { 'name' => 'Test Skill' })
+    end
+
+    it 'records usage for DB-backed skills (calls Skill.record_use! with the row id)' do
+      db_skill = {
+        'id' => 42, 'name' => 'DB Skill', 'description' => 'd',
+        'body' => '## Recipe', 'tags' => [], 'bypass_guards_for_methods' => [],
+        'status' => 'approved', 'source' => :db
+      }
+      allow_any_instance_of(RailsConsoleAi::SkillLoader).to receive(:find_skill).and_return(db_skill)
+      stub_const('RailsConsoleAi::Skill', Class.new) unless defined?(RailsConsoleAi::Skill)
+      expect(RailsConsoleAi::Skill).to receive(:record_use!).with(42).once
+
+      reg = described_class.new(executor: executor)
+      reg.execute('activate_skill', { 'name' => 'DB Skill' })
+    end
   end
 
   describe '#execute' do

@@ -75,6 +75,8 @@ module RailsConsoleAi
         memory = load_all_memories.find { |m| m['name'].to_s.downcase == name.to_s.downcase }
         return "No memory found: \"#{name}\"" unless memory
 
+        record_use(memory)
+
         line = "**#{memory['name']}**\n#{memory['description']}"
         line += "\nTags: #{memory['tags'].join(', ')}" if memory['tags'] && !memory['tags'].empty?
         line
@@ -104,6 +106,9 @@ module RailsConsoleAi
 
         return "No memories matching your search." if results.empty?
 
+        # Every memory in the result set was loaded into the AI's context.
+        results.each { |m| record_use(m) }
+
         results.map { |m|
           line = "**#{m['name']}**\n#{m['description']}"
           line += "\nTags: #{m['tags'].join(', ')}" if m['tags'] && !m['tags'].empty?
@@ -131,6 +136,12 @@ module RailsConsoleAi
       end
 
       private
+
+      # DB-backed memories only — file memories have no row to update.
+      def record_use(memory)
+        return unless memory.is_a?(Hash) && memory['source'] == :db && memory['id']
+        RailsConsoleAi::Memory.record_use!(memory['id'])
+      end
 
       def save_memory_to_file(name:, description:, tags:)
         key = memory_key(name)

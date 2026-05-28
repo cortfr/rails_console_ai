@@ -83,6 +83,8 @@ module RailsConsoleAi
         'status'                    => status,
         'approved_by'               => approved_by,
         'approved_at'               => approved_at,
+        'use_count'                 => use_count,
+        'last_used_at'              => last_used_at,
         'source'                    => :db,
         'updated_at'                => updated_at
       }
@@ -90,6 +92,30 @@ module RailsConsoleAi
 
     def has_attribute_status?
       has_attribute?(:status)
+    end
+
+    # Atomically bump use_count + last_used_at without firing callbacks /
+    # validations / updated_at. Safe to call from concurrent AI tool calls.
+    # No-op (returns false) if the table doesn't have the columns yet — that
+    # keeps older installs working until they run ai_db_migrate.
+    def self.record_use!(id)
+      return false unless connection.column_exists?(table_name, :use_count)
+      where(id: id).update_all([
+        'use_count = COALESCE(use_count, 0) + 1, last_used_at = ?',
+        Time.now.utc
+      ])
+      true
+    rescue ::ActiveRecord::ActiveRecordError => e
+      RailsConsoleAi.logger.warn("RailsConsoleAi::Skill.record_use!(#{id.inspect}) failed: #{e.message}")
+      false
+    end
+
+    def use_count
+      has_attribute?(:use_count) ? (read_attribute(:use_count) || 0) : 0
+    end
+
+    def last_used_at
+      has_attribute?(:last_used_at) ? read_attribute(:last_used_at) : nil
     end
 
     def self.decode_json_array(raw)

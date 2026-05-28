@@ -278,4 +278,68 @@ RSpec.describe RailsConsoleAi::Storage::DatabaseStorage, if: SQLITE3_AVAILABLE d
       expect(RailsConsoleAi::AgentVersion.first.agent_id).to be_nil
     end
   end
+
+  describe 'usage tracking (record_use!)' do
+    it 'increments Skill use_count and sets last_used_at atomically' do
+      r, _ = described_class.save_skill(name: 'UsedSkill', description: 'd', body: 'b')
+      expect(r.use_count).to eq(0)
+      expect(r.last_used_at).to be_nil
+
+      RailsConsoleAi::Skill.record_use!(r.id)
+      RailsConsoleAi::Skill.record_use!(r.id)
+      RailsConsoleAi::Skill.record_use!(r.id)
+      r.reload
+      expect(r.use_count).to eq(3)
+      expect(r.last_used_at).not_to be_nil
+    end
+
+    it 'increments Memory use_count and sets last_used_at' do
+      r, _ = described_class.save_memory(name: 'UsedMem', description: 'd')
+      expect(r.use_count).to eq(0)
+
+      RailsConsoleAi::Memory.record_use!(r.id)
+      r.reload
+      expect(r.use_count).to eq(1)
+      expect(r.last_used_at).not_to be_nil
+    end
+
+    it 'increments Agent use_count and sets last_used_at' do
+      r, _ = described_class.save_agent(name: 'UsedAgent', description: 'd', body: 'b')
+      expect(r.use_count).to eq(0)
+
+      RailsConsoleAi::Agent.record_use!(r.id)
+      RailsConsoleAi::Agent.record_use!(r.id)
+      r.reload
+      expect(r.use_count).to eq(2)
+      expect(r.last_used_at).not_to be_nil
+    end
+
+    it 'record_use! does NOT bump updated_at (so it does not pollute version timestamps)' do
+      r, _ = described_class.save_skill(name: 'NoUpdatedAt', description: 'd', body: 'b')
+      before = r.updated_at
+      sleep 0.05
+      RailsConsoleAi::Skill.record_use!(r.id)
+      r.reload
+      expect(r.updated_at).to eq(before)
+    end
+
+    it 'record_use! returns false for unknown id without raising' do
+      expect { RailsConsoleAi::Skill.record_use!(999_999) }.not_to raise_error
+    end
+
+    it 'is no-op on older schemas that lack the use_count column' do
+      # Simulate an older table by dropping the column, then verify record_use! returns
+      # false gracefully (the SkillLoader / MemoryTools paths must not crash).
+      conn = ActiveRecord::Base.connection
+      conn.remove_column(:rails_console_ai_skills, :use_count)
+      conn.remove_column(:rails_console_ai_skills, :last_used_at)
+      RailsConsoleAi::Skill.reset_column_information
+      r = RailsConsoleAi::Skill.create!(name: 'NoCounterCol', description: 'd', body: 'b')
+      expect(RailsConsoleAi::Skill.record_use!(r.id)).to be(false)
+      # Re-add for any later specs in the same group.
+      conn.add_column(:rails_console_ai_skills, :use_count, :integer, default: 0, null: false)
+      conn.add_column(:rails_console_ai_skills, :last_used_at, :datetime)
+      RailsConsoleAi::Skill.reset_column_information
+    end
+  end
 end

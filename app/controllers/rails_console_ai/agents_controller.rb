@@ -13,10 +13,15 @@ module RailsConsoleAi
           [a['name'], a['description'], Array(a['tools']).join(' ')].compact.join(' ').downcase.include?(needle)
         }
       end
+
+      @sort = params[:sort].to_s
+      if @sort == 'used'
+        @agents = @agents.sort_by { |a| [-(a['use_count'].to_i), a['name'].to_s.downcase] }
+      end
     end
 
     def show
-      @versions = @agent.versions if @agent.is_a?(Agent)
+      @versions = @agent.versions if @agent.is_a?(RailsConsoleAi::Agent)
     end
 
     def new
@@ -53,11 +58,11 @@ module RailsConsoleAi
     end
 
     def edit
-      redirect_to agents_path, alert: read_only_message and return unless @agent.is_a?(Agent)
+      redirect_to agents_path, alert: read_only_message and return unless @agent.is_a?(RailsConsoleAi::Agent)
     end
 
     def update
-      redirect_to agents_path, alert: read_only_message and return unless @agent.is_a?(Agent)
+      redirect_to agents_path, alert: read_only_message and return unless @agent.is_a?(RailsConsoleAi::Agent)
 
       begin
         @agent.update_with_version!(
@@ -73,7 +78,7 @@ module RailsConsoleAi
     end
 
     def destroy
-      if @agent.is_a?(Agent)
+      if @agent.is_a?(RailsConsoleAi::Agent)
         @agent.destroy
         redirect_to agents_path, notice: 'Agent deleted. Past versions remain in history.'
       else
@@ -82,7 +87,7 @@ module RailsConsoleAi
     end
 
     def approve
-      redirect_to agents_path, alert: read_only_message and return unless @agent.is_a?(Agent)
+      redirect_to agents_path, alert: read_only_message and return unless @agent.is_a?(RailsConsoleAi::Agent)
 
       approver = params[:approved_by].presence || 'web'
 
@@ -113,11 +118,20 @@ module RailsConsoleAi
     def load_agent
       if params[:id].to_s =~ /\A\d+\z/
         @agent = Agent.find(params[:id])
-      else
-        all = AgentLoader.new.load_all_agents
-        @agent = all.find { |a| slugify(a['name']) == params[:id] || a['name'] == params[:id] }
-        raise ActiveRecord::RecordNotFound, "Agent not found: #{params[:id]}" unless @agent
+        return
       end
+
+      # Non-numeric :id — prefer the AR record if a DB row matches by name or slug.
+      ar = Agent.where('LOWER(name) = ?', params[:id].to_s.downcase).first
+      ar ||= Agent.all.find { |a| slugify(a.name) == params[:id] }
+      if ar
+        @agent = ar
+        return
+      end
+
+      all = AgentLoader.new.load_all_agents
+      @agent = all.find { |a| slugify(a['name']) == params[:id] || a['name'] == params[:id] }
+      raise ActiveRecord::RecordNotFound, "Agent not found: #{params[:id]}" unless @agent
     end
 
     def agent_params

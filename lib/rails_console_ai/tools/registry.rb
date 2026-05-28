@@ -391,6 +391,11 @@ module RailsConsoleAi
             available = loader.load_activatable_agents.map { |a| a['name'] }
             return "Agent not found: \"#{agent_name}\". Available agents: #{available.join(', ')}"
           end
+
+          # Usage tracking — DB-backed agents only.
+          if agent_config['source'] == :db && agent_config['id']
+            RailsConsoleAi::Agent.record_use!(agent_config['id'])
+          end
         end
 
         sub = SubAgent.new(
@@ -506,6 +511,11 @@ module RailsConsoleAi
 
             bypass_methods = Array(skill['bypass_guards_for_methods'])
             @executor.activate_skill_bypasses(bypass_methods) unless bypass_methods.empty?
+
+            # Usage tracking — DB-backed skills only (file skills have no row to update).
+            if skill['source'] == :db && skill['id']
+              RailsConsoleAi::Skill.record_use!(skill['id'])
+            end
 
             skill['body']
           }

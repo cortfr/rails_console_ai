@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Usage tracking for DB-backed skills, memories, and agents. New `use_count` and `last_used_at` columns are bumped atomically (one SQL `UPDATE … SET use_count = use_count + 1, last_used_at = NOW()`, no callbacks, no `updated_at` change) when:
+  - `activate_skill` resolves a DB skill
+  - `recall_memory` resolves a DB memory, or `recall_memories` returns a DB memory in its result set
+  - `delegate_task` resolves a DB sub-agent
+  File / built-in records have no DB row so they're not tracked (the web UI shows `—` for them). System-prompt summary inclusion does **not** count — counters only move when the AI actively invokes/loads the record. Surfaced in the index tables (with a "Sort: most used" toggle) and on each show page (Times activated / Times recalled / Times invoked, plus Last used)
+- Bugfix: `RailsConsoleAi.migrate!` now always re-runs the `setup_*_tables!` methods so column-add probes execute on upgrades. Previously, when the base table already existed, the outer `unless table_exists?` guard skipped column probes entirely, leaving new columns un-added and causing `NameError: undefined local variable or method 'status'` from `Skill#proposed?` on host apps that hadn't fully migrated
+- Bugfix: `Skill` / `Agent` model accessors for `status` / `approved_by` / `approved_at` / `use_count` / `last_used_at` are now defensive — they return safe defaults via `has_attribute?` rather than raising NameError when the column hasn't been added yet. The `status` inclusion validation is also gated on the column being present
+
 - Sub-agents can now be stored in the database, versioned, and approved through the web UI — same workflow as skills. DB-backed agents start as `proposed` and are invisible to `delegate_task` until a human clicks Approve at `/rails_console_ai/agents`; editing an approved agent reverts it to proposed. Built-in (gem-shipped) and file-based agents are pre-approved and continue working unchanged
 - New AI tools `save_agent` and `delete_agent` — the AI can now draft a sub-agent definition (lands as proposed, awaits human approval) and request deletion. `delegate_task` now emits a specific "awaiting human approval" error when the AI references a proposed DB agent
 - New web UI section at `/rails_console_ai/agents` with three-source listing (DB / FILE / BUILTIN badges) plus the full skills-style CRUD + version history + diff + restore + approve. Built-in agents are read-only with a "Create DB override" link that prefills the new-agent form

@@ -1,7 +1,13 @@
 <div class="btn-bar">
   <%= link_to 'New agent', new_agent_path, class: 'btn' %>
+  <% if @sort == 'used' %>
+    <%= link_to 'Sort: alphabetical', agents_path(q: @q), class: 'btn btn-secondary' %>
+  <% else %>
+    <%= link_to 'Sort: most used', agents_path(q: @q, sort: 'used'), class: 'btn btn-secondary' %>
+  <% end %>
   <form method="get" action="<%= agents_path %>" style="margin-left:auto;">
     <input type="text" name="q" value="<%= @q %>" placeholder="Search agents…" style="padding:6px 10px; border:1px solid #ccc; border-radius:4px;">
+    <% if @sort.present? %><input type="hidden" name="sort" value="<%= @sort %>"><% end %>
   </form>
 </div>
 
@@ -24,6 +30,8 @@
         <th>Description</th>
         <th>Model</th>
         <th>Source / Status</th>
+        <th title="Number of times delegate_task invoked this agent (DB only)">Uses</th>
+        <th>Last used</th>
         <th></th>
       </tr>
     </thead>
@@ -48,6 +56,16 @@
             <% when :builtin %>
               <span class="badge source-builtin">BUILTIN</span>
             <% end %>
+          </td>
+          <td>
+            <% if a['source'] == :db %>
+              <%= a['use_count'] || 0 %>
+            <% else %>
+              <span class="text-muted">—</span>
+            <% end %>
+          </td>
+          <td class="text-muted" style="font-size:12px;">
+            <%= a['last_used_at']&.strftime('%Y-%m-%d %H:%M') || '—' %>
           </td>
           <td>
             <%= link_to 'View', agent_path(link_id) %>

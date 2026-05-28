@@ -52,6 +52,8 @@
     <% if is_db %>
       <div class="meta-item"><label>Updated</label><span><%= @agent.updated_at.strftime('%Y-%m-%d %H:%M') %></span></div>
       <div class="meta-item"><label>Versions</label><span><%= @agent.versions.count %></span></div>
+      <div class="meta-item"><label>Times invoked</label><span><%= @agent.use_count %></span></div>
+      <div class="meta-item"><label>Last invoked</label><span><%= @agent.last_used_at&.strftime('%Y-%m-%d %H:%M') || 'never' %></span></div>
       <% if @agent.approved? %>
         <div class="meta-item"><label>Approved by</label><span><%= @agent.approved_by || '—' %></span></div>
         <div class="meta-item"><label>Approved at</label><span><%= @agent.approved_at&.strftime('%Y-%m-%d %H:%M') || '—' %></span></div>

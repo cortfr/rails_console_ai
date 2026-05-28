@@ -2,7 +2,7 @@ require 'rails_console_ai/skill_loader'
 
 module RailsConsoleAi
   class SkillsController < ApplicationController
-    before_action :load_skill, only: [:show, :edit, :update, :destroy]
+    before_action :load_skill, only: [:show, :edit, :update, :destroy, :approve]
 
     def index
       @skills = SkillLoader.new.load_all_skills
@@ -13,10 +13,16 @@ module RailsConsoleAi
           [s['name'], s['description'], Array(s['tags']).join(' ')].compact.join(' ').downcase.include?(needle)
         }
       end
+
+      @sort = params[:sort].to_s
+      if @sort == 'used'
+        # Most-used first; file/builtin records (no counter) sink to the bottom alphabetically.
+        @skills = @skills.sort_by { |s| [-(s['use_count'].to_i), s['name'].to_s.downcase] }
+      end
     end
 
     def show
-      @versions = @skill.versions if @skill.is_a?(Skill)
+      @versions = @skill.versions if @skill.is_a?(RailsConsoleAi::Skill)
     end
 
     def new
@@ -40,11 +46,11 @@ module RailsConsoleAi
     end
 
     def edit
-      redirect_to skills_path, alert: file_skill_message and return unless @skill.is_a?(Skill)
+      redirect_to skills_path, alert: file_skill_message and return unless @skill.is_a?(RailsConsoleAi::Skill)
     end
 
     def update
-      redirect_to skills_path, alert: file_skill_message and return unless @skill.is_a?(Skill)
+      redirect_to skills_path, alert: file_skill_message and return unless @skill.is_a?(RailsConsoleAi::Skill)
 
       begin
         @skill.update_with_version!(
@@ -60,7 +66,7 @@ module RailsConsoleAi
     end
 
     def destroy
-      if @skill.is_a?(Skill)
+      if @skill.is_a?(RailsConsoleAi::Skill)
         @skill.destroy
         redirect_to skills_path, notice: 'Skill deleted. Past versions remain in history.'
       else
@@ -69,7 +75,7 @@ module RailsConsoleAi
     end
 
     def approve
-      redirect_to skills_path, alert: file_skill_message and return unless @skill.is_a?(Skill)
+      redirect_to skills_path, alert: file_skill_message and return unless @skill.is_a?(RailsConsoleAi::Skill)
 
       approver = params[:approved_by].presence ||
                  (request.respond_to?(:remote_user) && request.remote_user.presence) ||
@@ -103,14 +109,29 @@ module RailsConsoleAi
     private
 
     def load_skill
-      # /skills/:id supports both DB ids and file slugs. Numeric -> DB; else file lookup.
+      # /skills/:id supports DB ids and file slugs/names. For DB-sourced records we
+      # always return the AR record so write actions (update/destroy/approve) can
+      # operate on it; for file-sourced records we return the loaded Hash (view-only).
       if params[:id].to_s =~ /\A\d+\z/
         @skill = Skill.find(params[:id])
-      else
-        all = SkillLoader.new.load_all_skills
-        @skill = all.find { |s| slugify(s['name']) == params[:id] || s['name'] == params[:id] }
-        raise ActiveRecord::RecordNotFound, "Skill not found: #{params[:id]}" unless @skill
+        return
       end
+
+      # Non-numeric :id — could be a DB-backed name/slug OR a file-only name.
+      # Try the DB by name first; fall back to the union (which surfaces file skills).
+      ar = Skill.where('LOWER(name) = ?', params[:id].to_s.downcase).first
+      if ar.nil?
+        # Maybe the URL has a slugified name (spaces → hyphens, punctuation stripped).
+        ar = Skill.all.find { |s| slugify(s.name) == params[:id] }
+      end
+      if ar
+        @skill = ar
+        return
+      end
+
+      all = SkillLoader.new.load_all_skills
+      @skill = all.find { |s| slugify(s['name']) == params[:id] || s['name'] == params[:id] }
+      raise ActiveRecord::RecordNotFound, "Skill not found: #{params[:id]}" unless @skill
     end
 
     def skill_params

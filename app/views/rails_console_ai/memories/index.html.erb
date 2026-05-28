@@ -1,7 +1,13 @@
 <div class="btn-bar">
   <%= link_to 'New memory', new_memory_path, class: 'btn' %>
+  <% if @sort == 'used' %>
+    <%= link_to 'Sort: alphabetical', memories_path(q: @q), class: 'btn btn-secondary' %>
+  <% else %>
+    <%= link_to 'Sort: most used', memories_path(q: @q, sort: 'used'), class: 'btn btn-secondary' %>
+  <% end %>
   <form method="get" action="<%= memories_path %>" style="margin-left:auto;">
     <input type="text" name="q" value="<%= @q %>" placeholder="Search memories…" style="padding:6px 10px; border:1px solid #ccc; border-radius:4px;">
+    <% if @sort.present? %><input type="hidden" name="sort" value="<%= @sort %>"><% end %>
   </form>
 </div>
 
@@ -17,6 +23,8 @@
         <th>Description</th>
         <th>Tags</th>
         <th>Source</th>
+        <th title="Number of times the AI recalled this memory (DB only)">Uses</th>
+        <th>Last used</th>
         <th></th>
       </tr>
     </thead>
@@ -35,6 +43,16 @@
             <% else %>
               <span class="badge source-file">FILE</span>
             <% end %>
+          </td>
+          <td>
+            <% if m['source'] == :db %>
+              <%= m['use_count'] || 0 %>
+            <% else %>
+              <span class="text-muted">—</span>
+            <% end %>
+          </td>
+          <td class="text-muted" style="font-size:12px;">
+            <%= m['last_used_at']&.strftime('%Y-%m-%d %H:%M') || '—' %>
           </td>
           <td>
             <%= link_to 'View', memory_path(link_id) %>

@@ -13,10 +13,15 @@ module RailsConsoleAi
           [m['name'], m['description'], Array(m['tags']).join(' ')].compact.join(' ').downcase.include?(needle)
         }
       end
+
+      @sort = params[:sort].to_s
+      if @sort == 'used'
+        @memories = @memories.sort_by { |m| [-(m['use_count'].to_i), m['name'].to_s.downcase] }
+      end
     end
 
     def show
-      @versions = @memory.versions if @memory.is_a?(Memory)
+      @versions = @memory.versions if @memory.is_a?(RailsConsoleAi::Memory)
     end
 
     def new
@@ -40,11 +45,11 @@ module RailsConsoleAi
     end
 
     def edit
-      redirect_to memories_path, alert: file_memory_message and return unless @memory.is_a?(Memory)
+      redirect_to memories_path, alert: file_memory_message and return unless @memory.is_a?(RailsConsoleAi::Memory)
     end
 
     def update
-      redirect_to memories_path, alert: file_memory_message and return unless @memory.is_a?(Memory)
+      redirect_to memories_path, alert: file_memory_message and return unless @memory.is_a?(RailsConsoleAi::Memory)
 
       begin
         @memory.update_with_version!(
@@ -60,7 +65,7 @@ module RailsConsoleAi
     end
 
     def destroy
-      if @memory.is_a?(Memory)
+      if @memory.is_a?(RailsConsoleAi::Memory)
         @memory.destroy
         redirect_to memories_path, notice: 'Memory deleted. Past versions remain in history.'
       else
@@ -82,11 +87,21 @@ module RailsConsoleAi
     def load_memory
       if params[:id].to_s =~ /\A\d+\z/
         @memory = Memory.find(params[:id])
-      else
-        all = Tools::MemoryTools.new.load_all_memories
-        @memory = all.find { |m| slugify(m['name']) == params[:id] || m['name'] == params[:id] }
-        raise ActiveRecord::RecordNotFound, "Memory not found: #{params[:id]}" unless @memory
+        return
       end
+
+      # Non-numeric :id — prefer the AR record if a DB row matches by name or slug,
+      # so write actions (update/destroy) get the AR object, not a read-only Hash.
+      ar = Memory.where('LOWER(name) = ?', params[:id].to_s.downcase).first
+      ar ||= Memory.all.find { |m| slugify(m.name) == params[:id] }
+      if ar
+        @memory = ar
+        return
+      end
+
+      all = Tools::MemoryTools.new.load_all_memories
+      @memory = all.find { |m| slugify(m['name']) == params[:id] || m['name'] == params[:id] }
+      raise ActiveRecord::RecordNotFound, "Memory not found: #{params[:id]}" unless @memory
     end
 
     def memory_params

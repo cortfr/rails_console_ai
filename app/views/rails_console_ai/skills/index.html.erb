@@ -1,7 +1,13 @@
 <div class="btn-bar">
   <%= link_to 'New skill', new_skill_path, class: 'btn' %>
+  <% if @sort == 'used' %>
+    <%= link_to 'Sort: alphabetical', skills_path(q: @q), class: 'btn btn-secondary' %>
+  <% else %>
+    <%= link_to 'Sort: most used', skills_path(q: @q, sort: 'used'), class: 'btn btn-secondary' %>
+  <% end %>
   <form method="get" action="<%= skills_path %>" style="margin-left:auto;">
     <input type="text" name="q" value="<%= @q %>" placeholder="Search skills…" style="padding:6px 10px; border:1px solid #ccc; border-radius:4px;">
+    <% if @sort.present? %><input type="hidden" name="sort" value="<%= @sort %>"><% end %>
   </form>
 </div>
 
@@ -24,6 +30,8 @@
         <th>Description</th>
         <th>Tags</th>
         <th>Source / Status</th>
+        <th title="Number of times the AI activated this skill (DB only)">Uses</th>
+        <th>Last used</th>
         <th></th>
       </tr>
     </thead>
@@ -47,6 +55,16 @@
             <% else %>
               <span class="badge source-file">FILE</span>
             <% end %>
+          </td>
+          <td>
+            <% if s['source'] == :db %>
+              <%= s['use_count'] || 0 %>
+            <% else %>
+              <span class="text-muted">—</span>
+            <% end %>
+          </td>
+          <td class="text-muted" style="font-size:12px;">
+            <%= s['last_used_at']&.strftime('%Y-%m-%d %H:%M') || '—' %>
           </td>
           <td>
             <%= link_to 'View', skill_path(link_id) %>
