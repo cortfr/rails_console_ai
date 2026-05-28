@@ -521,6 +521,23 @@ RailsConsoleAi.get_agent_response(id)
 
 `run_agent` enqueues a row in the sessions table with `mode='agent_api'` and `status='queued'`. A separate long-running rake task picks them up and runs each in its own thread using the same engine that powers `ai "..."` in the console.
 
+### Per-run options
+
+`run_agent` accepts two extra keyword arguments to tune individual runs:
+
+```ruby
+RailsConsoleAi.run_agent(
+  "Trace why nightly billing is double-charging some accounts",
+  use_thinking_model: true,        # run on the thinking-tier model (e.g. Opus)
+  max_wall_clock_seconds: 1800     # hard kill after 30 minutes; pass nil for no cap
+)
+```
+
+- `use_thinking_model:` (default `false`) — switches the run to `config.thinking_model` (or the provider default thinking model) for the duration of the agent. Useful for harder, multi-step problems.
+- `max_wall_clock_seconds:` (default `600`) — hard ceiling on wall-clock time. If the run exceeds the cap, the worker thread is killed and the session is marked `status='failed'` with `error_message: "exceeded max_wall_clock_seconds (Ns)"`. Pass `nil` to opt out of any cap.
+
+These (along with any future per-run options) are stored in a JSON `options` column on the session row, so they survive the handoff to the background runner.
+
 ### Running the background runner
 
 ```bash
@@ -535,7 +552,7 @@ Run it separately from your web server, alongside (or instead of) the Slack bot.
 
 ### Requirements
 
-- `RailsConsoleAi.setup!` must have been run so the sessions table has the `status`, `result`, and `error_message` columns. `ai_db_setup` (or `ai_db_migrate` on existing installs) handles this.
+- `RailsConsoleAi.setup!` must have been run so the sessions table has the `status`, `result`, `error_message`, and `options` columns. `ai_db_setup` (or `ai_db_migrate` on existing installs) handles this.
 - `session_logging` must be enabled (it is by default).
 
 ### Behavior notes

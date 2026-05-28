@@ -28,6 +28,10 @@ module RailsConsoleAi
         create_attrs[:status]            = attrs[:status]            if attrs.key?(:status)
         create_attrs[:result]            = attrs[:result]            if attrs.key?(:result)
         create_attrs[:error_message]     = attrs[:error_message]     if attrs.key?(:error_message)
+        if attrs.key?(:options)
+          opts = attrs[:options]
+          create_attrs[:options] = opts.is_a?(String) ? opts : opts.to_json
+        end
         record = session_class.create!(create_attrs)
         record.id
       rescue => e

@@ -57,8 +57,17 @@ module RailsConsoleAi
 
     # Enqueue an agent run. Returns the Integer session id immediately;
     # the actual work is picked up by `rake rails_console_ai:agents`.
-    def run_agent(query, name: nil, user_name: nil)
+    #
+    # use_thinking_model:     run on the configured thinking-tier model
+    # max_wall_clock_seconds: hard kill the run after N seconds (nil = no cap)
+    def run_agent(query, name: nil, user_name: nil,
+                  use_thinking_model: false,
+                  max_wall_clock_seconds: 600)
       require 'rails_console_ai/session_logger'
+      options = {
+        'use_thinking_model'     => !!use_thinking_model,
+        'max_wall_clock_seconds' => max_wall_clock_seconds
+      }
       id = SessionLogger.log(
         query: query,
         conversation: [],
@@ -66,7 +75,8 @@ module RailsConsoleAi
         name: name,
         user_name: user_name,
         status: 'queued',
-        executed: false
+        executed: false,
+        options: options
       )
       raise 'Failed to enqueue agent run (session logging disabled or table missing)' unless id
       id
@@ -145,6 +155,7 @@ module RailsConsoleAi
           t.string  :slack_thread_ts, limit: 255
           t.string  :slack_channel_name, limit: 255
           t.integer :duration_ms
+          t.text    :options
           t.datetime :created_at,   null: false
         end
 
@@ -374,6 +385,11 @@ module RailsConsoleAi
       unless conn.column_exists?(table, :error_message)
         conn.add_column(table, :error_message, :text)
         migrations << 'error_message'
+      end
+
+      unless conn.column_exists?(table, :options)
+        conn.add_column(table, :options, :text)
+        migrations << 'options'
       end
 
       unless conn.index_exists?(table, [:mode, :status], name: 'idx_rca_sessions_mode_status')

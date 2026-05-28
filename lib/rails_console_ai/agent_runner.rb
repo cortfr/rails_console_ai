@@ -1,3 +1,4 @@
+require 'json'
 require 'rails_console_ai/prefixed_io'
 require 'rails_console_ai/session_logger'
 require 'rails_console_ai/channel/api'
@@ -7,6 +8,8 @@ require 'rails_console_ai/providers/base'
 require 'rails_console_ai/executor'
 
 module RailsConsoleAi
+  class RunnerTimeoutError < StandardError; end
+
   # Long-running worker that polls the sessions table for queued agent_api
   # rows, claims them atomically, and runs each in its own Thread via
   # ConversationEngine#one_shot. Started by `rake rails_console_ai:agents`.
@@ -87,13 +90,20 @@ module RailsConsoleAi
 
     def spawn(session)
       tag = "[agent/#{session.id}] @#{session.user_name || '?'}"
-      puts "#{tag} << #{session.query.to_s.strip}"
+      opts = parse_options(session)
+      banner_extras = []
+      banner_extras << 'thinking' if opts['use_thinking_model']
+      if (cap = opts['max_wall_clock_seconds'])
+        banner_extras << "cap=#{cap}s"
+      end
+      banner = banner_extras.empty? ? '' : " (#{banner_extras.join(', ')})"
+      puts "#{tag}#{banner} << #{session.query.to_s.strip}"
 
       t = Thread.new do
         Thread.current.report_on_exception = false
         Thread.current[:log_prefix] = tag
         begin
-          run_one(session)
+          run_one(session, opts)
         ensure
           ActiveRecord::Base.clear_active_connections! if defined?(ActiveRecord::Base)
         end
@@ -101,13 +111,27 @@ module RailsConsoleAi
       @mutex.synchronize { @threads[session.id] = t }
     end
 
-    def run_one(session)
+    def parse_options(session)
+      raw = session.respond_to?(:options) ? session.options : nil
+      return {} if raw.nil? || raw.to_s.empty?
+      return raw if raw.is_a?(Hash)
+      JSON.parse(raw)
+    rescue => e
+      warn "AgentRunner: failed to parse session.options (#{e.class}: #{e.message}); ignoring."
+      {}
+    end
+
+    def run_one(session, opts = nil)
+      opts ||= parse_options(session)
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       channel = Channel::Api.new(user_name: session.user_name)
       sandbox_binding = Object.new.instance_eval { binding }
       engine = ConversationEngine.new(binding_context: sandbox_binding, channel: channel)
+      engine.upgrade_to_thinking_model if opts['use_thinking_model']
 
-      exec_result = engine.one_shot(session.query, existing_session_id: session.id)
+      exec_result = run_with_deadline(opts['max_wall_clock_seconds']) do
+        engine.one_shot(session.query, existing_session_id: session.id)
+      end
       result_text = compose_result(channel.captured_output, exec_result)
 
       SessionLogger.update(session.id, status: 'ready', result: result_text)
@@ -116,6 +140,9 @@ module RailsConsoleAi
       preview = result_text.to_s.strip.lines.first.to_s.strip
       preview = preview[0, 120] + '…' if preview.length > 120
       puts ">> ready (#{elapsed}ms) #{preview}"
+    rescue RunnerTimeoutError => e
+      warn ">> TIMEOUT #{e.message}"
+      SessionLogger.update(session.id, status: 'failed', error_message: e.message)
     rescue => e
       warn ">> FAILED #{e.class}: #{e.message}"
       e.backtrace&.first(5)&.each { |line| warn "   #{line}" }
@@ -123,6 +150,30 @@ module RailsConsoleAi
         status: 'failed',
         error_message: "#{e.class}: #{e.message}\n#{Array(e.backtrace).first(10).join("\n")}"
       )
+    end
+
+    # When cap is nil or non-positive, run inline. Otherwise spawn a nested
+    # worker thread, join with the deadline, and kill + raise on overshoot.
+    # Kept localized (vs Timeout.timeout) so a runaway provider call can't
+    # raise from inside our own bookkeeping code.
+    def run_with_deadline(cap)
+      return yield if cap.nil? || cap.to_f <= 0
+      result = nil
+      error = nil
+      worker = Thread.new do
+        Thread.current.report_on_exception = false
+        begin
+          result = yield
+        rescue => e
+          error = e
+        end
+      end
+      if worker.join(cap.to_f).nil?
+        worker.kill
+        raise RunnerTimeoutError, "exceeded max_wall_clock_seconds (#{cap}s)"
+      end
+      raise error if error
+      result
     end
 
     # Build the `result` payload returned via get_agent_response. The
