@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.30.0]
+
+- Add background agent support — new `run_agent` mechanism to launch agents asynchronously alongside an HTTP API channel
+- Store skills and memories in the database with versioning, side-by-side diff, and restore, in addition to on-disk files
+- Store sub-agents in the database with the same versioned workflow as skills
+- Require human approval before the AI can use DB-backed skills or sub-agents; editing reverts them to proposed
+- Track per-record usage (`use_count`, `last_used_at`) for DB-backed skills, memories, and sub-agents, surfaced in the web UI
+- Add web UI sections for skills, memories, and agents with list / view / create / edit / delete / approve / version history
+- Add `save_agent`, `delete_agent` AI tools and a `target` parameter on `save_skill` / `save_memory` for DB vs file
+- Add a "Paste a .md file" import box on new skill / memory / agent pages that prefills the form from frontmatter
+- Make `RailsConsoleAi.migrate!` re-run column probes on upgrades so new columns are added on existing installs
+- Harden `Skill` / `Agent` model accessors to return safe defaults when newly added columns are not yet present
+- Fix built-in agent `.md` files with UTF-8 characters failing to load under US-ASCII locales
+
 ## [Unreleased]
 
 - New skill / memory / agent pages now have a "Paste a .md file" textarea at the top. Paste the contents of a Markdown file with YAML frontmatter (same format used by `.rails_console_ai/{skills,memories,agents}/*.md` and the gem's built-in agents), click "Parse pasted content ↓", and the form fields below are prefilled from the parse. You still click Create to actually save, so the normal proposed-status + version-row flow applies — and you can tweak the parsed content before saving. Useful for moving an existing on-disk record into the versioned DB store
