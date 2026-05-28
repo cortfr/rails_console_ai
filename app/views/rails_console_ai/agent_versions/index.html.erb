@@ -1,0 +1,28 @@
+<%= link_to '← Back to agent', agent_path(@agent), class: 'back-link' %>
+
+<h2 style="margin-bottom:16px;">Versions — <%= @agent.name %></h2>
+
+<% if @versions.empty? %>
+  <div class="meta-card"><p class="text-muted">No versions recorded yet.</p></div>
+<% else %>
+  <div class="versions-list">
+    <% @versions.each do |v| %>
+      <div class="ver-row">
+        <div>
+          <strong>v<%= v.id %></strong>
+          <span class="ver-meta">— <%= v.created_at.strftime('%Y-%m-%d %H:%M:%S') %> by <%= v.edited_by || 'unknown' %></span>
+          <% if v.status == 'approved' %><span class="badge status-approved">APPROVED</span>
+          <% elsif v.status == 'proposed' %><span class="badge status-proposed">PROPOSED</span><% end %>
+          <% if v.change_note.present? %><div class="ver-meta"><%= v.change_note %></div><% end %>
+        </div>
+        <div>
+          <%= link_to 'View', agent_version_path(@agent, v) %>
+          ·
+          <%= link_to 'Diff vs current', diff_agents_path(agent_id: @agent.id, from: v.id) %>
+          ·
+          <%= button_to 'Restore', restore_agent_version_path(@agent, v), method: :post, class: 'btn btn-secondary', form: { style: 'display:inline' }, data: { confirm: "Restore version ##{v.id}? Restoring reverts the agent to PROPOSED and a new version row will be created." } %>
+        </div>
+      </div>
+    <% end %>
+  </div>
+<% end %>

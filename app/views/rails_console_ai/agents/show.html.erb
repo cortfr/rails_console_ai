@@ -1,0 +1,106 @@
+<%
+  is_db = @agent.is_a?(RailsConsoleAi::Agent)
+  is_builtin = !is_db && @agent['source'] == :builtin
+  is_file = !is_db && @agent['source'] == :file
+
+  name = is_db ? @agent.name : @agent['name']
+  description = is_db ? @agent.description : @agent['description']
+  body = is_db ? @agent.body : @agent['body']
+  max_rounds = is_db ? @agent.max_rounds : @agent['max_rounds']
+  model = is_db ? @agent.model : @agent['model']
+  tools = is_db ? Array(@agent.tools) : Array(@agent['tools'])
+  file_key = is_db ? nil : @agent['file_key']
+%>
+
+<%= link_to '← All agents', agents_path, class: 'back-link' %>
+
+<% if is_db && !@agent.approved? %>
+  <div class="flash flash-alert" style="margin-bottom:16px;">
+    <strong>Awaiting approval.</strong> The AI cannot invoke this agent via delegate_task until a human approves it.
+    Review the body and tools list below, then click <strong>Approve</strong>.
+  </div>
+<% end %>
+
+<% if is_builtin %>
+  <div class="flash flash-notice" style="margin-bottom:16px;">
+    This is a <strong>built-in agent</strong> shipped with the gem. It's read-only here.
+    To customize it, <%= link_to 'create a same-named DB override', new_agent_path(from_builtin: name) %> — your DB agent will shadow this one.
+  </div>
+<% end %>
+
+<div class="meta-card">
+  <h2 style="margin-bottom:8px;">
+    <%= name %>
+    <% if is_db %>
+      <span class="badge source-db">DB</span>
+      <% if @agent.approved? %>
+        <span class="badge status-approved">APPROVED</span>
+      <% else %>
+        <span class="badge status-proposed">PROPOSED</span>
+      <% end %>
+    <% elsif is_builtin %>
+      <span class="badge source-builtin">BUILTIN</span>
+    <% else %>
+      <span class="badge source-file">FILE</span>
+    <% end %>
+  </h2>
+  <p class="text-muted"><%= description %></p>
+  <div class="meta-grid" style="margin-top:16px;">
+    <div class="meta-item"><label>Model</label><span><%= model || '(default)' %></span></div>
+    <div class="meta-item"><label>Max rounds</label><span><%= max_rounds || '(default)' %></span></div>
+    <div class="meta-item"><label>Tool whitelist</label><span><%= tools.empty? ? '(default set)' : tools.join(', ') %></span></div>
+    <% if is_db %>
+      <div class="meta-item"><label>Updated</label><span><%= @agent.updated_at.strftime('%Y-%m-%d %H:%M') %></span></div>
+      <div class="meta-item"><label>Versions</label><span><%= @agent.versions.count %></span></div>
+      <% if @agent.approved? %>
+        <div class="meta-item"><label>Approved by</label><span><%= @agent.approved_by || '—' %></span></div>
+        <div class="meta-item"><label>Approved at</label><span><%= @agent.approved_at&.strftime('%Y-%m-%d %H:%M') || '—' %></span></div>
+      <% end %>
+    <% else %>
+      <div class="meta-item"><label>Path</label><span class="mono"><%= file_key %></span></div>
+    <% end %>
+  </div>
+</div>
+
+<div class="btn-bar">
+  <% if is_db %>
+    <% unless @agent.approved? %>
+      <%= form_with url: approve_agent_path(@agent), method: :post, local: true, style: 'display:inline' do %>
+        <input type="text" name="approved_by" placeholder="Your name (required)" style="padding:7px 10px; border:1px solid #ccc; border-radius:4px; margin-right:6px;">
+        <button type="submit" class="btn btn-danger" data-confirm="Approve this agent? The AI will then be able to invoke it via delegate_task with the configured tool whitelist.">Approve</button>
+      <% end %>
+    <% end %>
+    <%= link_to 'Edit', edit_agent_path(@agent), class: 'btn' %>
+    <%= link_to 'Versions', agent_versions_path(@agent), class: 'btn btn-secondary' %>
+    <%= button_to 'Delete', agent_path(@agent), method: :delete, class: 'btn btn-danger', form: { style: 'display:inline' }, data: { confirm: 'Delete this agent? Past versions remain in history.' } %>
+  <% elsif is_builtin %>
+    <%= link_to 'Create DB override', new_agent_path(from_builtin: name), class: 'btn' %>
+  <% end %>
+</div>
+
+<h3 style="margin-bottom:8px;">Body / instructions</h3>
+<div class="markdown-body"><%= body %></div>
+
+<% if is_db && @versions && @versions.any? %>
+  <h3 style="margin:24px 0 8px;">Recent versions</h3>
+  <div class="versions-list">
+    <% @versions.first(5).each do |v| %>
+      <div class="ver-row">
+        <div>
+          <strong>v<%= v.id %></strong>
+          <span class="ver-meta">— <%= v.created_at.strftime('%Y-%m-%d %H:%M') %> by <%= v.edited_by || 'unknown' %></span>
+          <% if v.status == 'approved' %><span class="badge status-approved">APPROVED</span><% end %>
+          <% if v.change_note.present? %><div class="ver-meta"><%= v.change_note %></div><% end %>
+        </div>
+        <div>
+          <%= link_to 'View', agent_version_path(@agent, v) %>
+          ·
+          <%= link_to 'Diff vs current', diff_agents_path(agent_id: @agent.id, from: v.id) %>
+        </div>
+      </div>
+    <% end %>
+  </div>
+  <% if @versions.size > 5 %>
+    <p style="margin-top:8px;"><%= link_to "See all #{@versions.size} versions →", agent_versions_path(@agent) %></p>
+  <% end %>
+<% end %>

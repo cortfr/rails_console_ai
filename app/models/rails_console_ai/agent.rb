@@ -1,22 +1,22 @@
 require 'json'
 
 module RailsConsoleAi
-  class Skill < ActiveRecord::Base
-    self.table_name = 'rails_console_ai_skills'
+  class Agent < ActiveRecord::Base
+    self.table_name = 'rails_console_ai_agents'
 
     STATUS_PROPOSED = 'proposed'.freeze
     STATUS_APPROVED = 'approved'.freeze
     STATUSES = [STATUS_PROPOSED, STATUS_APPROVED].freeze
 
     # Attributes that, if changed, invalidate the current approval and revert
-    # the skill back to "proposed". Status / approver columns are excluded so
+    # the agent back to "proposed". Status / approver columns are excluded so
     # that an explicit approve! call doesn't reset its own approval.
-    CONTENT_ATTRIBUTES = %w[name description body tags bypass_guards_for_methods].freeze
+    CONTENT_ATTRIBUTES = %w[name description body max_rounds model tools].freeze
 
     has_many :versions,
              -> { order(created_at: :desc) },
-             class_name: 'RailsConsoleAi::SkillVersion',
-             foreign_key: :skill_id,
+             class_name: 'RailsConsoleAi::AgentVersion',
+             foreign_key: :agent_id,
              dependent: :nullify
 
     validates :name, presence: true, uniqueness: { case_sensitive: false }
@@ -36,27 +36,18 @@ module RailsConsoleAi
       end
     end
 
-    # Manual JSON accessors keep us off Rails-version-specific `serialize` syntax
-    # (positional coder in Rails 5–6, keyword coder in Rails 7+).
-    def tags
-      decode_json_array(read_attribute(:tags))
+    # Manual JSON accessor for `tools` — same approach we use for skill tags,
+    # avoids Rails-version-specific `serialize` API.
+    def tools
+      decode_json_array(read_attribute(:tools))
     end
 
-    def tags=(value)
-      write_attribute(:tags, encode_json_array(value))
-    end
-
-    def bypass_guards_for_methods
-      decode_json_array(read_attribute(:bypass_guards_for_methods))
-    end
-
-    def bypass_guards_for_methods=(value)
-      write_attribute(:bypass_guards_for_methods, encode_json_array(value))
+    def tools=(value)
+      write_attribute(:tools, encode_json_array(value))
     end
 
     # Defensive accessors — if `ai_db_migrate` hasn't been run yet, the status
-    # / approval columns may be missing on an older table. Return safe defaults
-    # instead of blowing up with NameError.
+    # / approval columns may be missing on an older table.
     def status
       has_attribute_status? ? read_attribute(:status) : STATUS_PROPOSED
     end
@@ -74,17 +65,18 @@ module RailsConsoleAi
 
     def to_hash
       {
-        'id'                        => id,
-        'name'                      => name,
-        'description'               => description,
-        'body'                      => body,
-        'tags'                      => tags,
-        'bypass_guards_for_methods' => bypass_guards_for_methods,
-        'status'                    => status,
-        'approved_by'               => approved_by,
-        'approved_at'               => approved_at,
-        'source'                    => :db,
-        'updated_at'                => updated_at
+        'id'          => id,
+        'name'        => name,
+        'description' => description,
+        'body'        => body,
+        'max_rounds'  => max_rounds,
+        'model'       => model,
+        'tools'       => tools,
+        'status'      => status,
+        'approved_by' => approved_by,
+        'approved_at' => approved_at,
+        'source'      => :db,
+        'updated_at'  => updated_at
       }
     end
 
@@ -104,21 +96,12 @@ module RailsConsoleAi
       JSON.dump(Array(value))
     end
 
-    def decode_json_array(raw)
-      self.class.decode_json_array(raw)
-    end
+    def decode_json_array(raw); self.class.decode_json_array(raw); end
+    def encode_json_array(value); self.class.encode_json_array(value); end
 
-    def encode_json_array(value)
-      self.class.encode_json_array(value)
-    end
-
-    # Assigns attrs, saves, and records one SkillVersion snapshot of the post-save state.
-    # Every save produces exactly one version row, so the version log is a complete history
-    # including the current state (the most recent version mirrors `self`).
-    #
+    # Assigns attrs, saves, and records one AgentVersion snapshot of the post-save state.
     # If `preserve_approval` is false (the default), any change to a content attribute
-    # reverts the skill back to "proposed" and clears the approver. Pass true from the
-    # approve! flow so approval doesn't reset itself.
+    # reverts the agent back to "proposed" and clears the approver.
     def update_with_version!(attrs, edited_by: nil, change_note: nil, preserve_approval: false)
       transaction do
         assign_attributes(attrs)
@@ -130,23 +113,22 @@ module RailsConsoleAi
         end
 
         save!
-        RailsConsoleAi::SkillVersion.create!(
-          skill_id:                   id,
-          name:                       name,
-          description:                description,
-          body:                       body,
-          tags:                       tags,
-          bypass_guards_for_methods:  bypass_guards_for_methods,
-          status:                     status,
-          edited_by:                  edited_by,
-          change_note:                change_note
+        RailsConsoleAi::AgentVersion.create!(
+          agent_id:    id,
+          name:        name,
+          description: description,
+          body:        body,
+          max_rounds:  max_rounds,
+          model:       model,
+          tools:       tools,
+          status:      status,
+          edited_by:   edited_by,
+          change_note: change_note
         )
       end
       self
     end
 
-    # Marks the current head as approved. Logs a version row with the approver name
-    # so the audit trail captures the approval moment.
     def approve!(approved_by:)
       raise ArgumentError, 'approved_by is required' if approved_by.to_s.strip.empty?
 
@@ -164,7 +146,6 @@ module RailsConsoleAi
 
     private
 
-    # Did any content-bearing attribute change in this assign_attributes pass?
     def content_dirty?
       CONTENT_ATTRIBUTES.any? { |a| changes.key?(a) }
     end

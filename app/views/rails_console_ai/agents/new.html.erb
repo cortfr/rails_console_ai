@@ -1,0 +1,7 @@
+<%= link_to '← All agents', agents_path, class: 'back-link' %>
+<h2 style="margin-bottom:16px;">New agent</h2>
+<%= render 'form',
+      form_url: agents_path,
+      form_method: :post,
+      submit_label: 'Create agent',
+      cancel_path: agents_path %>

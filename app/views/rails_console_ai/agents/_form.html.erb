@@ -1,0 +1,65 @@
+<% if @agent.persisted? && @agent.respond_to?(:approved?) && @agent.approved? %>
+  <div class="flash flash-alert" style="margin-bottom:16px;">
+    Heads up: this agent is currently <strong>approved</strong>. Editing it will revert its status to <strong>proposed</strong> and the AI won't be able to invoke it again until someone re-approves it.
+  </div>
+<% elsif !@agent.persisted? %>
+  <div class="flash flash-notice" style="margin-bottom:16px;">
+    New DB agents start as <strong>proposed</strong>. After saving, an approver (likely you) needs to click the Approve button on the show page before the AI can invoke this agent via delegate_task.
+  </div>
+<% end %>
+
+<%= form_with model: @agent, url: form_url, method: form_method, local: true do |f| %>
+  <div class="form-card">
+    <div class="form-row">
+      <label>Name</label>
+      <%= f.text_field :name, value: @agent.name, required: true %>
+    </div>
+
+    <div class="form-row">
+      <label>Description</label>
+      <%= f.text_field :description, value: @agent.description, placeholder: 'One-line description of what this agent specializes in' %>
+    </div>
+
+    <div class="form-row">
+      <label>Body / system instructions (markdown)</label>
+      <%= f.text_area :body, value: @agent.body, rows: 18 %>
+      <div class="hint">Persona + strategy + rules. Be specific about what tools/approaches the sub-agent should use and what format its summary should take.</div>
+    </div>
+
+    <div class="form-row">
+      <label>Max rounds (optional)</label>
+      <%= f.number_field :max_rounds, value: @agent.max_rounds, min: 1, max: 100 %>
+      <div class="hint">Maximum tool-loop iterations for the sub-agent. Defaults to the global <code>config.sub_agent_max_rounds</code>. Smaller = tighter scope, fewer tokens.</div>
+    </div>
+
+    <div class="form-row">
+      <label>Model (optional)</label>
+      <%= f.text_field :model, value: @agent.model, placeholder: 'e.g. claude-haiku-4-5' %>
+      <div class="hint">Model override. Leave blank to use the global model. Useful for cheap/fast agents.</div>
+    </div>
+
+    <div class="form-row">
+      <label>Tool whitelist (one per line, optional)</label>
+      <%= f.text_area :tools, value: Array(@agent.tools).join("\n"), rows: 4 %>
+      <div class="hint">Tool names the sub-agent is allowed to call (e.g. <code>execute_code</code>, <code>search_code</code>, <code>read_file</code>). Leave blank to use the default tool set. Adding tools here can broaden what the sub-agent can do — this is why DB agents need approval.</div>
+    </div>
+
+    <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+
+    <div class="form-row">
+      <label>Edited by</label>
+      <input type="text" name="edited_by" value="<%= params[:edited_by] %>" placeholder="Your name or handle">
+      <div class="hint">Recorded with this version. Free text — the gem does not assume authentication beyond the admin login.</div>
+    </div>
+
+    <div class="form-row">
+      <label>Change note (optional)</label>
+      <input type="text" name="change_note" value="" placeholder="What did you change and why?">
+    </div>
+  </div>
+
+  <div class="btn-bar">
+    <%= f.submit submit_label, class: 'btn' %>
+    <%= link_to 'Cancel', cancel_path, class: 'btn btn-secondary' %>
+  </div>
+<% end %>

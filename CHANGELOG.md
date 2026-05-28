@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Sub-agents can now be stored in the database, versioned, and approved through the web UI — same workflow as skills. DB-backed agents start as `proposed` and are invisible to `delegate_task` until a human clicks Approve at `/rails_console_ai/agents`; editing an approved agent reverts it to proposed. Built-in (gem-shipped) and file-based agents are pre-approved and continue working unchanged
+- New AI tools `save_agent` and `delete_agent` — the AI can now draft a sub-agent definition (lands as proposed, awaits human approval) and request deletion. `delegate_task` now emits a specific "awaiting human approval" error when the AI references a proposed DB agent
+- New web UI section at `/rails_console_ai/agents` with three-source listing (DB / FILE / BUILTIN badges) plus the full skills-style CRUD + version history + diff + restore + approve. Built-in agents are read-only with a "Create DB override" link that prefills the new-agent form
+- `ai_db_setup` / `ai_db_migrate` now also create `rails_console_ai_agents` and `rails_console_ai_agent_versions` tables idempotently
+- Fix: built-in agent .md files containing UTF-8 (em-dashes, smart quotes) now load correctly. `safe_load_builtin_agents` was using `File.read`'s locale-default encoding, which silently swallowed `Encoding::CompatibilityError` on US-ASCII locales
+
 - Skills and memories can now be stored in the database (in addition to the existing on-disk `.rails_console_ai/skills` and `.rails_console_ai/memories` files). DB-backed records are versioned — every save creates a `SkillVersion` / `MemoryVersion` row with `edited_by` and an optional change note
 - DB-backed skills start in a **proposed** state and cannot be activated by the AI until a human approves them in the web UI. Editing an approved skill reverts it to proposed. File-backed skills are unaffected (already git-tracked, considered pre-approved). Memories are not gated
 - `SkillLoader#load_all_skills` and `MemoryTools#load_all_memories` now return the union of DB and file records (DB wins on name collision). `SkillLoader#find_skill` / `skill_summaries` filter out proposed skills so the AI never sees them

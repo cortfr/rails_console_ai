@@ -1,0 +1,7 @@
+<%= link_to '← Back to agent', agent_path(@agent), class: 'back-link' %>
+<h2 style="margin-bottom:16px;">Edit agent</h2>
+<%= render 'form',
+      form_url: agent_path(@agent),
+      form_method: :patch,
+      submit_label: 'Save changes',
+      cancel_path: agent_path(@agent) %>

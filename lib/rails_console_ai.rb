@@ -254,6 +254,60 @@ module RailsConsoleAi
       end
     end
 
+    def setup_agents_tables!(conn)
+      agents_table   = 'rails_console_ai_agents'
+      versions_table = 'rails_console_ai_agent_versions'
+
+      unless conn.table_exists?(agents_table)
+        conn.create_table(agents_table) do |t|
+          t.string   :name,        limit: 255, null: false
+          t.text     :description
+          t.text     :body
+          t.integer  :max_rounds
+          t.string   :model,       limit: 100
+          t.text     :tools
+          t.string   :status,      limit: 20,  default: 'proposed', null: false
+          t.string   :approved_by, limit: 255
+          t.datetime :approved_at
+          t.datetime :created_at,  null: false
+          t.datetime :updated_at,  null: false
+        end
+        conn.add_index(agents_table, :name, unique: true)
+        conn.add_index(agents_table, :status)
+        $stdout.puts "\e[32mRailsConsoleAi: created #{agents_table} table.\e[0m"
+      else
+        unless conn.column_exists?(agents_table, :status)
+          conn.add_column(agents_table, :status, :string, limit: 20, default: 'proposed', null: false)
+          conn.add_index(agents_table, :status) unless conn.index_exists?(agents_table, :status)
+        end
+        unless conn.column_exists?(agents_table, :approved_by)
+          conn.add_column(agents_table, :approved_by, :string, limit: 255)
+        end
+        unless conn.column_exists?(agents_table, :approved_at)
+          conn.add_column(agents_table, :approved_at, :datetime)
+        end
+      end
+
+      unless conn.table_exists?(versions_table)
+        conn.create_table(versions_table) do |t|
+          t.integer  :agent_id
+          t.string   :name,        limit: 255
+          t.text     :description
+          t.text     :body
+          t.integer  :max_rounds
+          t.string   :model,       limit: 100
+          t.text     :tools
+          t.string   :status,      limit: 20
+          t.string   :edited_by,   limit: 255
+          t.text     :change_note
+          t.datetime :created_at,  null: false
+        end
+        conn.add_index(versions_table, :agent_id)
+        conn.add_index(versions_table, :created_at)
+        $stdout.puts "\e[32mRailsConsoleAi: created #{versions_table} table.\e[0m"
+      end
+    end
+
     def migrate!
       conn = session_connection
       table = 'rails_console_ai_sessions'
@@ -302,20 +356,28 @@ module RailsConsoleAi
         migrations << 'idx_rca_sessions_mode_status'
       end
 
-      # Ensure skills/memories tables exist (idempotent — adds them on existing installs).
-      %w[rails_console_ai_skills rails_console_ai_skill_versions].each do |t|
-        unless conn.table_exists?(t)
-          setup_skills_tables!(conn)
-          migrations << t
-          break
-        end
-      end
-      %w[rails_console_ai_memories rails_console_ai_memory_versions].each do |t|
-        unless conn.table_exists?(t)
-          setup_memories_tables!(conn)
-          migrations << t
-          break
-        end
+      # Bring skills/memories/agents tables fully up to date. Each setup_* method is
+      # internally idempotent (guards both `create_table` and every `add_column` /
+      # `add_index`), so running it on an existing install adds any missing columns
+      # (e.g. `status`, `approved_by`, `approved_at`) and indexes without disturbing
+      # data. Note: we always call these — the previous version skipped them when
+      # the base table already existed, which meant column probes never ran on
+      # upgrade and methods like Skill#status hit NameError. See:
+      # https://github.com/cortfr/rails_console_ai/issues (whichever issue you file)
+      pre_columns = {
+        skills:   table_columns(conn, 'rails_console_ai_skills'),
+        memories: table_columns(conn, 'rails_console_ai_memories'),
+        agents:   table_columns(conn, 'rails_console_ai_agents')
+      }
+
+      setup_skills_tables!(conn)
+      setup_memories_tables!(conn)
+      setup_agents_tables!(conn)
+
+      [[:skills, 'rails_console_ai_skills'], [:memories, 'rails_console_ai_memories'], [:agents, 'rails_console_ai_agents']].each do |key, name|
+        post = table_columns(conn, name)
+        added = post - pre_columns[key]
+        migrations.concat(added.map { |c| "#{name}.#{c}" }) unless added.empty?
       end
 
       if migrations.empty?
@@ -375,6 +437,13 @@ module RailsConsoleAi
       else
         ActiveRecord::Base.connection
       end
+    end
+
+    def table_columns(conn, table_name)
+      return [] unless conn.table_exists?(table_name)
+      conn.columns(table_name).map { |c| c.name }
+    rescue
+      []
     end
   end
 end

@@ -17,6 +17,10 @@ module RailsConsoleAi
         table_exists?('rails_console_ai_memories')
       end
 
+      def agents_available?
+        table_exists?('rails_console_ai_agents')
+      end
+
       # Ask the connection directly so we don't depend on the AR model being
       # autoloaded yet. In a Rails console, the models in app/models are
       # autoloaded lazily — the constant is `defined?`-false until first
@@ -130,8 +134,60 @@ module RailsConsoleAi
         true
       end
 
+      # --- Agents ---
+
+      def all_agents
+        return [] unless agents_available?
+        RailsConsoleAi::Agent.alphabetical.map(&:to_hash)
+      rescue => e
+        warn_failure(:all_agents, e)
+        []
+      end
+
+      def find_agent_by_name(name)
+        return nil unless agents_available?
+        record = RailsConsoleAi::Agent.where('LOWER(name) = ?', name.to_s.downcase).first
+        record&.to_hash
+      rescue => e
+        warn_failure(:find_agent_by_name, e)
+        nil
+      end
+
+      def save_agent(name:, description:, body:, max_rounds: nil, model: nil, tools: [], edited_by: nil, change_note: nil)
+        ensure_tables!(:agents)
+        record = RailsConsoleAi::Agent.where('LOWER(name) = ?', name.to_s.downcase).first
+        record ||= RailsConsoleAi::Agent.new
+        was_new = record.new_record?
+        record.update_with_version!(
+          {
+            name:        name,
+            description: description,
+            body:        body,
+            max_rounds:  max_rounds,
+            model:       model,
+            tools:       Array(tools)
+          },
+          edited_by: edited_by,
+          change_note: change_note
+        )
+        [record, was_new]
+      end
+
+      def delete_agent_by_name(name)
+        return false unless agents_available?
+        record = RailsConsoleAi::Agent.where('LOWER(name) = ?', name.to_s.downcase).first
+        return false unless record
+        record.destroy
+        true
+      end
+
       def ensure_tables!(kind)
-        ready = kind == :skills ? available? : memories_available?
+        ready = case kind
+                when :skills   then available?
+                when :memories then memories_available?
+                when :agents   then agents_available?
+                else false
+                end
         return if ready
         raise StorageError, "rails_console_ai_#{kind} table does not exist. Run `ai_db_setup` in your console."
       end

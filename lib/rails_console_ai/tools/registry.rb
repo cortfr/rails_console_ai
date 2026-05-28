@@ -6,7 +6,7 @@ module RailsConsoleAi
       attr_reader :definitions, :last_sub_agent_usage
 
       # Tools that should never be cached (side effects or user interaction)
-      NO_CACHE = %w[ask_user save_memory delete_memory recall_memory execute_code execute_plan activate_skill save_skill delete_skill delegate_task explore_output].freeze
+      NO_CACHE = %w[ask_user save_memory delete_memory recall_memory execute_code execute_plan activate_skill save_skill delete_skill save_agent delete_agent delegate_task explore_output].freeze
 
       def initialize(executor: nil, mode: :default, channel: nil, allowed_tools: nil)
         @executor = executor
@@ -254,6 +254,7 @@ module RailsConsoleAi
 
             register_memory_tools
             register_skill_tools
+            register_agent_tools
             register_execute_plan
             register_delegate_task
           end
@@ -381,7 +382,13 @@ module RailsConsoleAi
           loader = AgentLoader.new
           agent_config = loader.find_agent(agent_name)
           unless agent_config
-            available = loader.load_all_agents.map { |a| a['name'] }
+            # Distinguish "doesn't exist" from "exists but isn't approved yet".
+            proposed = loader.find_any_agent(agent_name)
+            if proposed && proposed['source'] == :db && proposed['status'] != 'approved'
+              return "Agent \"#{agent_name}\" exists but is awaiting human approval and cannot be invoked yet. " \
+                     "Ask the user to approve it in the web UI at /rails_console_ai/agents."
+            end
+            available = loader.load_activatable_agents.map { |a| a['name'] }
             return "Agent not found: \"#{agent_name}\". Available agents: #{available.join(', ')}"
           end
         end
@@ -544,6 +551,62 @@ module RailsConsoleAi
             'required' => ['name']
           },
           handler: ->(args) { loader.delete_skill(name: args['name']) }
+        )
+      end
+
+      def register_agent_tools
+        return unless @executor
+
+        require 'rails_console_ai/agent_loader'
+        loader = RailsConsoleAi::AgentLoader.new
+
+        register(
+          name: 'save_agent',
+          description: 'Create or update a sub-agent definition — a reusable specialist that the main assistant can invoke via delegate_task. ' \
+            'Use when the user asks you to create a new agent, recipe-agent, or sub-task specialist. ' \
+            'Agents differ from skills: an agent runs in its own sub-conversation with a constrained tool set, while a skill is a procedure followed inline. ' \
+            'Defaults to the versioned DB store; pass target: "file" to write to the on-disk .rails_console_ai/agents directory instead. ' \
+            'IMPORTANT: agents saved to the DB start in "proposed" state and must be approved by a human in the web UI before delegate_task can invoke them. ' \
+            'Edits to an approved agent also revert it to proposed. Tell the user to visit /rails_console_ai/agents to approve.',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'name' => { 'type' => 'string', 'description' => 'Agent name (e.g. "Investigate billing"), shown in the Agents list and used as the delegate_task `agent` parameter' },
+              'description' => { 'type' => 'string', 'description' => 'One-line description of what this agent specializes in' },
+              'body' => { 'type' => 'string', 'description' => 'The agent\'s system instructions in markdown. Include: persona, strategy, rules, expected output format.' },
+              'max_rounds' => { 'type' => 'integer', 'description' => 'Optional: maximum tool-loop iterations for the sub-agent (defaults to global config). Use a smaller number for tightly-scoped agents.' },
+              'model' => { 'type' => 'string', 'description' => 'Optional: model override for this agent (e.g. "claude-haiku-4" for cheap fast agents)' },
+              'tools' => { 'type' => 'array', 'items' => { 'type' => 'string' }, 'description' => 'Optional: whitelist of tool names the sub-agent is allowed to call. Omit to allow the default set.' },
+              'target' => { 'type' => 'string', 'enum' => ['db', 'file'], 'description' => 'Where to store this agent. "db" (default) is versioned and editable via the web UI; "file" writes a Markdown file under .rails_console_ai/agents/.' },
+              'change_note' => { 'type' => 'string', 'description' => 'Optional one-line note describing this edit (DB store only).' }
+            },
+            'required' => %w[name description body]
+          },
+          handler: ->(args) {
+            loader.save_agent(
+              name: args['name'],
+              description: args['description'],
+              body: args['body'],
+              max_rounds: args['max_rounds'],
+              model: args['model'],
+              tools: args['tools'] || [],
+              target: (args['target'] || 'db').to_sym,
+              change_note: args['change_note']
+            )
+          }
+        )
+
+        register(
+          name: 'delete_agent',
+          description: 'Delete a sub-agent by name. Built-in (gem-shipped) agents cannot be deleted; this tool will tell you that and suggest creating a same-named override instead.',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'name' => { 'type' => 'string', 'description' => 'The agent name to delete' }
+            },
+            'required' => ['name']
+          },
+          handler: ->(args) { loader.delete_agent(name: args['name']) }
         )
       end
 

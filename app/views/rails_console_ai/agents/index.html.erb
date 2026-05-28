@@ -1,0 +1,62 @@
+<div class="btn-bar">
+  <%= link_to 'New agent', new_agent_path, class: 'btn' %>
+  <form method="get" action="<%= agents_path %>" style="margin-left:auto;">
+    <input type="text" name="q" value="<%= @q %>" placeholder="Search agents…" style="padding:6px 10px; border:1px solid #ccc; border-radius:4px;">
+  </form>
+</div>
+
+<% proposed_count = @agents.count { |a| a['source'] == :db && a['status'] != 'approved' } %>
+<% if proposed_count > 0 %>
+  <div class="flash flash-alert" style="margin-bottom:16px;">
+    <strong><%= proposed_count %></strong> agent<%= proposed_count == 1 ? '' : 's' %> awaiting approval. The AI cannot invoke them via delegate_task until a human approves.
+  </div>
+<% end %>
+
+<% if @agents.empty? %>
+  <div class="meta-card">
+    <p class="text-muted">No agents found. <%= link_to 'Create one', new_agent_path %> or drop a Markdown file in <code>.rails_console_ai/agents/</code>.</p>
+  </div>
+<% else %>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Description</th>
+        <th>Model</th>
+        <th>Source / Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @agents.each do |a| %>
+        <% link_id = a['id'] || a['name'] %>
+        <tr>
+          <td><strong><%= link_to a['name'], agent_path(link_id) %></strong></td>
+          <td class="query-cell"><%= a['description'] %></td>
+          <td class="mono"><%= a['model'] || '—' %></td>
+          <td>
+            <% case a['source'] %>
+            <% when :db %>
+              <span class="badge source-db">DB</span>
+              <% if a['status'] == 'approved' %>
+                <span class="badge status-approved">APPROVED</span>
+              <% else %>
+                <span class="badge status-proposed">PROPOSED</span>
+              <% end %>
+            <% when :file %>
+              <span class="badge source-file">FILE</span>
+            <% when :builtin %>
+              <span class="badge source-builtin">BUILTIN</span>
+            <% end %>
+          </td>
+          <td>
+            <%= link_to 'View', agent_path(link_id) %>
+            <% if a['source'] == :db %>
+              · <%= link_to 'Edit', edit_agent_path(a['id']) %>
+            <% end %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% end %>

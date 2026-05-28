@@ -16,11 +16,14 @@ RSpec.describe RailsConsoleAi::Storage::DatabaseStorage, if: SQLITE3_AVAILABLE d
     conn = ActiveRecord::Base.connection
     RailsConsoleAi.setup_skills_tables!(conn)
     RailsConsoleAi.setup_memories_tables!(conn)
+    RailsConsoleAi.setup_agents_tables!(conn)
     # Load the AR models — they live in app/models and aren't autoloaded in the spec env.
     require_relative '../../app/models/rails_console_ai/skill'
     require_relative '../../app/models/rails_console_ai/skill_version'
     require_relative '../../app/models/rails_console_ai/memory'
     require_relative '../../app/models/rails_console_ai/memory_version'
+    require_relative '../../app/models/rails_console_ai/agent'
+    require_relative '../../app/models/rails_console_ai/agent_version'
   end
 
   # Disconnect after the suite so other specs (which assume DatabaseStorage.available?
@@ -34,6 +37,8 @@ RSpec.describe RailsConsoleAi::Storage::DatabaseStorage, if: SQLITE3_AVAILABLE d
     RailsConsoleAi::SkillVersion.delete_all
     RailsConsoleAi::Memory.delete_all
     RailsConsoleAi::MemoryVersion.delete_all
+    RailsConsoleAi::Agent.delete_all
+    RailsConsoleAi::AgentVersion.delete_all
   end
 
   describe 'skills' do
@@ -197,6 +202,80 @@ RSpec.describe RailsConsoleAi::Storage::DatabaseStorage, if: SQLITE3_AVAILABLE d
       expect(r.body).to eq('old')
       expect(r.versions.count).to eq(3)
       expect(r.versions.first.change_note).to start_with('Restored from version')
+    end
+  end
+
+  describe 'agents' do
+    it 'reports agents_available? when the table exists' do
+      expect(described_class.agents_available?).to be(true)
+    end
+
+    it 'creates an agent in proposed state with a version row' do
+      r, was_new = described_class.save_agent(
+        name: 'Triage flaky tests',
+        description: 'Investigates flaky specs',
+        body: 'Persona: ...',
+        max_rounds: 12,
+        model: 'claude-haiku-4-5',
+        tools: ['execute_code', 'search_code'],
+        edited_by: 'alice',
+        change_note: 'init'
+      )
+
+      expect(was_new).to be(true)
+      expect(r.proposed?).to be(true)
+      expect(r.name).to eq('Triage flaky tests')
+      expect(r.max_rounds).to eq(12)
+      expect(r.tools).to eq(['execute_code', 'search_code'])
+      expect(r.versions.count).to eq(1)
+      v = r.versions.first
+      expect(v.body).to eq('Persona: ...')
+      expect(v.status).to eq('proposed')
+      expect(v.edited_by).to eq('alice')
+      expect(v.tools).to eq(['execute_code', 'search_code'])
+    end
+
+    it 'creates a new version row on every save, preserving history' do
+      described_class.save_agent(name: 'A', description: 'd', body: 'v1')
+      described_class.save_agent(name: 'A', description: 'd', body: 'v2')
+      described_class.save_agent(name: 'A', description: 'd', body: 'v3')
+
+      record = RailsConsoleAi::Agent.first
+      expect(record.body).to eq('v3')
+      expect(record.versions.reorder(:id).pluck(:body)).to eq(['v1', 'v2', 'v3'])
+    end
+
+    it 'approval flow: approve! flips status, edits revert it' do
+      r, _ = described_class.save_agent(name: 'Approveable', description: 'd', body: 'v1')
+      expect(r.proposed?).to be(true)
+
+      r.approve!(approved_by: 'alice')
+      r.reload
+      expect(r.approved?).to be(true)
+      expect(r.approved_by).to eq('alice')
+      expect(r.versions.first.change_note).to include('Approved by alice')
+
+      described_class.save_agent(name: 'Approveable', description: 'd', body: 'v2')
+      r.reload
+      expect(r.proposed?).to be(true)
+      expect(r.approved_by).to be_nil
+    end
+
+    it 'reverts to proposed when only the tools whitelist changes' do
+      r, _ = described_class.save_agent(name: 'ToolEdit', description: 'd', body: 'b', tools: ['execute_code'])
+      r.approve!(approved_by: 'alice')
+
+      described_class.save_agent(name: 'ToolEdit', description: 'd', body: 'b', tools: ['execute_code', 'search_code'])
+      r.reload
+      expect(r.proposed?).to be(true)
+    end
+
+    it 'deletes by name (case-insensitive), keeping versions orphaned' do
+      described_class.save_agent(name: 'GoneAgent', description: 'd', body: 'b')
+      expect(described_class.delete_agent_by_name('goneagent')).to be(true)
+      expect(RailsConsoleAi::Agent.count).to eq(0)
+      expect(RailsConsoleAi::AgentVersion.count).to eq(1)
+      expect(RailsConsoleAi::AgentVersion.first.agent_id).to be_nil
     end
   end
 end

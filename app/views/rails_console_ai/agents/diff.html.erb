@@ -1,0 +1,19 @@
+<%= link_to '← Back to agent', agent_path(@agent), class: 'back-link' %>
+
+<h2 style="margin-bottom:8px;">Diff — <%= @agent.name %></h2>
+<p class="text-muted" style="margin-bottom:16px;">
+  Version #<%= @from.id %> (<%= @from.created_at.strftime('%Y-%m-%d %H:%M') %>) → <%= @to_label %>
+</p>
+
+<h3 style="margin:16px 0 6px;">Body</h3>
+<%= render_text_diff(@from.body, @to_body, left_label: "v##{@from.id}", right_label: @to_label) %>
+
+<h3 style="margin:24px 0 6px;">Tool whitelist</h3>
+<%= render_json_diff(Array(@from.tools), @to_tools, left_label: "v##{@from.id}", right_label: @to_label) %>
+
+<div class="btn-bar" style="margin-top:24px;">
+  <% if @to.nil? %>
+    <%= button_to "Restore v##{@from.id}", restore_agent_version_path(@agent, @from), method: :post, class: 'btn btn-danger', data: { confirm: 'Restoring will overwrite the current agent (a new version row is created) and revert status to PROPOSED.' } %>
+  <% end %>
+  <%= link_to 'Back', agent_path(@agent), class: 'btn btn-secondary' %>
+</div>

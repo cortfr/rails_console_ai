@@ -199,5 +199,126 @@ RSpec.describe RailsConsoleAi::AgentLoader do
       result = loader.delete_agent(name: 'Nonexistent')
       expect(result).to include('No agent found')
     end
+
+    it 'refuses to delete a built-in agent' do
+      result = loader.delete_agent(name: 'Investigate code')
+      expect(result).to include('Cannot delete built-in agent')
+    end
+  end
+
+  describe 'DB + file + built-in union (DatabaseStorage stubbed)' do
+    let(:db_agent) do
+      { 'id' => 42, 'name' => 'DB-only agent', 'description' => 'lives in DB',
+        'body' => 'persona', 'max_rounds' => 8, 'model' => nil, 'tools' => [],
+        'status' => 'approved', 'approved_by' => 'alice', 'approved_at' => Time.now.utc,
+        'source' => :db }
+    end
+    let(:proposed_db_agent) do
+      { 'id' => 43, 'name' => 'Proposed agent', 'description' => 'awaiting',
+        'body' => 'persona', 'max_rounds' => 5, 'model' => nil, 'tools' => [],
+        'status' => 'proposed', 'source' => :db }
+    end
+
+    before do
+      allow(RailsConsoleAi::Storage::DatabaseStorage).to receive(:agents_available?).and_return(true)
+      allow(RailsConsoleAi::Storage::DatabaseStorage).to receive(:all_agents)
+        .and_return([db_agent, proposed_db_agent])
+      storage.write('agents/find-shard.md', agent_content)
+    end
+
+    it 'load_all_agents returns DB + file + built-in records' do
+      names = loader.load_all_agents.map { |a| a['name'] }
+      # DB
+      expect(names).to include('DB-only agent', 'Proposed agent')
+      # File
+      expect(names).to include('Find shard')
+      # Built-in (gem-shipped)
+      expect(names).to include('Investigate code', 'Explore data')
+    end
+
+    it 'tags every loaded record with its source' do
+      sources = loader.load_all_agents.each_with_object({}) { |a, h| h[a['name']] = a['source'] }
+      expect(sources['DB-only agent']).to eq(:db)
+      expect(sources['Find shard']).to eq(:file)
+      expect(sources['Investigate code']).to eq(:builtin)
+    end
+
+    it 'load_activatable_agents hides proposed DB agents' do
+      names = loader.load_activatable_agents.map { |a| a['name'] }
+      expect(names).to include('DB-only agent')        # approved DB
+      expect(names).to include('Find shard')           # file
+      expect(names).to include('Investigate code')     # built-in
+      expect(names).not_to include('Proposed agent')   # gated
+    end
+
+    it 'find_agent (AI-facing) refuses proposed DB agents' do
+      expect(loader.find_agent('Proposed agent')).to be_nil
+      expect(loader.find_agent('DB-only agent')).not_to be_nil
+    end
+
+    it 'find_any_agent (UI-facing) still resolves proposed DB agents' do
+      result = loader.find_any_agent('Proposed agent')
+      expect(result).not_to be_nil
+      expect(result['source']).to eq(:db)
+      expect(result['status']).to eq('proposed')
+    end
+
+    it 'agent_summaries omits proposed DB agents' do
+      summary = loader.agent_summaries.join("\n")
+      expect(summary).to include('DB-only agent', 'Find shard', 'Investigate code')
+      expect(summary).not_to include('Proposed agent')
+    end
+
+    it 'DB wins on name collision with file' do
+      # file agent named the same as a DB agent — DB should win
+      colliding_file = agent_content.sub('name: Find shard', 'name: DB-only agent')
+      storage.write('agents/db-only-agent.md', colliding_file)
+      results = loader.load_all_agents.select { |a| a['name'] == 'DB-only agent' }
+      expect(results.length).to eq(1)
+      expect(results.first['source']).to eq(:db)
+    end
+
+    it 'DB wins on name collision with built-in (override)' do
+      override_db = db_agent.merge('name' => 'Investigate code', 'description' => 'app override')
+      allow(RailsConsoleAi::Storage::DatabaseStorage).to receive(:all_agents)
+        .and_return([override_db])
+      results = loader.load_all_agents.select { |a| a['name'].to_s.downcase == 'investigate code' }
+      expect(results.length).to eq(1)
+      expect(results.first['source']).to eq(:db)
+      expect(results.first['description']).to eq('app override')
+    end
+  end
+
+  describe 'save_agent target routing (DatabaseStorage stubbed)' do
+    before do
+      allow(RailsConsoleAi::Storage::DatabaseStorage).to receive(:agents_available?).and_return(true)
+      allow(RailsConsoleAi::Storage::DatabaseStorage).to receive(:all_agents).and_return([])
+    end
+
+    it 'routes save_agent to DB by default and reports PROPOSED state' do
+      record = double('Agent', id: 99, name: 'X', proposed?: true)
+      expect(RailsConsoleAi::Storage::DatabaseStorage).to receive(:save_agent)
+        .with(hash_including(name: 'X', description: 'd', body: 'b'))
+        .and_return([record, true])
+      result = loader.save_agent(name: 'X', description: 'd', body: 'b')
+      expect(result).to include('Agent created (db)')
+      expect(result).to include('PROPOSED')
+      expect(result).to include('/rails_console_ai/agents')
+    end
+
+    it 'routes save_agent to file when target: :file' do
+      expect(RailsConsoleAi::Storage::DatabaseStorage).not_to receive(:save_agent)
+      result = loader.save_agent(name: 'FileOnly', description: 'd', body: 'b', target: :file)
+      expect(result).to start_with('Agent created:')
+      expect(storage.read('agents/fileonly.md')).to include('FileOnly')
+    end
+
+    it 'falls back to file when DB target is requested but tables are missing' do
+      allow(RailsConsoleAi::Storage::DatabaseStorage).to receive(:agents_available?).and_return(false)
+      expect(RailsConsoleAi::Storage::DatabaseStorage).not_to receive(:save_agent)
+      result = loader.save_agent(name: 'Fb', description: 'd', body: 'b', target: :db)
+      expect(result).to start_with('Agent created:')
+      expect(result).to include('NOTE: DB storage was requested')
+    end
   end
 end
