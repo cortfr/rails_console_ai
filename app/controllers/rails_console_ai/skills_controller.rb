@@ -29,6 +29,36 @@ module RailsConsoleAi
       @skill = Skill.new
     end
 
+    # POST /skills/import — accepts a pasted .md blob in params[:content], parses
+    # YAML frontmatter + body, and re-renders `new` with the fields pre-populated.
+    # The user reviews + clicks Create skill to actually persist (normal proposed-
+    # status + version-row flow applies).
+    def import
+      content = params[:content].to_s
+      if content.strip.empty?
+        redirect_to new_skill_path, alert: 'Nothing to parse — paste the .md content into the box first.'
+        return
+      end
+
+      parsed = SkillLoader.parse(content)
+      if parsed.nil? || parsed['name'].to_s.strip.empty?
+        redirect_to new_skill_path,
+                    alert: 'Could not parse. Expected YAML frontmatter (between `---` lines) with at least a `name` field, followed by a markdown body.'
+        return
+      end
+
+      @skill = Skill.new(
+        name: parsed['name'],
+        description: parsed['description'],
+        body: parsed['body']
+      )
+      @skill.tags = Array(parsed['tags'])
+      @skill.bypass_guards_for_methods = Array(parsed['bypass_guards_for_methods'])
+
+      flash.now[:notice] = "Parsed \"#{parsed['name']}\" from pasted content. Review the fields below and click Create skill to save to the DB."
+      render :new
+    end
+
     def create
       @skill = Skill.new
       attrs = skill_params

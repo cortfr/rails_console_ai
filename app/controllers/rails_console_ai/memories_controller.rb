@@ -28,6 +28,31 @@ module RailsConsoleAi
       @memory = Memory.new
     end
 
+    # POST /memories/import — parse a pasted .md blob and re-render `new` with fields prefilled.
+    def import
+      content = params[:content].to_s
+      if content.strip.empty?
+        redirect_to new_memory_path, alert: 'Nothing to parse — paste the .md content into the box first.'
+        return
+      end
+
+      parsed = Tools::MemoryTools.parse(content)
+      if parsed.nil? || parsed['name'].to_s.strip.empty?
+        redirect_to new_memory_path,
+                    alert: 'Could not parse. Expected YAML frontmatter (between `---` lines) with at least a `name` field, followed by the memory body.'
+        return
+      end
+
+      @memory = Memory.new(
+        name: parsed['name'],
+        description: parsed['description']
+      )
+      @memory.tags = Array(parsed['tags'])
+
+      flash.now[:notice] = "Parsed \"#{parsed['name']}\" from pasted content. Review the fields below and click Create memory to save to the DB."
+      render :new
+    end
+
     def create
       @memory = Memory.new
       attrs = memory_params

@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- New skill / memory / agent pages now have a "Paste a .md file" textarea at the top. Paste the contents of a Markdown file with YAML frontmatter (same format used by `.rails_console_ai/{skills,memories,agents}/*.md` and the gem's built-in agents), click "Parse pasted content ↓", and the form fields below are prefilled from the parse. You still click Create to actually save, so the normal proposed-status + version-row flow applies — and you can tweak the parsed content before saving. Useful for moving an existing on-disk record into the versioned DB store
+- `RailsConsoleAi::SkillLoader.parse`, `RailsConsoleAi::AgentLoader.parse`, and `RailsConsoleAi::Tools::MemoryTools.parse` are now public class methods. They return a parsed frontmatter+body hash, or `nil` on malformed input
+
 - Usage tracking for DB-backed skills, memories, and agents. New `use_count` and `last_used_at` columns are bumped atomically (one SQL `UPDATE … SET use_count = use_count + 1, last_used_at = NOW()`, no callbacks, no `updated_at` change) when:
   - `activate_skill` resolves a DB skill
   - `recall_memory` resolves a DB memory, or `recall_memories` returns a DB memory in its result set

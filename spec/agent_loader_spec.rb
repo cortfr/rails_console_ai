@@ -321,4 +321,23 @@ RSpec.describe RailsConsoleAi::AgentLoader do
       expect(result).to include('NOTE: DB storage was requested')
     end
   end
+
+  describe '.parse' do
+    it 'extracts frontmatter and body, including agent-specific fields' do
+      parsed = described_class.parse(agent_content)
+      expect(parsed['name']).to eq('Find shard')
+      expect(parsed['description']).to start_with('Given a user ID')
+      expect(parsed['max_rounds']).to eq(5)
+      expect(parsed['tools']).to eq(['execute_code', 'recall_memory'])
+      expect(parsed['body']).to include('You are a shard finder')
+    end
+
+    it 'returns nil for content without YAML frontmatter' do
+      expect(described_class.parse('no frontmatter here')).to be_nil
+    end
+
+    it 'returns nil for malformed YAML' do
+      expect(described_class.parse("---\nname: [unclosed\n---\n\nbody")).to be_nil
+    end
+  end
 end

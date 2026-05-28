@@ -251,4 +251,30 @@ RSpec.describe RailsConsoleAi::Tools::MemoryTools do
       expect(result).to start_with('Memory saved:')
     end
   end
+
+  describe '.parse' do
+    it 'extracts frontmatter and stores body under `description`' do
+      content = <<~MD
+        ---
+        name: Sharding architecture
+        tags:
+          - database
+          - sharding
+        ---
+
+        Uses separate databases per shard.
+        Lookup via tenant_id mod N.
+      MD
+
+      parsed = described_class.parse(content)
+      expect(parsed['name']).to eq('Sharding architecture')
+      expect(parsed['tags']).to eq(['database', 'sharding'])
+      expect(parsed['description']).to include('separate databases per shard')
+    end
+
+    it 'returns nil for invalid frontmatter' do
+      expect(described_class.parse('no frontmatter')).to be_nil
+      expect(described_class.parse("---\nbad: [yaml\n---\n\nbody")).to be_nil
+    end
+  end
 end

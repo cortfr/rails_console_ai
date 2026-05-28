@@ -196,10 +196,19 @@ module RailsConsoleAi
       end
 
       def parse_memory(content)
+        self.class.parse(content)
+      end
+
+      # Public: parse a raw .md (YAML frontmatter + body) string into a hash.
+      # For memories, the body is stored under the 'description' key (memories
+      # don't have a separate description vs body — the markdown IS the memory).
+      def self.parse(content)
         return nil unless content =~ /\A---\s*\n(.*?\n)---\s*\n(.*)/m
         frontmatter = YAML.safe_load($1, permitted_classes: [Time, Date]) || {}
         description = $2.strip
         frontmatter.merge('description' => description)
+      rescue Psych::SyntaxError
+        nil
       end
 
       def find_memory_key_by_name(name)

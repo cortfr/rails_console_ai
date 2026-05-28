@@ -8,6 +8,7 @@ RailsConsoleAi::Engine.routes.draw do
     end
     collection do
       get :diff
+      post :import
     end
     resources :versions, only: [:index, :show], controller: 'skill_versions' do
       member do
@@ -19,6 +20,7 @@ RailsConsoleAi::Engine.routes.draw do
   resources :memories do
     collection do
       get :diff
+      post :import
     end
     resources :versions, only: [:index, :show], controller: 'memory_versions' do
       member do
@@ -33,6 +35,7 @@ RailsConsoleAi::Engine.routes.draw do
     end
     collection do
       get :diff
+      post :import
     end
     resources :versions, only: [:index, :show], controller: 'agent_versions' do
       member do

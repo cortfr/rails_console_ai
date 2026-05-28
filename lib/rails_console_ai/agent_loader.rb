@@ -198,10 +198,17 @@ module RailsConsoleAi
     end
 
     def parse_agent(content)
+      self.class.parse(content)
+    end
+
+    # Public: parse a raw .md (YAML frontmatter + body) string into a hash.
+    def self.parse(content)
       return nil unless content =~ /\A---\s*\n(.*?\n)---\s*\n(.*)/m
       frontmatter = YAML.safe_load($1, permitted_classes: [Time, Date]) || {}
       body = $2.strip
       frontmatter.merge('body' => body)
+    rescue Psych::SyntaxError
+      nil
     end
   end
 end

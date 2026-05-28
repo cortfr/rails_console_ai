@@ -1,5 +1,23 @@
 <%= link_to '← All skills', skills_path, class: 'back-link' %>
 <h2 style="margin-bottom:16px;">New skill</h2>
+
+<%= form_with url: import_skills_path, method: :post, local: true do %>
+  <div class="form-card" style="background:#f8f9fa;">
+    <div class="form-row" style="margin-bottom:8px;">
+      <label>Paste a .md file (optional)</label>
+      <textarea name="content" rows="14" placeholder="---&#10;name: My skill&#10;description: What it does&#10;tags: [admin]&#10;bypass_guards_for_methods: []&#10;---&#10;&#10;## When to use&#10;…&#10;&#10;## Recipe&#10;1. …"></textarea>
+      <div class="hint">
+        Paste the full contents of a Markdown file (YAML frontmatter between
+        <code>---</code> lines, then a markdown body) — same format as
+        <code>.rails_console_ai/skills/*.md</code>. The fields below will be
+        prefilled from the paste. You can review and tweak before clicking
+        <strong>Create skill</strong>.
+      </div>
+    </div>
+    <button type="submit" class="btn btn-secondary">Parse pasted content ↓</button>
+  </div>
+<% end %>
+
 <%= render 'form',
       form_url: skills_path,
       form_method: :post,

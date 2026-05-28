@@ -273,4 +273,28 @@ RSpec.describe RailsConsoleAi::SkillLoader do
       expect(names).to include('Approve Changes')
     end
   end
+
+  describe '.parse' do
+    it 'extracts frontmatter and body into a hash' do
+      parsed = described_class.parse(skill_content)
+      expect(parsed['name']).to eq('Approve Changes')
+      expect(parsed['description']).to eq('Approve or reject change approval records')
+      expect(parsed['tags']).to eq(['change-approval', 'admin'])
+      expect(parsed['bypass_guards_for_methods']).to include('ChangeApproval#approve_by!')
+      expect(parsed['body']).to include('## When to use')
+    end
+
+    it 'returns nil for content without YAML frontmatter' do
+      expect(described_class.parse('just markdown, no frontmatter')).to be_nil
+    end
+
+    it 'returns nil for malformed YAML frontmatter' do
+      expect(described_class.parse("---\nname: [unclosed\n---\n\nbody")).to be_nil
+    end
+
+    it 'returns nil for empty/blank input' do
+      expect(described_class.parse('')).to be_nil
+      expect(described_class.parse(nil)).to be_nil
+    end
+  end
 end
