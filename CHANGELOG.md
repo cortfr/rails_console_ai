@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.31.0]
+
+- Simplify DB-backed skills, sub-agents, and memories to a single content field per record, replacing the separate frontmatter/body columns and streamlining the models, controllers, and forms
+- Add options for running agents
+- Fix the `/script/release` script
+
 ## [0.30.0]
 
 - Add background agent support — new `run_agent` mechanism to launch agents asynchronously alongside an HTTP API channel
