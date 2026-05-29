@@ -1,19 +1,12 @@
 <%= form_with model: @memory, url: form_url, method: form_method, local: true do |f| %>
   <div class="form-card">
     <div class="form-row">
-      <label>Name</label>
-      <%= f.text_field :name, value: @memory.name, required: true %>
-    </div>
-
-    <div class="form-row">
-      <label>Description</label>
-      <%= f.text_area :description, value: @memory.description, rows: 14 %>
-      <div class="hint">The fact or pattern you're persisting. Markdown is fine.</div>
-    </div>
-
-    <div class="form-row">
-      <label>Tags (comma-separated)</label>
-      <%= f.text_field :tags, value: Array(@memory.tags).join(', '), placeholder: 'database, sharding' %>
+      <label>Markdown (frontmatter + body)</label>
+      <%= f.text_area :content, value: @memory.content, rows: 22, required: true, style: 'font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;' %>
+      <div class="hint">
+        YAML frontmatter between <code>---</code> lines (required: <code>name</code>; optional: <code>tags</code>),
+        then the memory body — the fact or pattern you're persisting.
+      </div>
     </div>
 
     <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">

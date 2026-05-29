@@ -122,15 +122,10 @@ module RailsConsoleAi
       key = skill_key(name)
       existing = load_skill_file(key)
 
-      frontmatter = {
-        'name' => name,
-        'description' => description,
-        'tags' => Array(tags)
-      }
-      bypasses = Array(bypass_guards_for_methods)
-      frontmatter['bypass_guards_for_methods'] = bypasses unless bypasses.empty?
-
-      content = "---\n#{YAML.dump(frontmatter).sub("---\n", '').strip}\n---\n\n#{body}\n"
+      content = self.class.dump(
+        name: name, description: description, body: body,
+        tags: tags, bypass_guards_for_methods: bypass_guards_for_methods
+      )
       @storage.write(key, content)
 
       path = @storage.respond_to?(:root_path) ? File.join(@storage.root_path, key) : key
@@ -189,6 +184,20 @@ module RailsConsoleAi
       frontmatter.merge('body' => body)
     rescue Psych::SyntaxError
       nil
+    end
+
+    # Inverse of parse: emit a canonical .md (frontmatter + body) string from
+    # structured attrs. Used by AI tool callers and file-fallback writers so
+    # the on-disk and DB representations stay byte-identical.
+    def self.dump(name:, description:, body:, tags: [], bypass_guards_for_methods: [])
+      frontmatter = {
+        'name' => name,
+        'description' => description,
+        'tags' => Array(tags)
+      }
+      bypasses = Array(bypass_guards_for_methods)
+      frontmatter['bypass_guards_for_methods'] = bypasses unless bypasses.empty?
+      "---\n#{YAML.dump(frontmatter).sub("---\n", '').strip}\n---\n\n#{body}\n"
     end
   end
 end

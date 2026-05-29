@@ -1,4 +1,4 @@
-require 'json'
+require 'rails_console_ai/skill_loader'
 
 module RailsConsoleAi
   class Skill < ActiveRecord::Base
@@ -8,19 +8,18 @@ module RailsConsoleAi
     STATUS_APPROVED = 'approved'.freeze
     STATUSES = [STATUS_PROPOSED, STATUS_APPROVED].freeze
 
-    # Attributes that, if changed, invalidate the current approval and revert
-    # the skill back to "proposed". Status / approver columns are excluded so
-    # that an explicit approve! call doesn't reset its own approval.
-    CONTENT_ATTRIBUTES = %w[name description body tags bypass_guards_for_methods].freeze
-
     has_many :versions,
              -> { order(created_at: :desc) },
              class_name: 'RailsConsoleAi::SkillVersion',
              foreign_key: :skill_id,
              dependent: :nullify
 
+    validates :content, presence: true
     validates :name, presence: true, uniqueness: { case_sensitive: false }
-    validates :status, inclusion: { in: STATUSES }, if: :has_attribute_status?
+    validates :status, inclusion: { in: STATUSES }
+    validate  :content_parses
+
+    before_validation :sync_name_from_content
 
     scope :alphabetical, -> { order(Arel.sql('LOWER(name)')) }
     scope :approved, -> { where(status: STATUS_APPROVED) }
@@ -36,70 +35,28 @@ module RailsConsoleAi
       end
     end
 
-    # Manual JSON accessors keep us off Rails-version-specific `serialize` syntax
-    # (positional coder in Rails 5–6, keyword coder in Rails 7+).
-    def tags
-      decode_json_array(read_attribute(:tags))
+    # Parsed view of the raw markdown content. Memoized per-instance and cleared
+    # on assignment. Returns {} for invalid content so callers don't need to nil-guard.
+    def parsed
+      @parsed ||= (RailsConsoleAi::SkillLoader.parse(content.to_s) || {})
     end
 
-    def tags=(value)
-      write_attribute(:tags, encode_json_array(value))
+    def content=(value)
+      @parsed = nil
+      super
     end
 
-    def bypass_guards_for_methods
-      decode_json_array(read_attribute(:bypass_guards_for_methods))
-    end
-
-    def bypass_guards_for_methods=(value)
-      write_attribute(:bypass_guards_for_methods, encode_json_array(value))
-    end
-
-    # Defensive accessors — if `ai_db_migrate` hasn't been run yet, the status
-    # / approval columns may be missing on an older table. Return safe defaults
-    # instead of blowing up with NameError.
-    def status
-      has_attribute_status? ? read_attribute(:status) : STATUS_PROPOSED
-    end
-
-    def approved_by
-      has_attribute?(:approved_by) ? read_attribute(:approved_by) : nil
-    end
-
-    def approved_at
-      has_attribute?(:approved_at) ? read_attribute(:approved_at) : nil
-    end
+    def description; parsed['description']; end
+    def body;        parsed['body']; end
+    def tags;        Array(parsed['tags']); end
+    def bypass_guards_for_methods; Array(parsed['bypass_guards_for_methods']); end
 
     def proposed?; status.to_s == STATUS_PROPOSED; end
     def approved?; status.to_s == STATUS_APPROVED; end
 
-    def to_hash
-      {
-        'id'                        => id,
-        'name'                      => name,
-        'description'               => description,
-        'body'                      => body,
-        'tags'                      => tags,
-        'bypass_guards_for_methods' => bypass_guards_for_methods,
-        'status'                    => status,
-        'approved_by'               => approved_by,
-        'approved_at'               => approved_at,
-        'use_count'                 => use_count,
-        'last_used_at'              => last_used_at,
-        'source'                    => :db,
-        'updated_at'                => updated_at
-      }
-    end
-
-    def has_attribute_status?
-      has_attribute?(:status)
-    end
-
     # Atomically bump use_count + last_used_at without firing callbacks /
     # validations / updated_at. Safe to call from concurrent AI tool calls.
-    # No-op (returns false) if the table doesn't have the columns yet — that
-    # keeps older installs working until they run ai_db_migrate.
     def self.record_use!(id)
-      return false unless connection.column_exists?(table_name, :use_count)
       where(id: id).update_all([
         'use_count = COALESCE(use_count, 0) + 1, last_used_at = ?',
         Time.now.utc
@@ -110,46 +67,33 @@ module RailsConsoleAi
       false
     end
 
-    def use_count
-      has_attribute?(:use_count) ? (read_attribute(:use_count) || 0) : 0
+    def to_hash
+      {
+        'id'                        => id,
+        'name'                      => name,
+        'description'               => description,
+        'body'                      => body,
+        'tags'                      => tags,
+        'bypass_guards_for_methods' => bypass_guards_for_methods,
+        'content'                   => content,
+        'status'                    => status,
+        'approved_by'               => approved_by,
+        'approved_at'               => approved_at,
+        'use_count'                 => use_count,
+        'last_used_at'              => last_used_at,
+        'source'                    => :db,
+        'updated_at'                => updated_at
+      }
     end
 
-    def last_used_at
-      has_attribute?(:last_used_at) ? read_attribute(:last_used_at) : nil
-    end
-
-    def self.decode_json_array(raw)
-      return [] if raw.nil? || (raw.respond_to?(:empty?) && raw.empty?)
-      return raw if raw.is_a?(Array)
-      JSON.parse(raw)
-    rescue JSON::ParserError
-      []
-    end
-
-    def self.encode_json_array(value)
-      JSON.dump(Array(value))
-    end
-
-    def decode_json_array(raw)
-      self.class.decode_json_array(raw)
-    end
-
-    def encode_json_array(value)
-      self.class.encode_json_array(value)
-    end
-
-    # Assigns attrs, saves, and records one SkillVersion snapshot of the post-save state.
-    # Every save produces exactly one version row, so the version log is a complete history
-    # including the current state (the most recent version mirrors `self`).
-    #
-    # If `preserve_approval` is false (the default), any change to a content attribute
-    # reverts the skill back to "proposed" and clears the approver. Pass true from the
-    # approve! flow so approval doesn't reset itself.
+    # Assigns attrs, saves, and records one SkillVersion snapshot.
+    # Any change to `content` reverts approval back to "proposed" unless
+    # `preserve_approval: true` is passed (approve! does this).
     def update_with_version!(attrs, edited_by: nil, change_note: nil, preserve_approval: false)
       transaction do
         assign_attributes(attrs)
 
-        if !preserve_approval && approved? && content_dirty?
+        if !preserve_approval && approved? && changes.key?('content')
           self.status      = STATUS_PROPOSED
           self.approved_by = nil
           self.approved_at = nil
@@ -157,22 +101,17 @@ module RailsConsoleAi
 
         save!
         RailsConsoleAi::SkillVersion.create!(
-          skill_id:                   id,
-          name:                       name,
-          description:                description,
-          body:                       body,
-          tags:                       tags,
-          bypass_guards_for_methods:  bypass_guards_for_methods,
-          status:                     status,
-          edited_by:                  edited_by,
-          change_note:                change_note
+          skill_id:    id,
+          name:        name,
+          content:     content,
+          status:      status,
+          edited_by:   edited_by,
+          change_note: change_note
         )
       end
       self
     end
 
-    # Marks the current head as approved. Logs a version row with the approver name
-    # so the audit trail captures the approval moment.
     def approve!(approved_by:)
       raise ArgumentError, 'approved_by is required' if approved_by.to_s.strip.empty?
 
@@ -190,9 +129,20 @@ module RailsConsoleAi
 
     private
 
-    # Did any content-bearing attribute change in this assign_attributes pass?
-    def content_dirty?
-      CONTENT_ATTRIBUTES.any? { |a| changes.key?(a) }
+    def sync_name_from_content
+      return if content.to_s.strip.empty?
+      parsed_name = parsed['name'].to_s.strip
+      self.name = parsed_name unless parsed_name.empty?
+    end
+
+    def content_parses
+      return if content.to_s.strip.empty?  # presence validator handles blank
+      hash = RailsConsoleAi::SkillLoader.parse(content.to_s)
+      if hash.nil?
+        errors.add(:content, "could not be parsed — expected YAML frontmatter between `---` lines followed by a markdown body")
+      elsif hash['name'].to_s.strip.empty?
+        errors.add(:content, "frontmatter is missing a `name:` field")
+      end
     end
   end
 end

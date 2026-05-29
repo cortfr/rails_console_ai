@@ -68,14 +68,12 @@ module RailsConsoleAi
         record = RailsConsoleAi::Skill.where('LOWER(name) = ?', name.to_s.downcase).first
         record ||= RailsConsoleAi::Skill.new
         was_new = record.new_record?
+        content = RailsConsoleAi::SkillLoader.dump(
+          name: name, description: description, body: body,
+          tags: tags, bypass_guards_for_methods: bypass_guards_for_methods
+        )
         record.update_with_version!(
-          {
-            name:                      name,
-            description:               description,
-            body:                      body,
-            tags:                      Array(tags),
-            bypass_guards_for_methods: Array(bypass_guards_for_methods)
-          },
+          { content: content },
           edited_by: edited_by,
           change_note: change_note
         )
@@ -114,12 +112,11 @@ module RailsConsoleAi
         record = RailsConsoleAi::Memory.where('LOWER(name) = ?', name.to_s.downcase).first
         record ||= RailsConsoleAi::Memory.new
         was_new = record.new_record?
+        content = RailsConsoleAi::Tools::MemoryTools.dump(
+          name: name, description: description, tags: tags
+        )
         record.update_with_version!(
-          {
-            name:        name,
-            description: description,
-            tags:        Array(tags)
-          },
+          { content: content },
           edited_by: edited_by,
           change_note: change_note
         )
@@ -158,15 +155,12 @@ module RailsConsoleAi
         record = RailsConsoleAi::Agent.where('LOWER(name) = ?', name.to_s.downcase).first
         record ||= RailsConsoleAi::Agent.new
         was_new = record.new_record?
+        content = RailsConsoleAi::AgentLoader.dump(
+          name: name, description: description, body: body,
+          max_rounds: max_rounds, model: model, tools: tools
+        )
         record.update_with_version!(
-          {
-            name:        name,
-            description: description,
-            body:        body,
-            max_rounds:  max_rounds,
-            model:       model,
-            tools:       Array(tools)
-          },
+          { content: content },
           edited_by: edited_by,
           change_note: change_note
         )

@@ -1,4 +1,4 @@
-require 'json'
+require 'rails_console_ai/agent_loader'
 
 module RailsConsoleAi
   class Agent < ActiveRecord::Base
@@ -8,19 +8,18 @@ module RailsConsoleAi
     STATUS_APPROVED = 'approved'.freeze
     STATUSES = [STATUS_PROPOSED, STATUS_APPROVED].freeze
 
-    # Attributes that, if changed, invalidate the current approval and revert
-    # the agent back to "proposed". Status / approver columns are excluded so
-    # that an explicit approve! call doesn't reset its own approval.
-    CONTENT_ATTRIBUTES = %w[name description body max_rounds model tools].freeze
-
     has_many :versions,
              -> { order(created_at: :desc) },
              class_name: 'RailsConsoleAi::AgentVersion',
              foreign_key: :agent_id,
              dependent: :nullify
 
+    validates :content, presence: true
     validates :name, presence: true, uniqueness: { case_sensitive: false }
-    validates :status, inclusion: { in: STATUSES }, if: :has_attribute_status?
+    validates :status, inclusion: { in: STATUSES }
+    validate  :content_parses
+
+    before_validation :sync_name_from_content
 
     scope :alphabetical, -> { order(Arel.sql('LOWER(name)')) }
     scope :approved, -> { where(status: STATUS_APPROVED) }
@@ -36,43 +35,25 @@ module RailsConsoleAi
       end
     end
 
-    # Manual JSON accessor for `tools` — same approach we use for skill tags,
-    # avoids Rails-version-specific `serialize` API.
-    def tools
-      decode_json_array(read_attribute(:tools))
+    def parsed
+      @parsed ||= (RailsConsoleAi::AgentLoader.parse(content.to_s) || {})
     end
 
-    def tools=(value)
-      write_attribute(:tools, encode_json_array(value))
+    def content=(value)
+      @parsed = nil
+      super
     end
 
-    # Defensive accessors — if `ai_db_migrate` hasn't been run yet, the status
-    # / approval columns may be missing on an older table.
-    def status
-      has_attribute_status? ? read_attribute(:status) : STATUS_PROPOSED
-    end
-
-    def approved_by
-      has_attribute?(:approved_by) ? read_attribute(:approved_by) : nil
-    end
-
-    def approved_at
-      has_attribute?(:approved_at) ? read_attribute(:approved_at) : nil
-    end
+    def description; parsed['description']; end
+    def body;        parsed['body']; end
+    def max_rounds;  parsed['max_rounds']; end
+    def model;       parsed['model']; end
+    def tools;       Array(parsed['tools']); end
 
     def proposed?; status.to_s == STATUS_PROPOSED; end
     def approved?; status.to_s == STATUS_APPROVED; end
 
-    def use_count
-      has_attribute?(:use_count) ? (read_attribute(:use_count) || 0) : 0
-    end
-
-    def last_used_at
-      has_attribute?(:last_used_at) ? read_attribute(:last_used_at) : nil
-    end
-
     def self.record_use!(id)
-      return false unless connection.column_exists?(table_name, :use_count)
       where(id: id).update_all([
         'use_count = COALESCE(use_count, 0) + 1, last_used_at = ?',
         Time.now.utc
@@ -92,6 +73,7 @@ module RailsConsoleAi
         'max_rounds'   => max_rounds,
         'model'        => model,
         'tools'        => tools,
+        'content'      => content,
         'status'       => status,
         'approved_by'  => approved_by,
         'approved_at'  => approved_at,
@@ -102,33 +84,11 @@ module RailsConsoleAi
       }
     end
 
-    def has_attribute_status?
-      has_attribute?(:status)
-    end
-
-    def self.decode_json_array(raw)
-      return [] if raw.nil? || (raw.respond_to?(:empty?) && raw.empty?)
-      return raw if raw.is_a?(Array)
-      JSON.parse(raw)
-    rescue JSON::ParserError
-      []
-    end
-
-    def self.encode_json_array(value)
-      JSON.dump(Array(value))
-    end
-
-    def decode_json_array(raw); self.class.decode_json_array(raw); end
-    def encode_json_array(value); self.class.encode_json_array(value); end
-
-    # Assigns attrs, saves, and records one AgentVersion snapshot of the post-save state.
-    # If `preserve_approval` is false (the default), any change to a content attribute
-    # reverts the agent back to "proposed" and clears the approver.
     def update_with_version!(attrs, edited_by: nil, change_note: nil, preserve_approval: false)
       transaction do
         assign_attributes(attrs)
 
-        if !preserve_approval && approved? && content_dirty?
+        if !preserve_approval && approved? && changes.key?('content')
           self.status      = STATUS_PROPOSED
           self.approved_by = nil
           self.approved_at = nil
@@ -138,11 +98,7 @@ module RailsConsoleAi
         RailsConsoleAi::AgentVersion.create!(
           agent_id:    id,
           name:        name,
-          description: description,
-          body:        body,
-          max_rounds:  max_rounds,
-          model:       model,
-          tools:       tools,
+          content:     content,
           status:      status,
           edited_by:   edited_by,
           change_note: change_note
@@ -168,8 +124,20 @@ module RailsConsoleAi
 
     private
 
-    def content_dirty?
-      CONTENT_ATTRIBUTES.any? { |a| changes.key?(a) }
+    def sync_name_from_content
+      return if content.to_s.strip.empty?
+      parsed_name = parsed['name'].to_s.strip
+      self.name = parsed_name unless parsed_name.empty?
+    end
+
+    def content_parses
+      return if content.to_s.strip.empty?
+      hash = RailsConsoleAi::AgentLoader.parse(content.to_s)
+      if hash.nil?
+        errors.add(:content, "could not be parsed — expected YAML frontmatter between `---` lines followed by a markdown body")
+      elsif hash['name'].to_s.strip.empty?
+        errors.add(:content, "frontmatter is missing a `name:` field")
+      end
     end
   end
 end

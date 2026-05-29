@@ -1,21 +1,6 @@
 <%= link_to '← All memories', memories_path, class: 'back-link' %>
 <h2 style="margin-bottom:16px;">New memory</h2>
 
-<%= form_with url: import_memories_path, method: :post, local: true do %>
-  <div class="form-card" style="background:#f8f9fa;">
-    <div class="form-row" style="margin-bottom:8px;">
-      <label>Paste a .md file (optional)</label>
-      <textarea name="content" rows="12" placeholder="---&#10;name: My memory&#10;tags: [database]&#10;---&#10;&#10;The fact or pattern …"></textarea>
-      <div class="hint">
-        Paste the full contents of a Markdown file (YAML frontmatter + body) — same
-        format as <code>.rails_console_ai/memories/*.md</code>. The fields below will
-        be prefilled from the paste.
-      </div>
-    </div>
-    <button type="submit" class="btn btn-secondary">Parse pasted content ↓</button>
-  </div>
-<% end %>
-
 <%= render 'form',
       form_url: memories_path,
       form_method: :post,

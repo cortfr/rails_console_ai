@@ -70,7 +70,7 @@ RSpec.describe RailsConsoleAi::Storage::DatabaseStorage, if: SQLITE3_AVAILABLE d
 
       record = RailsConsoleAi::Skill.first
       expect(record.body).to eq('v3')
-      bodies = record.versions.reorder(:id).pluck(:body)
+      bodies = record.versions.reorder(:id).map(&:body)
       expect(bodies).to eq(['v1', 'v2', 'v3'])
       authors = record.versions.reorder(:id).pluck(:edited_by)
       expect(authors).to eq(['alice', 'bob', 'carol'])
@@ -123,7 +123,7 @@ RSpec.describe RailsConsoleAi::Storage::DatabaseStorage, if: SQLITE3_AVAILABLE d
 
       record = RailsConsoleAi::Memory.first
       expect(record.description).to eq('v3')
-      expect(record.versions.reorder(:id).pluck(:description)).to eq(['v1', 'v2', 'v3'])
+      expect(record.versions.reorder(:id).map(&:description)).to eq(['v1', 'v2', 'v3'])
     end
 
     it 'roundtrips tags through JSON serialization' do
@@ -193,7 +193,7 @@ RSpec.describe RailsConsoleAi::Storage::DatabaseStorage, if: SQLITE3_AVAILABLE d
       r.reload
 
       r.update_with_version!(
-        { body: original_version.body },
+        { content: original_version.content },
         edited_by: 'web',
         change_note: "Restored from version ##{original_version.id}"
       )
@@ -242,7 +242,7 @@ RSpec.describe RailsConsoleAi::Storage::DatabaseStorage, if: SQLITE3_AVAILABLE d
 
       record = RailsConsoleAi::Agent.first
       expect(record.body).to eq('v3')
-      expect(record.versions.reorder(:id).pluck(:body)).to eq(['v1', 'v2', 'v3'])
+      expect(record.versions.reorder(:id).map(&:body)).to eq(['v1', 'v2', 'v3'])
     end
 
     it 'approval flow: approve! flips status, edits revert it' do
@@ -327,14 +327,15 @@ RSpec.describe RailsConsoleAi::Storage::DatabaseStorage, if: SQLITE3_AVAILABLE d
       expect { RailsConsoleAi::Skill.record_use!(999_999) }.not_to raise_error
     end
 
-    it 'is no-op on older schemas that lack the use_count column' do
-      # Simulate an older table by dropping the column, then verify record_use! returns
-      # false gracefully (the SkillLoader / MemoryTools paths must not crash).
+    it 'is no-op on tables that lack the use_count column (defensive)' do
+      # Simulate a partially-migrated table by dropping the column, then verify
+      # record_use! returns false gracefully instead of raising.
       conn = ActiveRecord::Base.connection
+      content = RailsConsoleAi::SkillLoader.dump(name: 'NoCounterCol', description: 'd', body: 'b')
+      r = RailsConsoleAi::Skill.create!(content: content)
       conn.remove_column(:rails_console_ai_skills, :use_count)
       conn.remove_column(:rails_console_ai_skills, :last_used_at)
       RailsConsoleAi::Skill.reset_column_information
-      r = RailsConsoleAi::Skill.create!(name: 'NoCounterCol', description: 'd', body: 'b')
       expect(RailsConsoleAi::Skill.record_use!(r.id)).to be(false)
       # Re-add for any later specs in the same group.
       conn.add_column(:rails_console_ai_skills, :use_count, :integer, default: 0, null: false)

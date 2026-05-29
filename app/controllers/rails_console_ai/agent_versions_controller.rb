@@ -13,14 +13,7 @@ module RailsConsoleAi
     def restore
       version = @agent.versions.find(params[:id])
       @agent.update_with_version!(
-        {
-          name:        version.name,
-          description: version.description,
-          body:        version.body,
-          max_rounds:  version.max_rounds,
-          model:       version.model,
-          tools:       Array(version.tools)
-        },
+        { content: version.content },
         edited_by: params[:edited_by].presence || 'web',
         change_note: "Restored from version ##{version.id}"
       )

@@ -180,13 +180,22 @@ module RailsConsoleAi
       skills_table   = 'rails_console_ai_skills'
       versions_table = 'rails_console_ai_skill_versions'
 
+      # Old shape had per-field columns (body, tags, bypass_guards_for_methods,
+      # description). New shape stores the raw .md in `content`. Pre-production,
+      # so we drop and recreate when the old shape is detected.
+      if conn.table_exists?(skills_table) && !conn.column_exists?(skills_table, :content)
+        conn.drop_table(skills_table)
+        $stdout.puts "\e[33mRailsConsoleAi: dropped legacy #{skills_table} (replaced with single-content schema).\e[0m"
+      end
+      if conn.table_exists?(versions_table) && !conn.column_exists?(versions_table, :content)
+        conn.drop_table(versions_table)
+        $stdout.puts "\e[33mRailsConsoleAi: dropped legacy #{versions_table}.\e[0m"
+      end
+
       unless conn.table_exists?(skills_table)
         conn.create_table(skills_table) do |t|
           t.string   :name,        limit: 255, null: false
-          t.text     :description
-          t.text     :body
-          t.text     :tags
-          t.text     :bypass_guards_for_methods
+          t.text     :content,     null: false
           t.string   :status,      limit: 20,  default: 'proposed', null: false
           t.string   :approved_by, limit: 255
           t.datetime :approved_at
@@ -198,34 +207,13 @@ module RailsConsoleAi
         conn.add_index(skills_table, :name, unique: true)
         conn.add_index(skills_table, :status)
         $stdout.puts "\e[32mRailsConsoleAi: created #{skills_table} table.\e[0m"
-      else
-        # Idempotent column-add probes for existing installs.
-        unless conn.column_exists?(skills_table, :status)
-          conn.add_column(skills_table, :status, :string, limit: 20, default: 'proposed', null: false)
-          conn.add_index(skills_table, :status) unless conn.index_exists?(skills_table, :status)
-        end
-        unless conn.column_exists?(skills_table, :approved_by)
-          conn.add_column(skills_table, :approved_by, :string, limit: 255)
-        end
-        unless conn.column_exists?(skills_table, :approved_at)
-          conn.add_column(skills_table, :approved_at, :datetime)
-        end
-        unless conn.column_exists?(skills_table, :use_count)
-          conn.add_column(skills_table, :use_count, :integer, default: 0, null: false)
-        end
-        unless conn.column_exists?(skills_table, :last_used_at)
-          conn.add_column(skills_table, :last_used_at, :datetime)
-        end
       end
 
       unless conn.table_exists?(versions_table)
         conn.create_table(versions_table) do |t|
           t.integer  :skill_id
           t.string   :name,        limit: 255
-          t.text     :description
-          t.text     :body
-          t.text     :tags
-          t.text     :bypass_guards_for_methods
+          t.text     :content
           t.string   :status,      limit: 20
           t.string   :edited_by,   limit: 255
           t.text     :change_note
@@ -234,10 +222,6 @@ module RailsConsoleAi
         conn.add_index(versions_table, :skill_id)
         conn.add_index(versions_table, :created_at)
         $stdout.puts "\e[32mRailsConsoleAi: created #{versions_table} table.\e[0m"
-      else
-        unless conn.column_exists?(versions_table, :status)
-          conn.add_column(versions_table, :status, :string, limit: 20)
-        end
       end
     end
 
@@ -245,11 +229,19 @@ module RailsConsoleAi
       memories_table = 'rails_console_ai_memories'
       versions_table = 'rails_console_ai_memory_versions'
 
+      if conn.table_exists?(memories_table) && !conn.column_exists?(memories_table, :content)
+        conn.drop_table(memories_table)
+        $stdout.puts "\e[33mRailsConsoleAi: dropped legacy #{memories_table}.\e[0m"
+      end
+      if conn.table_exists?(versions_table) && !conn.column_exists?(versions_table, :content)
+        conn.drop_table(versions_table)
+        $stdout.puts "\e[33mRailsConsoleAi: dropped legacy #{versions_table}.\e[0m"
+      end
+
       unless conn.table_exists?(memories_table)
         conn.create_table(memories_table) do |t|
           t.string   :name,        limit: 255, null: false
-          t.text     :description
-          t.text     :tags
+          t.text     :content,     null: false
           t.integer  :use_count,   default: 0, null: false
           t.datetime :last_used_at
           t.datetime :created_at,  null: false
@@ -257,21 +249,13 @@ module RailsConsoleAi
         end
         conn.add_index(memories_table, :name, unique: true)
         $stdout.puts "\e[32mRailsConsoleAi: created #{memories_table} table.\e[0m"
-      else
-        unless conn.column_exists?(memories_table, :use_count)
-          conn.add_column(memories_table, :use_count, :integer, default: 0, null: false)
-        end
-        unless conn.column_exists?(memories_table, :last_used_at)
-          conn.add_column(memories_table, :last_used_at, :datetime)
-        end
       end
 
       unless conn.table_exists?(versions_table)
         conn.create_table(versions_table) do |t|
           t.integer  :memory_id
           t.string   :name,        limit: 255
-          t.text     :description
-          t.text     :tags
+          t.text     :content
           t.string   :edited_by,   limit: 255
           t.text     :change_note
           t.datetime :created_at,  null: false
@@ -286,14 +270,19 @@ module RailsConsoleAi
       agents_table   = 'rails_console_ai_agents'
       versions_table = 'rails_console_ai_agent_versions'
 
+      if conn.table_exists?(agents_table) && !conn.column_exists?(agents_table, :content)
+        conn.drop_table(agents_table)
+        $stdout.puts "\e[33mRailsConsoleAi: dropped legacy #{agents_table}.\e[0m"
+      end
+      if conn.table_exists?(versions_table) && !conn.column_exists?(versions_table, :content)
+        conn.drop_table(versions_table)
+        $stdout.puts "\e[33mRailsConsoleAi: dropped legacy #{versions_table}.\e[0m"
+      end
+
       unless conn.table_exists?(agents_table)
         conn.create_table(agents_table) do |t|
           t.string   :name,        limit: 255, null: false
-          t.text     :description
-          t.text     :body
-          t.integer  :max_rounds
-          t.string   :model,       limit: 100
-          t.text     :tools
+          t.text     :content,     null: false
           t.string   :status,      limit: 20,  default: 'proposed', null: false
           t.string   :approved_by, limit: 255
           t.datetime :approved_at
@@ -305,34 +294,13 @@ module RailsConsoleAi
         conn.add_index(agents_table, :name, unique: true)
         conn.add_index(agents_table, :status)
         $stdout.puts "\e[32mRailsConsoleAi: created #{agents_table} table.\e[0m"
-      else
-        unless conn.column_exists?(agents_table, :status)
-          conn.add_column(agents_table, :status, :string, limit: 20, default: 'proposed', null: false)
-          conn.add_index(agents_table, :status) unless conn.index_exists?(agents_table, :status)
-        end
-        unless conn.column_exists?(agents_table, :approved_by)
-          conn.add_column(agents_table, :approved_by, :string, limit: 255)
-        end
-        unless conn.column_exists?(agents_table, :approved_at)
-          conn.add_column(agents_table, :approved_at, :datetime)
-        end
-        unless conn.column_exists?(agents_table, :use_count)
-          conn.add_column(agents_table, :use_count, :integer, default: 0, null: false)
-        end
-        unless conn.column_exists?(agents_table, :last_used_at)
-          conn.add_column(agents_table, :last_used_at, :datetime)
-        end
       end
 
       unless conn.table_exists?(versions_table)
         conn.create_table(versions_table) do |t|
           t.integer  :agent_id
           t.string   :name,        limit: 255
-          t.text     :description
-          t.text     :body
-          t.integer  :max_rounds
-          t.string   :model,       limit: 100
-          t.text     :tools
+          t.text     :content
           t.string   :status,      limit: 20
           t.string   :edited_by,   limit: 255
           t.text     :change_note

@@ -13,11 +13,7 @@ module RailsConsoleAi
     def restore
       version = @memory.versions.find(params[:id])
       @memory.update_with_version!(
-        {
-          name:        version.name,
-          description: version.description,
-          tags:        Array(version.tags)
-        },
+        { content: version.content },
         edited_by: params[:edited_by].presence || 'web',
         change_note: "Restored from version ##{version.id}"
       )

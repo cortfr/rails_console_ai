@@ -32,14 +32,17 @@ module RailsConsoleAi
           a['source'] == :builtin && a['name'].to_s.downcase == params[:from_builtin].to_s.downcase
         }
         if builtin
-          @agent.name        = builtin['name']
-          @agent.description = builtin['description']
-          @agent.body        = builtin['body']
-          @agent.max_rounds  = builtin['max_rounds']
-          @agent.model       = builtin['model']
-          @agent.tools       = Array(builtin['tools'])
+          @agent.content = AgentLoader.dump(
+            name: builtin['name'],
+            description: builtin['description'],
+            body: builtin['body'],
+            max_rounds: builtin['max_rounds'],
+            model: builtin['model'],
+            tools: Array(builtin['tools'])
+          )
         end
       end
+      @agent.content ||= new_agent_template
     end
 
     def create
@@ -55,34 +58,6 @@ module RailsConsoleAi
         flash.now[:alert] = e.message
         render :new
       end
-    end
-
-    # POST /agents/import — parse a pasted .md blob and re-render `new` with fields prefilled.
-    def import
-      content = params[:content].to_s
-      if content.strip.empty?
-        redirect_to new_agent_path, alert: 'Nothing to parse — paste the .md content into the box first.'
-        return
-      end
-
-      parsed = AgentLoader.parse(content)
-      if parsed.nil? || parsed['name'].to_s.strip.empty?
-        redirect_to new_agent_path,
-                    alert: 'Could not parse. Expected YAML frontmatter (between `---` lines) with at least a `name` field, followed by the agent body.'
-        return
-      end
-
-      @agent = Agent.new(
-        name: parsed['name'],
-        description: parsed['description'],
-        body: parsed['body'],
-        max_rounds: parsed['max_rounds'],
-        model: parsed['model']
-      )
-      @agent.tools = Array(parsed['tools'])
-
-      flash.now[:notice] = "Parsed \"#{parsed['name']}\" from pasted content. Review the fields below and click Create agent to save to the DB."
-      render :new
     end
 
     def edit
@@ -136,9 +111,8 @@ module RailsConsoleAi
       @agent = Agent.find(params[:agent_id])
       @from = @agent.versions.find(params[:from])
       @to   = params[:to].present? ? @agent.versions.find(params[:to]) : nil
-      @to_label = @to ? "Version ##{@to.id}" : 'Current'
-      @to_body  = @to ? @to.body : @agent.body
-      @to_tools = @to ? Array(@to.tools) : Array(@agent.tools)
+      @to_label   = @to ? "Version ##{@to.id}" : 'Current'
+      @to_content = @to ? @to.content : @agent.content
     end
 
     private
@@ -163,22 +137,25 @@ module RailsConsoleAi
     end
 
     def agent_params
-      {
-        name:        params.require(:agent)[:name],
-        description: params[:agent][:description],
-        body:        params[:agent][:body],
-        max_rounds:  params[:agent][:max_rounds].presence&.to_i,
-        model:       params[:agent][:model].presence,
-        tools:       split_lines(params[:agent][:tools])
-      }
+      { content: params.require(:agent)[:content].to_s }
     end
 
     def edited_by_param
       params[:edited_by].presence || 'web'
     end
 
-    def split_lines(str)
-      str.to_s.split(/[\r\n,]+/).map(&:strip).reject(&:empty?)
+    def new_agent_template
+      <<~MD
+        ---
+        name:
+        description:
+        max_rounds:
+        model:
+        tools: []
+        ---
+
+        Persona, strategy, rules…
+      MD
     end
 
     def slugify(name)

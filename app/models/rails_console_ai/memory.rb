@@ -1,4 +1,4 @@
-require 'json'
+require 'rails_console_ai/tools/memory_tools'
 
 module RailsConsoleAi
   class Memory < ActiveRecord::Base
@@ -10,7 +10,11 @@ module RailsConsoleAi
              foreign_key: :memory_id,
              dependent: :nullify
 
+    validates :content, presence: true
     validates :name, presence: true, uniqueness: { case_sensitive: false }
+    validate  :content_parses
+
+    before_validation :sync_name_from_content
 
     scope :alphabetical, -> { order(Arel.sql('LOWER(name)')) }
 
@@ -24,24 +28,21 @@ module RailsConsoleAi
       end
     end
 
-    def tags
-      decode_json_array(read_attribute(:tags))
+    def parsed
+      @parsed ||= (RailsConsoleAi::Tools::MemoryTools.parse(content.to_s) || {})
     end
 
-    def tags=(value)
-      write_attribute(:tags, encode_json_array(value))
+    def content=(value)
+      @parsed = nil
+      super
     end
 
-    def use_count
-      has_attribute?(:use_count) ? (read_attribute(:use_count) || 0) : 0
-    end
-
-    def last_used_at
-      has_attribute?(:last_used_at) ? read_attribute(:last_used_at) : nil
-    end
+    # Memories don't have a separate description vs body — the markdown body
+    # IS the memory. Parser exposes it under 'description'.
+    def description; parsed['description']; end
+    def tags;        Array(parsed['tags']); end
 
     def self.record_use!(id)
-      return false unless connection.column_exists?(table_name, :use_count)
       where(id: id).update_all([
         'use_count = COALESCE(use_count, 0) + 1, last_used_at = ?',
         Time.now.utc
@@ -58,6 +59,7 @@ module RailsConsoleAi
         'name'         => name,
         'description'  => description,
         'tags'         => tags,
+        'content'      => content,
         'use_count'    => use_count,
         'last_used_at' => last_used_at,
         'source'       => :db,
@@ -72,8 +74,7 @@ module RailsConsoleAi
         RailsConsoleAi::MemoryVersion.create!(
           memory_id:   id,
           name:        name,
-          description: description,
-          tags:        tags,
+          content:     content,
           edited_by:   edited_by,
           change_note: change_note
         )
@@ -83,16 +84,20 @@ module RailsConsoleAi
 
     private
 
-    def decode_json_array(raw)
-      return [] if raw.nil? || (raw.respond_to?(:empty?) && raw.empty?)
-      return raw if raw.is_a?(Array)
-      JSON.parse(raw)
-    rescue JSON::ParserError
-      []
+    def sync_name_from_content
+      return if content.to_s.strip.empty?
+      parsed_name = parsed['name'].to_s.strip
+      self.name = parsed_name unless parsed_name.empty?
     end
 
-    def encode_json_array(value)
-      JSON.dump(Array(value))
+    def content_parses
+      return if content.to_s.strip.empty?
+      hash = RailsConsoleAi::Tools::MemoryTools.parse(content.to_s)
+      if hash.nil?
+        errors.add(:content, "could not be parsed — expected YAML frontmatter between `---` lines followed by a markdown body")
+      elsif hash['name'].to_s.strip.empty?
+        errors.add(:content, "frontmatter is missing a `name:` field")
+      end
     end
   end
 end

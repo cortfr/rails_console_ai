@@ -5,11 +5,7 @@
   Version #<%= @from.id %> (<%= @from.created_at.strftime('%Y-%m-%d %H:%M') %>) → <%= @to_label %>
 </p>
 
-<h3 style="margin:16px 0 6px;">Description</h3>
-<%= render_text_diff(@from.description, @to_description, left_label: "v##{@from.id}", right_label: @to_label) %>
-
-<h3 style="margin:24px 0 6px;">Tags</h3>
-<%= render_json_diff(Array(@from.tags), @to_tags, left_label: "v##{@from.id}", right_label: @to_label) %>
+<%= render_text_diff(@from.content, @to_content, left_label: "v##{@from.id}", right_label: @to_label) %>
 
 <div class="btn-bar" style="margin-top:24px;">
   <% if @to.nil? %>

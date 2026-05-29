@@ -1,22 +1,6 @@
 <%= link_to '← All agents', agents_path, class: 'back-link' %>
 <h2 style="margin-bottom:16px;">New agent</h2>
 
-<%= form_with url: import_agents_path, method: :post, local: true do %>
-  <div class="form-card" style="background:#f8f9fa;">
-    <div class="form-row" style="margin-bottom:8px;">
-      <label>Paste a .md file (optional)</label>
-      <textarea name="content" rows="14" placeholder="---&#10;name: My agent&#10;description: What it specializes in&#10;max_rounds: 10&#10;model: claude-haiku-4-5&#10;tools: [execute_code, search_code]&#10;---&#10;&#10;Persona, strategy, rules …"></textarea>
-      <div class="hint">
-        Paste the full contents of a Markdown file (YAML frontmatter + body) — same
-        format as <code>.rails_console_ai/agents/*.md</code> or the built-in agents
-        shipped with the gem. Useful for moving an existing on-disk agent into the
-        versioned DB store.
-      </div>
-    </div>
-    <button type="submit" class="btn btn-secondary">Parse pasted content ↓</button>
-  </div>
-<% end %>
-
 <%= render 'form',
       form_url: agents_path,
       form_method: :post,

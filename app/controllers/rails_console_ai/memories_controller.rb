@@ -25,32 +25,7 @@ module RailsConsoleAi
     end
 
     def new
-      @memory = Memory.new
-    end
-
-    # POST /memories/import — parse a pasted .md blob and re-render `new` with fields prefilled.
-    def import
-      content = params[:content].to_s
-      if content.strip.empty?
-        redirect_to new_memory_path, alert: 'Nothing to parse — paste the .md content into the box first.'
-        return
-      end
-
-      parsed = Tools::MemoryTools.parse(content)
-      if parsed.nil? || parsed['name'].to_s.strip.empty?
-        redirect_to new_memory_path,
-                    alert: 'Could not parse. Expected YAML frontmatter (between `---` lines) with at least a `name` field, followed by the memory body.'
-        return
-      end
-
-      @memory = Memory.new(
-        name: parsed['name'],
-        description: parsed['description']
-      )
-      @memory.tags = Array(parsed['tags'])
-
-      flash.now[:notice] = "Parsed \"#{parsed['name']}\" from pasted content. Review the fields below and click Create memory to save to the DB."
-      render :new
+      @memory = Memory.new(content: new_memory_template)
     end
 
     def create
@@ -102,9 +77,8 @@ module RailsConsoleAi
       @memory = Memory.find(params[:memory_id])
       @from = @memory.versions.find(params[:from])
       @to   = params[:to].present? ? @memory.versions.find(params[:to]) : nil
-      @to_label = @to ? "Version ##{@to.id}" : 'Current'
-      @to_description = @to ? @to.description : @memory.description
-      @to_tags = @to ? Array(@to.tags) : Array(@memory.tags)
+      @to_label   = @to ? "Version ##{@to.id}" : 'Current'
+      @to_content = @to ? @to.content : @memory.content
     end
 
     private
@@ -130,19 +104,22 @@ module RailsConsoleAi
     end
 
     def memory_params
-      {
-        name:        params.require(:memory)[:name],
-        description: params[:memory][:description],
-        tags:        split_csv(params[:memory][:tags])
-      }
+      { content: params.require(:memory)[:content].to_s }
     end
 
     def edited_by_param
       params[:edited_by].presence || 'web'
     end
 
-    def split_csv(str)
-      str.to_s.split(',').map(&:strip).reject(&:empty?)
+    def new_memory_template
+      <<~MD
+        ---
+        name:
+        tags: []
+        ---
+
+        The fact or pattern you're persisting.
+      MD
     end
 
     def slugify(name)

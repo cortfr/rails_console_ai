@@ -13,13 +13,7 @@ module RailsConsoleAi
     def restore
       version = @skill.versions.find(params[:id])
       @skill.update_with_version!(
-        {
-          name:                      version.name,
-          description:               version.description,
-          body:                      version.body,
-          tags:                      Array(version.tags),
-          bypass_guards_for_methods: Array(version.bypass_guards_for_methods)
-        },
+        { content: version.content },
         edited_by: params[:edited_by].presence || 'web',
         change_note: "Restored from version ##{version.id}"
       )

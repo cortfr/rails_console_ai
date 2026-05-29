@@ -26,37 +26,7 @@ module RailsConsoleAi
     end
 
     def new
-      @skill = Skill.new
-    end
-
-    # POST /skills/import — accepts a pasted .md blob in params[:content], parses
-    # YAML frontmatter + body, and re-renders `new` with the fields pre-populated.
-    # The user reviews + clicks Create skill to actually persist (normal proposed-
-    # status + version-row flow applies).
-    def import
-      content = params[:content].to_s
-      if content.strip.empty?
-        redirect_to new_skill_path, alert: 'Nothing to parse — paste the .md content into the box first.'
-        return
-      end
-
-      parsed = SkillLoader.parse(content)
-      if parsed.nil? || parsed['name'].to_s.strip.empty?
-        redirect_to new_skill_path,
-                    alert: 'Could not parse. Expected YAML frontmatter (between `---` lines) with at least a `name` field, followed by a markdown body.'
-        return
-      end
-
-      @skill = Skill.new(
-        name: parsed['name'],
-        description: parsed['description'],
-        body: parsed['body']
-      )
-      @skill.tags = Array(parsed['tags'])
-      @skill.bypass_guards_for_methods = Array(parsed['bypass_guards_for_methods'])
-
-      flash.now[:notice] = "Parsed \"#{parsed['name']}\" from pasted content. Review the fields below and click Create skill to save to the DB."
-      render :new
+      @skill = Skill.new(content: new_skill_template)
     end
 
     def create
@@ -130,10 +100,8 @@ module RailsConsoleAi
       @from = @skill.versions.find(params[:from])
       @to   = params[:to].present? ? @skill.versions.find(params[:to]) : nil
       # If `to` is omitted, diff against the current skill.
-      @to_label = @to ? "Version ##{@to.id}" : 'Current'
-      @to_body  = @to ? @to.body : @skill.body
-      @to_tags  = @to ? Array(@to.tags) : Array(@skill.tags)
-      @to_bypass = @to ? Array(@to.bypass_guards_for_methods) : Array(@skill.bypass_guards_for_methods)
+      @to_label   = @to ? "Version ##{@to.id}" : 'Current'
+      @to_content = @to ? @to.content : @skill.content
     end
 
     private
@@ -165,25 +133,28 @@ module RailsConsoleAi
     end
 
     def skill_params
-      {
-        name:                       params.require(:skill)[:name],
-        description:                params[:skill][:description],
-        body:                       params[:skill][:body],
-        tags:                       split_csv(params[:skill][:tags]),
-        bypass_guards_for_methods:  split_lines(params[:skill][:bypass_guards_for_methods])
-      }
+      { content: params.require(:skill)[:content].to_s }
     end
 
     def edited_by_param
       params[:edited_by].presence || 'web'
     end
 
-    def split_csv(str)
-      str.to_s.split(',').map(&:strip).reject(&:empty?)
-    end
+    def new_skill_template
+      <<~MD
+        ---
+        name:
+        description:
+        tags: []
+        bypass_guards_for_methods: []
+        ---
 
-    def split_lines(str)
-      str.to_s.split(/[\r\n]+/).map(&:strip).reject(&:empty?)
+        ## When to use
+
+        ## Recipe
+
+        ## Notes
+      MD
     end
 
     def slugify(name)

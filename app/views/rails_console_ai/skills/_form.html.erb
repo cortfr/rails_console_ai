@@ -11,36 +11,14 @@
 <%= form_with model: @skill, url: form_url, method: form_method, local: true do |f| %>
   <div class="form-card">
     <div class="form-row">
-      <label>Name</label>
-      <%= f.text_field :name, value: @skill.name, required: true %>
-    </div>
-
-    <div class="form-row">
-      <label>Description</label>
-      <%= f.text_field :description, value: @skill.description, placeholder: 'One-line description of when to use this skill' %>
-    </div>
-
-    <div class="form-row">
-      <label>Body (markdown)</label>
-      <%= f.text_area :body, value: @skill.body, rows: 18 %>
-      <div class="hint">Include "## When to use", "## Recipe" (numbered steps with code blocks), "## Notes".</div>
-    </div>
-
-    <div class="form-row">
-      <label>Tags (comma-separated)</label>
-      <%= f.text_field :tags, value: Array(@skill.tags).join(', '), placeholder: 'booking-page, admin' %>
-    </div>
-
-    <div class="form-row">
-      <label>Bypass guards for methods (one per line)</label>
-      <%= f.text_area :bypass_guards_for_methods, value: Array(@skill.bypass_guards_for_methods).join("\n"), rows: 4 %>
+      <label>Markdown (frontmatter + body)</label>
+      <%= f.text_area :content, value: @skill.content, rows: 28, required: true, style: 'font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;' %>
       <div class="hint">
-        Two forms accepted — anything else is ignored:
-        <ul style="margin:6px 0 0 18px; padding:0;">
-          <li><code>ClassName#method</code> — instance method, e.g. <code>BookingPage#save!</code></li>
-          <li><code>ClassName.method</code> — class (singleton) method, e.g. <code>User.create_admin!</code></li>
-        </ul>
-        Namespaced classes work: <code>Acme::Booking#destroy</code>. The <code>!</code> is part of the match, so <code>save</code> and <code>save!</code> are different specs. While the skill is active, calls to these methods skip the configured safety guards (DB writes, HTTP mutations, email, etc.) <strong>for that tool-call only</strong>.
+        YAML frontmatter between <code>---</code> lines, then the markdown body. Required frontmatter:
+        <code>name</code>, <code>description</code>. Optional: <code>tags</code>,
+        <code>bypass_guards_for_methods</code> (entries shaped like <code>ClassName#method</code> or
+        <code>ClassName.method</code> — while the skill is active, calls to these methods skip the
+        configured safety guards for that tool-call only).
       </div>
     </div>
 

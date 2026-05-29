@@ -1,4 +1,4 @@
-require 'json'
+require 'rails_console_ai/skill_loader'
 
 module RailsConsoleAi
   class SkillVersion < ActiveRecord::Base
@@ -21,34 +21,13 @@ module RailsConsoleAi
       end
     end
 
-    def tags
-      decode_json_array(read_attribute(:tags))
+    def parsed
+      @parsed ||= (RailsConsoleAi::SkillLoader.parse(content.to_s) || {})
     end
 
-    def tags=(value)
-      write_attribute(:tags, encode_json_array(value))
-    end
-
-    def bypass_guards_for_methods
-      decode_json_array(read_attribute(:bypass_guards_for_methods))
-    end
-
-    def bypass_guards_for_methods=(value)
-      write_attribute(:bypass_guards_for_methods, encode_json_array(value))
-    end
-
-    private
-
-    def decode_json_array(raw)
-      return [] if raw.nil? || (raw.respond_to?(:empty?) && raw.empty?)
-      return raw if raw.is_a?(Array)
-      JSON.parse(raw)
-    rescue JSON::ParserError
-      []
-    end
-
-    def encode_json_array(value)
-      JSON.dump(Array(value))
-    end
+    def description; parsed['description']; end
+    def body;        parsed['body']; end
+    def tags;        Array(parsed['tags']); end
+    def bypass_guards_for_methods; Array(parsed['bypass_guards_for_methods']); end
   end
 end

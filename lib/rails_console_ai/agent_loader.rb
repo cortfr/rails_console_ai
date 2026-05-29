@@ -159,16 +159,10 @@ module RailsConsoleAi
       key = agent_key(name)
       existing = load_agent_file(key)
 
-      frontmatter = {
-        'name' => name,
-        'description' => description
-      }
-      frontmatter['max_rounds'] = max_rounds if max_rounds
-      frontmatter['model'] = model if model
-      tool_list = Array(tools)
-      frontmatter['tools'] = tool_list unless tool_list.empty?
-
-      content = "---\n#{YAML.dump(frontmatter).sub("---\n", '').strip}\n---\n\n#{body}\n"
+      content = self.class.dump(
+        name: name, description: description, body: body,
+        max_rounds: max_rounds, model: model, tools: tools
+      )
       @storage.write(key, content)
 
       path = @storage.respond_to?(:root_path) ? File.join(@storage.root_path, key) : key
@@ -209,6 +203,20 @@ module RailsConsoleAi
       frontmatter.merge('body' => body)
     rescue Psych::SyntaxError
       nil
+    end
+
+    # Inverse of parse: emit a canonical .md (frontmatter + body) string from
+    # structured attrs.
+    def self.dump(name:, description:, body:, max_rounds: nil, model: nil, tools: nil)
+      frontmatter = {
+        'name' => name,
+        'description' => description
+      }
+      frontmatter['max_rounds'] = max_rounds if max_rounds
+      frontmatter['model'] = model if model
+      tool_list = Array(tools)
+      frontmatter['tools'] = tool_list unless tool_list.empty?
+      "---\n#{YAML.dump(frontmatter).sub("---\n", '').strip}\n---\n\n#{body}\n"
     end
   end
 end

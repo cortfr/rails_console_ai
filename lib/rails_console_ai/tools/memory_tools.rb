@@ -211,6 +211,14 @@ module RailsConsoleAi
         nil
       end
 
+      # Inverse of parse: emit a canonical .md string. The DB store uses this
+      # minimal form (name + tags only in frontmatter); the file store layers
+      # created_at/updated_at on top via save_memory_to_file.
+      def self.dump(name:, description:, tags: [])
+        frontmatter = { 'name' => name, 'tags' => Array(tags) }
+        "---\n#{YAML.dump(frontmatter).sub("---\n", '').strip}\n---\n\n#{description}\n"
+      end
+
       def find_memory_key_by_name(name)
         keys = @storage.list("#{MEMORIES_DIR}/*.md")
         keys.find do |key|
