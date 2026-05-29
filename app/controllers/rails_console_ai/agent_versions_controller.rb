@@ -1,5 +1,5 @@
 module RailsConsoleAi
-  class AgentVersionsController < ApplicationController
+  class AgentVersionsController < RailsConsoleAi::ApplicationController
     before_action :load_agent
 
     def index

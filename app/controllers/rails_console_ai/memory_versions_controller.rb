@@ -1,5 +1,5 @@
 module RailsConsoleAi
-  class MemoryVersionsController < ApplicationController
+  class MemoryVersionsController < RailsConsoleAi::ApplicationController
     before_action :load_memory
 
     def index

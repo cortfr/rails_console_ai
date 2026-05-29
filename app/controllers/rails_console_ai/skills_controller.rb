@@ -1,7 +1,7 @@
 require 'rails_console_ai/skill_loader'
 
 module RailsConsoleAi
-  class SkillsController < ApplicationController
+  class SkillsController < RailsConsoleAi::ApplicationController
     before_action :load_skill, only: [:show, :edit, :update, :destroy, :approve]
 
     def index

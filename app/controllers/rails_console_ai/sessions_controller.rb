@@ -1,5 +1,5 @@
 module RailsConsoleAi
-  class SessionsController < ApplicationController
+  class SessionsController < RailsConsoleAi::ApplicationController
     PER_PAGE = 50
 
     def index

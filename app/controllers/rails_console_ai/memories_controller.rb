@@ -1,7 +1,7 @@
 require 'rails_console_ai/tools/memory_tools'
 
 module RailsConsoleAi
-  class MemoriesController < ApplicationController
+  class MemoriesController < RailsConsoleAi::ApplicationController
     before_action :load_memory, only: [:show, :edit, :update, :destroy]
 
     def index

@@ -1,7 +1,7 @@
 require 'rails_console_ai/agent_loader'
 
 module RailsConsoleAi
-  class AgentsController < ApplicationController
+  class AgentsController < RailsConsoleAi::ApplicationController
     before_action :load_agent, only: [:show, :edit, :update, :destroy, :approve]
 
     def index

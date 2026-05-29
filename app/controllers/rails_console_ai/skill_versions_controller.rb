@@ -1,5 +1,5 @@
 module RailsConsoleAi
-  class SkillVersionsController < ApplicationController
+  class SkillVersionsController < RailsConsoleAi::ApplicationController
     before_action :load_skill
 
     def index
