@@ -22,32 +22,6 @@ All notable changes to this project will be documented in this file.
 - Harden `Skill` / `Agent` model accessors to return safe defaults when newly added columns are not yet present
 - Fix built-in agent `.md` files with UTF-8 characters failing to load under US-ASCII locales
 
-## [Unreleased]
-
-- New skill / memory / agent pages now have a "Paste a .md file" textarea at the top. Paste the contents of a Markdown file with YAML frontmatter (same format used by `.rails_console_ai/{skills,memories,agents}/*.md` and the gem's built-in agents), click "Parse pasted content ↓", and the form fields below are prefilled from the parse. You still click Create to actually save, so the normal proposed-status + version-row flow applies — and you can tweak the parsed content before saving. Useful for moving an existing on-disk record into the versioned DB store
-- `RailsConsoleAi::SkillLoader.parse`, `RailsConsoleAi::AgentLoader.parse`, and `RailsConsoleAi::Tools::MemoryTools.parse` are now public class methods. They return a parsed frontmatter+body hash, or `nil` on malformed input
-
-- Usage tracking for DB-backed skills, memories, and agents. New `use_count` and `last_used_at` columns are bumped atomically (one SQL `UPDATE … SET use_count = use_count + 1, last_used_at = NOW()`, no callbacks, no `updated_at` change) when:
-  - `activate_skill` resolves a DB skill
-  - `recall_memory` resolves a DB memory, or `recall_memories` returns a DB memory in its result set
-  - `delegate_task` resolves a DB sub-agent
-  File / built-in records have no DB row so they're not tracked (the web UI shows `—` for them). System-prompt summary inclusion does **not** count — counters only move when the AI actively invokes/loads the record. Surfaced in the index tables (with a "Sort: most used" toggle) and on each show page (Times activated / Times recalled / Times invoked, plus Last used)
-- Bugfix: `RailsConsoleAi.migrate!` now always re-runs the `setup_*_tables!` methods so column-add probes execute on upgrades. Previously, when the base table already existed, the outer `unless table_exists?` guard skipped column probes entirely, leaving new columns un-added and causing `NameError: undefined local variable or method 'status'` from `Skill#proposed?` on host apps that hadn't fully migrated
-- Bugfix: `Skill` / `Agent` model accessors for `status` / `approved_by` / `approved_at` / `use_count` / `last_used_at` are now defensive — they return safe defaults via `has_attribute?` rather than raising NameError when the column hasn't been added yet. The `status` inclusion validation is also gated on the column being present
-
-- Sub-agents can now be stored in the database, versioned, and approved through the web UI — same workflow as skills. DB-backed agents start as `proposed` and are invisible to `delegate_task` until a human clicks Approve at `/rails_console_ai/agents`; editing an approved agent reverts it to proposed. Built-in (gem-shipped) and file-based agents are pre-approved and continue working unchanged
-- New AI tools `save_agent` and `delete_agent` — the AI can now draft a sub-agent definition (lands as proposed, awaits human approval) and request deletion. `delegate_task` now emits a specific "awaiting human approval" error when the AI references a proposed DB agent
-- New web UI section at `/rails_console_ai/agents` with three-source listing (DB / FILE / BUILTIN badges) plus the full skills-style CRUD + version history + diff + restore + approve. Built-in agents are read-only with a "Create DB override" link that prefills the new-agent form
-- `ai_db_setup` / `ai_db_migrate` now also create `rails_console_ai_agents` and `rails_console_ai_agent_versions` tables idempotently
-- Fix: built-in agent .md files containing UTF-8 (em-dashes, smart quotes) now load correctly. `safe_load_builtin_agents` was using `File.read`'s locale-default encoding, which silently swallowed `Encoding::CompatibilityError` on US-ASCII locales
-
-- Skills and memories can now be stored in the database (in addition to the existing on-disk `.rails_console_ai/skills` and `.rails_console_ai/memories` files). DB-backed records are versioned — every save creates a `SkillVersion` / `MemoryVersion` row with `edited_by` and an optional change note
-- DB-backed skills start in a **proposed** state and cannot be activated by the AI until a human approves them in the web UI. Editing an approved skill reverts it to proposed. File-backed skills are unaffected (already git-tracked, considered pre-approved). Memories are not gated
-- `SkillLoader#load_all_skills` and `MemoryTools#load_all_memories` now return the union of DB and file records (DB wins on name collision). `SkillLoader#find_skill` / `skill_summaries` filter out proposed skills so the AI never sees them
-- `save_skill` / `save_memory` AI tools accept an optional `target` parameter (`"db"` default, `"file"` to write to disk) plus `change_note`. When the AI saves a DB skill, the tool response tells it the skill is awaiting human approval
-- New web UI sections at `/rails_console_ai/skills` and `/rails_console_ai/memories` provide list, view, create, edit, delete, version history, side-by-side diff, and restore. Skills also have an Approve button and PROPOSED / APPROVED badges. File-sourced records are surfaced but read-only in the UI
-- `ai_db_setup` / `ai_db_migrate` now create the new `rails_console_ai_skills`, `rails_console_ai_skill_versions`, `rails_console_ai_memories`, and `rails_console_ai_memory_versions` tables idempotently, plus the `status` / `approved_by` / `approved_at` columns on skills
-
 ## [0.29.0]
 
 - Allow steering Slack conversations mid-run by sending follow-up messages that are folded in as user guidance at the next tool-loop boundary

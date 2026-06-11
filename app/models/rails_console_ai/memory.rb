@@ -4,6 +4,10 @@ module RailsConsoleAi
   class Memory < ActiveRecord::Base
     self.table_name = 'rails_console_ai_memories'
 
+    STATUS_PROPOSED = 'proposed'.freeze
+    STATUS_APPROVED = 'approved'.freeze
+    STATUSES = [STATUS_PROPOSED, STATUS_APPROVED].freeze
+
     has_many :versions,
              -> { order(created_at: :desc) },
              class_name: 'RailsConsoleAi::MemoryVersion',
@@ -12,11 +16,14 @@ module RailsConsoleAi
 
     validates :content, presence: true
     validates :name, presence: true, uniqueness: { case_sensitive: false }
+    validates :status, inclusion: { in: STATUSES }
     validate  :content_parses
 
     before_validation :sync_name_from_content
 
     scope :alphabetical, -> { order(Arel.sql('LOWER(name)')) }
+    scope :approved, -> { where(status: STATUS_APPROVED) }
+    scope :proposed, -> { where(status: STATUS_PROPOSED) }
 
     def self.connection
       klass = RailsConsoleAi.configuration.connection_class
@@ -42,6 +49,9 @@ module RailsConsoleAi
     def description; parsed['description']; end
     def tags;        Array(parsed['tags']); end
 
+    def proposed?; status.to_s == STATUS_PROPOSED; end
+    def approved?; status.to_s == STATUS_APPROVED; end
+
     def self.record_use!(id)
       where(id: id).update_all([
         'use_count = COALESCE(use_count, 0) + 1, last_used_at = ?',
@@ -60,6 +70,9 @@ module RailsConsoleAi
         'description'  => description,
         'tags'         => tags,
         'content'      => content,
+        'status'       => status,
+        'approved_by'  => approved_by,
+        'approved_at'  => approved_at,
         'use_count'    => use_count,
         'last_used_at' => last_used_at,
         'source'       => :db,
@@ -67,19 +80,45 @@ module RailsConsoleAi
       }
     end
 
-    def update_with_version!(attrs, edited_by: nil, change_note: nil)
+    # Assigns attrs, saves, and records one MemoryVersion snapshot.
+    # Any change to `content` reverts approval back to "proposed" unless
+    # `preserve_approval: true` is passed (approve! does this).
+    def update_with_version!(attrs, edited_by: nil, change_note: nil, preserve_approval: false)
       transaction do
         assign_attributes(attrs)
+
+        if !preserve_approval && approved? && changes.key?('content')
+          self.status      = STATUS_PROPOSED
+          self.approved_by = nil
+          self.approved_at = nil
+        end
+
         save!
         RailsConsoleAi::MemoryVersion.create!(
           memory_id:   id,
           name:        name,
           content:     content,
+          status:      status,
           edited_by:   edited_by,
           change_note: change_note
         )
       end
       self
+    end
+
+    def approve!(approved_by:)
+      raise ArgumentError, 'approved_by is required' if approved_by.to_s.strip.empty?
+
+      update_with_version!(
+        {
+          status:      STATUS_APPROVED,
+          approved_by: approved_by,
+          approved_at: Time.now.utc
+        },
+        edited_by: approved_by,
+        change_note: "Approved by #{approved_by}",
+        preserve_approval: true
+      )
     end
 
     private

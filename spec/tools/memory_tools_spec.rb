@@ -252,6 +252,52 @@ RSpec.describe RailsConsoleAi::Tools::MemoryTools do
     end
   end
 
+  describe 'approval gating (DatabaseStorage stubbed)' do
+    let(:proposed_mem) do
+      { 'id' => 1, 'name' => 'Proposed Mem', 'description' => 'secret', 'tags' => [],
+        'status' => 'proposed', 'source' => :db }
+    end
+    let(:approved_mem) do
+      { 'id' => 2, 'name' => 'Approved Mem', 'description' => 'visible', 'tags' => [],
+        'status' => 'approved', 'source' => :db }
+    end
+
+    before do
+      allow(RailsConsoleAi::Storage::DatabaseStorage).to receive(:memories_available?).and_return(true)
+      allow(RailsConsoleAi::Storage::DatabaseStorage).to receive(:all_memories)
+        .and_return([proposed_mem, approved_mem])
+      allow(RailsConsoleAi::Memory).to receive(:record_use!)
+    end
+
+    it 'load_activatable_memories hides proposed DB memories' do
+      names = tools.load_activatable_memories.map { |m| m['name'] }
+      expect(names).to include('Approved Mem')
+      expect(names).not_to include('Proposed Mem')
+    end
+
+    it 'memory_summaries omits proposed memories (so the AI never sees them)' do
+      summaries = tools.memory_summaries.join("\n")
+      expect(summaries).to include('Approved Mem')
+      expect(summaries).not_to include('Proposed Mem')
+    end
+
+    it 'recall_memories excludes proposed memories' do
+      result = tools.recall_memories
+      expect(result).to include('Approved Mem')
+      expect(result).not_to include('Proposed Mem')
+    end
+
+    it 'recall_memory refuses a proposed memory with an approval hint' do
+      result = tools.recall_memory(name: 'Proposed Mem')
+      expect(result).to include('awaiting human approval')
+      expect(result).not_to include('secret')
+    end
+
+    it 'recall_memory returns approved memories normally' do
+      expect(tools.recall_memory(name: 'Approved Mem')).to include('visible')
+    end
+  end
+
   describe '.parse' do
     it 'extracts frontmatter and stores body under `description`' do
       content = <<~MD

@@ -418,7 +418,7 @@ module RailsConsoleAi
 
         register(
           name: 'save_memory',
-          description: 'Save a fact or pattern you learned about this codebase for future sessions. Use after discovering how something works (e.g. sharding, auth, custom business logic). Defaults to the versioned DB store; pass target: "file" to write to the on-disk .rails_console_ai/memories directory instead.',
+          description: 'Save a fact or pattern you learned about this codebase for future sessions. Use after discovering how something works (e.g. sharding, auth, custom business logic). Defaults to the versioned DB store; pass target: "file" to write to the on-disk .rails_console_ai/memories directory instead. IMPORTANT: memories saved to the DB start in "proposed" state and must be approved by a human in the web UI before you can recall them. Edits to an approved memory also revert it to proposed. Tell the user to visit /rails_console_ai/memories to approve.',
           parameters: {
             'type' => 'object',
             'properties' => {

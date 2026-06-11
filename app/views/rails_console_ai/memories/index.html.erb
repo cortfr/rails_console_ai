@@ -11,6 +11,13 @@
   </form>
 </div>
 
+<% proposed_count = @memories.count { |m| m['source'] == :db && m['status'] != 'approved' } %>
+<% if proposed_count > 0 %>
+  <div class="flash flash-alert" style="margin-bottom:16px;">
+    <strong><%= proposed_count %></strong> memor<%= proposed_count == 1 ? 'y' : 'ies' %> awaiting approval. The AI cannot recall them until a human approves.
+  </div>
+<% end %>
+
 <% if @memories.empty? %>
   <div class="meta-card">
     <p class="text-muted">No memories yet. <%= link_to 'Create one', new_memory_path %> or drop a Markdown file in <code>.rails_console_ai/memories/</code>.</p>
@@ -22,7 +29,7 @@
         <th>Name</th>
         <th>Description</th>
         <th>Tags</th>
-        <th>Source</th>
+        <th>Source / Status</th>
         <th title="Number of times the AI recalled this memory (DB only)">Uses</th>
         <th>Last used</th>
         <th></th>
@@ -40,6 +47,11 @@
           <td>
             <% if m['source'] == :db %>
               <span class="badge source-db">DB</span>
+              <% if m['status'] == 'approved' %>
+                <span class="badge status-approved">APPROVED</span>
+              <% else %>
+                <span class="badge status-proposed">PROPOSED</span>
+              <% end %>
             <% else %>
               <span class="badge source-file">FILE</span>
             <% end %>

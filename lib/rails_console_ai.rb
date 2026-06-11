@@ -242,13 +242,33 @@ module RailsConsoleAi
         conn.create_table(memories_table) do |t|
           t.string   :name,        limit: 255, null: false
           t.text     :content,     null: false
+          t.string   :status,      limit: 20,  default: 'proposed', null: false
+          t.string   :approved_by, limit: 255
+          t.datetime :approved_at
           t.integer  :use_count,   default: 0, null: false
           t.datetime :last_used_at
           t.datetime :created_at,  null: false
           t.datetime :updated_at,  null: false
         end
         conn.add_index(memories_table, :name, unique: true)
+        conn.add_index(memories_table, :status)
         $stdout.puts "\e[32mRailsConsoleAi: created #{memories_table} table.\e[0m"
+      end
+
+      # Existing installs have the content-based memories table but predate the
+      # approval columns — the drop-on-missing-content guard above won't fire for
+      # them, so add the columns in place. Memories created before approval existed
+      # were trusted under the old no-approval regime, so grandfather them to
+      # "approved" rather than yanking them out from under the AI; only memories
+      # created from now on start in "proposed".
+      if conn.table_exists?(memories_table) && !conn.column_exists?(memories_table, :status)
+        conn.add_column(memories_table, :status, :string, limit: 20, default: 'proposed', null: false)
+        conn.execute("UPDATE #{conn.quote_table_name(memories_table)} SET status = 'approved'")
+      end
+      if conn.table_exists?(memories_table)
+        conn.add_column(memories_table, :approved_by, :string, limit: 255) unless conn.column_exists?(memories_table, :approved_by)
+        conn.add_column(memories_table, :approved_at, :datetime) unless conn.column_exists?(memories_table, :approved_at)
+        conn.add_index(memories_table, :status) unless conn.index_exists?(memories_table, :status)
       end
 
       unless conn.table_exists?(versions_table)
@@ -256,6 +276,7 @@ module RailsConsoleAi
           t.integer  :memory_id
           t.string   :name,        limit: 255
           t.text     :content
+          t.string   :status,      limit: 20
           t.string   :edited_by,   limit: 255
           t.text     :change_note
           t.datetime :created_at,  null: false
@@ -263,6 +284,10 @@ module RailsConsoleAi
         conn.add_index(versions_table, :memory_id)
         conn.add_index(versions_table, :created_at)
         $stdout.puts "\e[32mRailsConsoleAi: created #{versions_table} table.\e[0m"
+      end
+
+      if conn.table_exists?(versions_table) && !conn.column_exists?(versions_table, :status)
+        conn.add_column(versions_table, :status, :string, limit: 20)
       end
     end
 

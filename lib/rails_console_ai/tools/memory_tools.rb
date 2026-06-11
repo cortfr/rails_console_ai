@@ -33,10 +33,15 @@ module RailsConsoleAi
             name: name, description: description, tags: tags,
             edited_by: edited_by || 'ai', change_note: change_note
           )
+          status_note = if record.respond_to?(:proposed?) && record.proposed?
+                          ' — status: PROPOSED. A human must approve it at /rails_console_ai/memories before you can recall it.'
+                        else
+                          ''
+                        end
           if was_new
-            "Memory saved (db): \"#{record.name}\" (id=#{record.id})"
+            "Memory saved (db): \"#{record.name}\" (id=#{record.id})#{status_note}"
           else
-            "Memory updated (db): \"#{record.name}\" (id=#{record.id})"
+            "Memory updated (db): \"#{record.name}\" (id=#{record.id})#{status_note}"
           end
         end
       rescue Storage::StorageError => e
@@ -72,8 +77,16 @@ module RailsConsoleAi
       end
 
       def recall_memory(name:)
-        memory = load_all_memories.find { |m| m['name'].to_s.downcase == name.to_s.downcase }
-        return "No memory found: \"#{name}\"" unless memory
+        memory = load_activatable_memories.find { |m| m['name'].to_s.downcase == name.to_s.downcase }
+        unless memory
+          # Distinguish "doesn't exist" from "exists but isn't approved yet".
+          proposed = load_all_memories.find { |m| m['name'].to_s.downcase == name.to_s.downcase }
+          if proposed && proposed['source'] == :db && proposed['status'] != 'approved'
+            return "Memory \"#{name}\" exists but is awaiting human approval and cannot be recalled yet. " \
+                   "Ask the user to approve it in the web UI at /rails_console_ai/memories."
+          end
+          return "No memory found: \"#{name}\""
+        end
 
         record_use(memory)
 
@@ -83,7 +96,7 @@ module RailsConsoleAi
       end
 
       def recall_memories(query: nil, tag: nil)
-        memories = load_all_memories
+        memories = load_activatable_memories
         return "No memories stored yet." if memories.empty?
 
         results = memories
@@ -117,7 +130,7 @@ module RailsConsoleAi
       end
 
       def memory_summaries
-        memories = load_all_memories
+        memories = load_activatable_memories
         return nil if memories.empty?
 
         memories.map { |m|
@@ -127,12 +140,22 @@ module RailsConsoleAi
         }
       end
 
+      # Includes proposed (unapproved) DB memories — they show up in the admin UI
+      # with a "PROPOSED" badge. The AI-facing surface (#memory_summaries,
+      # #recall_memory, #recall_memories) filters them out via
+      # #load_activatable_memories, so an unapproved memory can never be recalled.
       def load_all_memories
         db = Storage::DatabaseStorage.all_memories
         file = load_all_file_memories
         names = db.map { |m| m['name'].to_s.downcase }
         file.reject! { |m| names.include?(m['name'].to_s.downcase) }
         (db + file).sort_by { |m| m['name'].to_s.downcase }
+      end
+
+      # Memories the AI is allowed to see / recall: approved DB memories + all file
+      # memories. File memories are considered pre-approved because they're git-tracked.
+      def load_activatable_memories
+        load_all_memories.reject { |m| m['source'] == :db && m['status'] != 'approved' }
       end
 
       private

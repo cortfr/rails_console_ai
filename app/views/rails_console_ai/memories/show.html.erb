@@ -8,11 +8,23 @@
 
 <%= link_to '← All memories', memories_path, class: 'back-link' %>
 
+<% if is_db && !@memory.approved? %>
+  <div class="flash flash-alert" style="margin-bottom:16px;">
+    <strong>Awaiting approval.</strong> The AI cannot recall this memory until a human approves it.
+    Review the content below, then click <strong>Approve</strong>.
+  </div>
+<% end %>
+
 <div class="meta-card">
   <h2 style="margin-bottom:8px;">
     <%= name %>
     <% if is_db %>
       <span class="badge source-db">DB</span>
+      <% if @memory.approved? %>
+        <span class="badge status-approved">APPROVED</span>
+      <% else %>
+        <span class="badge status-proposed">PROPOSED</span>
+      <% end %>
     <% else %>
       <span class="badge source-file">FILE</span>
     <% end %>
@@ -24,6 +36,10 @@
       <div class="meta-item"><label>Versions</label><span><%= @memory.versions.count %></span></div>
       <div class="meta-item"><label>Times recalled</label><span><%= @memory.use_count %></span></div>
       <div class="meta-item"><label>Last recalled</label><span><%= @memory.last_used_at&.strftime('%Y-%m-%d %H:%M') || 'never' %></span></div>
+      <% if @memory.approved? %>
+        <div class="meta-item"><label>Approved by</label><span><%= @memory.approved_by || '—' %></span></div>
+        <div class="meta-item"><label>Approved at</label><span><%= @memory.approved_at&.strftime('%Y-%m-%d %H:%M') || '—' %></span></div>
+      <% end %>
     <% else %>
       <div class="meta-item"><label>Path</label><span class="mono"><%= file_key %></span></div>
     <% end %>
@@ -32,6 +48,12 @@
 
 <div class="btn-bar">
   <% if is_db %>
+    <% unless @memory.approved? %>
+      <%= form_with url: approve_memory_path(@memory), method: :post, local: true, style: 'display:inline' do %>
+        <input type="text" name="approved_by" placeholder="Your name (required)" style="padding:7px 10px; border:1px solid #ccc; border-radius:4px; margin-right:6px;">
+        <button type="submit" class="btn btn-danger" data-confirm="Approve this memory? The AI will then be able to recall it.">Approve</button>
+      <% end %>
+    <% end %>
     <%= link_to 'Edit', edit_memory_path(@memory), class: 'btn' %>
     <%= link_to 'Versions', memory_versions_path(@memory), class: 'btn btn-secondary' %>
     <%= button_to 'Delete', memory_path(@memory), method: :delete, class: 'btn btn-danger', form: { style: 'display:inline' },data: { confirm: 'Delete this memory? Past versions remain in history.' } %>
@@ -49,6 +71,7 @@
         <div>
           <strong>v<%= v.id %></strong>
           <span class="ver-meta">— <%= v.created_at.strftime('%Y-%m-%d %H:%M') %> by <%= v.edited_by || 'unknown' %></span>
+          <% if v.status == 'approved' %><span class="badge status-approved">APPROVED</span><% end %>
           <% if v.change_note.present? %><div class="ver-meta"><%= v.change_note %></div><% end %>
         </div>
         <div>

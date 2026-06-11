@@ -2,7 +2,7 @@ require 'rails_console_ai/tools/memory_tools'
 
 module RailsConsoleAi
   class MemoriesController < RailsConsoleAi::ApplicationController
-    before_action :load_memory, only: [:show, :edit, :update, :destroy]
+    before_action :load_memory, only: [:show, :edit, :update, :destroy, :approve]
 
     def index
       @memories = Tools::MemoryTools.new.load_all_memories
@@ -70,6 +70,26 @@ module RailsConsoleAi
         redirect_to memories_path, notice: 'Memory deleted. Past versions remain in history.'
       else
         redirect_to memories_path, alert: file_memory_message
+      end
+    end
+
+    def approve
+      redirect_to memories_path, alert: file_memory_message and return unless @memory.is_a?(RailsConsoleAi::Memory)
+
+      approver = params[:approved_by].presence ||
+                 (request.respond_to?(:remote_user) && request.remote_user.presence) ||
+                 'web'
+
+      if @memory.approved?
+        redirect_to memory_path(@memory), notice: 'Memory is already approved.'
+        return
+      end
+
+      begin
+        @memory.approve!(approved_by: approver)
+        redirect_to memory_path(@memory), notice: "Approved by #{approver}. The AI can now recall this memory."
+      rescue ArgumentError, ActiveRecord::RecordInvalid => e
+        redirect_to memory_path(@memory), alert: "Could not approve: #{e.message}"
       end
     end
 

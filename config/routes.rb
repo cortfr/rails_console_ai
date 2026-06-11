@@ -17,6 +17,9 @@ RailsConsoleAi::Engine.routes.draw do
   end
 
   resources :memories do
+    member do
+      post :approve
+    end
     collection do
       get :diff
     end

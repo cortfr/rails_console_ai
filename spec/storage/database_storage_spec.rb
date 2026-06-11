@@ -132,6 +132,49 @@ RSpec.describe RailsConsoleAi::Storage::DatabaseStorage, if: SQLITE3_AVAILABLE d
     end
   end
 
+  describe 'memory approval workflow' do
+    it 'creates new memories in the proposed state' do
+      r, _ = described_class.save_memory(name: 'NeedApproval', description: 'd')
+      expect(r.status).to eq('proposed')
+      expect(r.proposed?).to be(true)
+      expect(r.approved?).to be(false)
+      expect(r.approved_by).to be_nil
+      expect(r.approved_at).to be_nil
+    end
+
+    it 'marks the version row with the post-save status' do
+      r, _ = described_class.save_memory(name: 'WithStatus', description: 'd')
+      expect(r.versions.first.status).to eq('proposed')
+    end
+
+    it 'flips to approved via approve!, recording approver + timestamp' do
+      r, _ = described_class.save_memory(name: 'ToApprove', description: 'd')
+      r.approve!(approved_by: 'alice')
+      r.reload
+      expect(r.approved?).to be(true)
+      expect(r.approved_by).to eq('alice')
+      expect(r.approved_at).not_to be_nil
+      expect(r.versions.first.status).to eq('approved')
+      expect(r.versions.first.change_note).to include('Approved by alice')
+    end
+
+    it 'reverts to proposed when an approved memory is edited' do
+      r, _ = described_class.save_memory(name: 'Editable', description: 'v1')
+      r.approve!(approved_by: 'alice')
+      described_class.save_memory(name: 'Editable', description: 'v2')
+      r.reload
+      expect(r.proposed?).to be(true)
+      expect(r.approved_by).to be_nil
+      expect(r.approved_at).to be_nil
+    end
+
+    it 'approve! refuses empty approver names' do
+      r, _ = described_class.save_memory(name: 'Whoever', description: 'd')
+      expect { r.approve!(approved_by: '') }.to raise_error(ArgumentError)
+      expect { r.approve!(approved_by: '   ') }.to raise_error(ArgumentError)
+    end
+  end
+
   describe 'approval workflow' do
     it 'creates new skills in the proposed state' do
       r, _ = described_class.save_skill(name: 'NeedApproval', description: 'd', body: 'b')
