@@ -52,6 +52,22 @@ module RailsConsoleAi
       Thread.current[:rails_console_ai_guards_disabled] = true
     end
 
+    # Hard sandbox: block ALL database access (reads and writes) for the duration of the
+    # block. Used to fence in sub-agents that must never touch the DB (e.g. the
+    # output-explorer, which only examines an in-memory string). Scoped via thread-local,
+    # so it covers synchronous work in the calling thread and is restored afterward —
+    # nestable, and independent of enable!/disable! and the registered guard set.
+    def with_database_blocked
+      BuiltinGuards.ensure_write_blocker_installed!
+      prev = Thread.current[:rails_console_ai_block_all_db]
+      Thread.current[:rails_console_ai_block_all_db] = true
+      begin
+        yield
+      ensure
+        Thread.current[:rails_console_ai_block_all_db] = prev
+      end
+    end
+
     def empty?
       @guards.empty?
     end
@@ -213,6 +229,21 @@ module RailsConsoleAi
 
       private
 
+      # Hard sandbox: when active, block ALL database access (reads and writes), not just
+      # mutations. Used to fence in sub-agents that must never touch the DB (e.g. the
+      # output-explorer, which only examines an in-memory string). Deliberately does NOT
+      # honor the bypass flag — it is a true wall, not a safe-mode toggle.
+      def rails_console_ai_check_db_blocked!(_sql)
+        return unless Thread.current[:rails_console_ai_block_all_db]
+
+        raise RailsConsoleAi::SafetyError.new(
+          "Database access is disabled here. The captured data is in the `output` " \
+          "variable — examine that instead of querying the database.",
+          guard: :database_access,
+          blocked_key: nil
+        )
+      end
+
       def rails_console_ai_check_write!(sql)
         return if Thread.current[:rails_console_ai_bypass_guards]
         return unless Thread.current[:rails_console_ai_block_writes] && sql.match?(WRITE_PATTERN)
@@ -231,26 +262,31 @@ module RailsConsoleAi
       public
 
       def execute(sql, *args, **kwargs)
+        rails_console_ai_check_db_blocked!(sql)
         rails_console_ai_check_write!(sql)
         super
       end
 
       def exec_query(sql, *args, **kwargs)
+        rails_console_ai_check_db_blocked!(sql)
         rails_console_ai_check_write!(sql)
         super
       end
 
       def exec_insert(sql, *args, **kwargs)
+        rails_console_ai_check_db_blocked!(sql)
         rails_console_ai_check_write!(sql)
         super
       end
 
       def exec_delete(sql, *args, **kwargs)
+        rails_console_ai_check_db_blocked!(sql)
         rails_console_ai_check_write!(sql)
         super
       end
 
       def exec_update(sql, *args, **kwargs)
+        rails_console_ai_check_db_blocked!(sql)
         rails_console_ai_check_write!(sql)
         super
       end

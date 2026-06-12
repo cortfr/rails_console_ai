@@ -189,7 +189,7 @@ module RailsConsoleAi
 
     def build_system_prompt
       parts = []
-      parts << base_instructions
+      parts << base_instructions unless @agent_config['skip_base_instructions']
       parts << guide_context
       parts << pinned_memory_context
       parts << @agent_config['body'] if @agent_config['body'] && !@agent_config['body'].strip.empty?

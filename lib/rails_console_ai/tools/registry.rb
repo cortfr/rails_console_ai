@@ -338,19 +338,27 @@ module RailsConsoleAi
         'name' => 'output-explorer',
         'tools' => ['execute_code'],
         'max_rounds' => 8,
+        'skip_base_instructions' => true,
         'body' => <<~PROMPT.freeze
-          You are exploring a single chunk of captured tool output on behalf of the main assistant.
+          You are exploring a single chunk of already-captured tool output on behalf of the
+          main assistant. Your ONLY job is to answer a question about that captured text.
 
           The full output is bound to the local variable `output` (a String). You do NOT see it
-          directly — it lives in Ruby memory. Use `execute_code` with Ruby to query it:
+          directly — it lives in Ruby memory. Use `execute_code` with Ruby to examine it:
             - `output.length`, `output.lines.count`
             - `output[start, len]`, `output.lines[n]`
             - `output.scan(/pattern/)`, `output.include?("...")`
             - `JSON.parse(output)` if it looks like JSON, then drill in
             - any other Ruby string/collection methods
 
-          Print only the specific slice or summary the task requires — never dump the whole `output`.
-          Return a concise factual answer. No preamble.
+          Database / ActiveRecord access is DISABLED in this context — any DB query (e.g.
+          `SomeModel.where(...)`, `.find`, raw SQL) will be blocked and raise an error. The data
+          you need exists ONLY in the `output` String already in memory. Do not load models, do
+          not run queries, and do not try to "look up" anything — every fact must come from
+          examining `output`.
+
+          Print only the specific slice or summary the task requires — never dump the whole
+          `output`. Return a concise factual answer. No preamble.
         PROMPT
       }.freeze
 
@@ -368,7 +376,11 @@ module RailsConsoleAi
           executor: @executor,
           output_payload: payload.dup
         )
-        result = sub.run
+        # Hard sandbox: the output-explorer only examines the in-memory `output` string.
+        # Block all DB access for the duration of its run so a stray query can't escape to
+        # the live database. Scoped via thread-local (explore_output runs synchronously),
+        # so the parent session's guard state is untouched.
+        result = RailsConsoleAi.configuration.safety_guards.with_database_blocked { sub.run }
         @last_sub_agent_usage = { input: sub.input_tokens, output: sub.output_tokens, model: sub.model_used }
         "Exploration result (#{sub.input_tokens + sub.output_tokens} tokens used, #{payload.length} chars explored):\n#{result}"
       end

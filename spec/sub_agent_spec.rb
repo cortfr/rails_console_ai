@@ -192,6 +192,34 @@ RSpec.describe RailsConsoleAi::SubAgent do
       sub.run
     end
   end
+
+  describe '#build_system_prompt' do
+    def prompt_for(agent_config)
+      described_class.new(
+        task: 'test',
+        agent_config: agent_config,
+        binding_context: binding_context,
+        parent_channel: parent_channel,
+        executor: executor
+      ).send(:build_system_prompt)
+    end
+
+    it 'includes base_instructions by default' do
+      expect(prompt_for('name' => 'Investigator', 'body' => 'do a thing'))
+        .to include('Prefer ActiveRecord query interface')
+    end
+
+    it 'omits base_instructions when skip_base_instructions is set' do
+      expect(prompt_for('name' => 'x', 'skip_base_instructions' => true, 'body' => 'do a thing'))
+        .not_to include('Prefer ActiveRecord query interface')
+    end
+
+    it 'the output-explorer config skips base_instructions and forbids DB access' do
+      prompt = prompt_for(RailsConsoleAi::Tools::Registry::EXPLORE_OUTPUT_AGENT_CONFIG)
+      expect(prompt).not_to include('Prefer ActiveRecord query interface')
+      expect(prompt).to include('Database / ActiveRecord access is DISABLED')
+    end
+  end
 end
 
 RSpec.describe RailsConsoleAi::Channel::SubAgent do

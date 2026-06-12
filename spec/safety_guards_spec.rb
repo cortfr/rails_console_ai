@@ -58,6 +58,40 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
     end
   end
 
+  describe '#with_database_blocked' do
+    before { allow(RailsConsoleAi::BuiltinGuards).to receive(:ensure_write_blocker_installed!) }
+    after  { Thread.current[:rails_console_ai_block_all_db] = nil }
+
+    it 'sets the block-all-db flag during the block' do
+      flag_during = nil
+      guards.with_database_blocked { flag_during = Thread.current[:rails_console_ai_block_all_db] }
+      expect(flag_during).to be true
+    end
+
+    it 'restores the flag after the block' do
+      guards.with_database_blocked { }
+      expect(Thread.current[:rails_console_ai_block_all_db]).to be_nil
+    end
+
+    it 'restores the flag even when the block raises' do
+      begin
+        guards.with_database_blocked { raise "boom" }
+      rescue
+      end
+      expect(Thread.current[:rails_console_ai_block_all_db]).to be_nil
+    end
+
+    it 'returns the block result' do
+      expect(guards.with_database_blocked { 42 }).to eq(42)
+    end
+
+    it 'restores the prior flag value when nested' do
+      Thread.current[:rails_console_ai_block_all_db] = true
+      guards.with_database_blocked { }
+      expect(Thread.current[:rails_console_ai_block_all_db]).to be true
+    end
+  end
+
   describe '#empty?' do
     it 'is true when no guards are registered' do
       expect(guards).to be_empty
@@ -716,6 +750,54 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
       it 'allows writes even when block_writes is true' do
         expect(adapter.execute("INSERT INTO users (name) VALUES ('test')"))
           .to eq("INSERT INTO users (name) VALUES ('test')")
+      end
+    end
+
+    context 'when block_all_db flag is set (hard sandbox)' do
+      before { Thread.current[:rails_console_ai_block_all_db] = true }
+      after  { Thread.current[:rails_console_ai_block_all_db] = false }
+
+      it 'blocks SELECT statements (reads, not just writes)' do
+        expect { adapter.execute("SELECT * FROM users") }
+          .to raise_error(RailsConsoleAi::SafetyError, /Database access is disabled/)
+      end
+
+      it 'blocks writes too' do
+        expect { adapter.execute("INSERT INTO users (name) VALUES ('test')") }
+          .to raise_error(RailsConsoleAi::SafetyError, /Database access is disabled/)
+      end
+
+      it 'blocks reads via exec_query' do
+        expect { adapter.exec_query("SELECT * FROM users") }
+          .to raise_error(RailsConsoleAi::SafetyError, /Database access is disabled/)
+      end
+
+      it 'tags the error with the database_access guard' do
+        error = nil
+        begin
+          adapter.execute("SELECT 1")
+        rescue RailsConsoleAi::SafetyError => e
+          error = e
+        end
+        expect(error.guard).to eq(:database_access)
+      end
+
+      it 'is NOT bypassable by the bypass_guards flag (true sandbox)' do
+        Thread.current[:rails_console_ai_bypass_guards] = true
+        begin
+          expect { adapter.execute("SELECT * FROM users") }
+            .to raise_error(RailsConsoleAi::SafetyError, /Database access is disabled/)
+        ensure
+          Thread.current[:rails_console_ai_bypass_guards] = nil
+        end
+      end
+    end
+
+    context 'when block_all_db flag is not set' do
+      before { Thread.current[:rails_console_ai_block_all_db] = false }
+
+      it 'allows reads' do
+        expect(adapter.execute("SELECT * FROM users")).to eq("SELECT * FROM users")
       end
     end
   end
