@@ -134,6 +134,10 @@ module RailsConsoleAi
       end
       result_text = compose_result(channel.captured_output, exec_result)
 
+      if aborted?(session.id)
+        puts ">> aborted (result discarded)"
+        return
+      end
       SessionLogger.update(session.id, status: 'ready', result: result_text)
 
       elapsed = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
@@ -142,14 +146,21 @@ module RailsConsoleAi
       puts ">> ready (#{elapsed}ms) #{preview}"
     rescue RunnerTimeoutError => e
       warn ">> TIMEOUT #{e.message}"
-      SessionLogger.update(session.id, status: 'failed', error_message: e.message)
+      SessionLogger.update(session.id, status: 'failed', error_message: e.message) unless aborted?(session.id)
     rescue => e
       warn ">> FAILED #{e.class}: #{e.message}"
       e.backtrace&.first(5)&.each { |line| warn "   #{line}" }
+      return if aborted?(session.id)
       SessionLogger.update(session.id,
         status: 'failed',
         error_message: "#{e.class}: #{e.message}\n#{Array(e.backtrace).first(10).join("\n")}"
       )
+    end
+
+    # An abort (RailsConsoleAi.abort_agent) flips the row to 'aborted' while we
+    # run; in that case the run's outcome must not overwrite the abort.
+    def aborted?(session_id)
+      Session.where(id: session_id).pluck(:status).first == 'aborted'
     end
 
     # When cap is nil or non-positive, run inline. Otherwise spawn a nested

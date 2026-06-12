@@ -84,7 +84,7 @@ module RailsConsoleAi
 
     # Returns the current status string for an enqueued agent run, or nil
     # if the session id is not found. Status is one of:
-    # 'queued' | 'running' | 'ready' | 'failed'.
+    # 'queued' | 'running' | 'ready' | 'failed' | 'aborted'.
     def check_agent(session_id)
       Session.where(id: session_id).pluck(:status).first
     end
@@ -96,6 +96,16 @@ module RailsConsoleAi
       row = Session.where(id: session_id).select(:status, :result, :error_message).first
       return { status: nil, result: nil, error: nil } unless row
       { status: row.status, result: row.result, error: row.error_message }
+    end
+
+    # Abort a queued or running agent run. Returns true if the run was
+    # aborted, false if it had already finished (or doesn't exist).
+    # Queued runs are never picked up; a run already executing keeps
+    # going but its result is discarded when it completes.
+    def abort_agent(session_id)
+      n = Session.where(id: session_id, status: %w[queued running])
+                 .update_all(status: 'aborted', error_message: 'Aborted')
+      n == 1
     end
 
     def status

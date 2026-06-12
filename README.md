@@ -513,11 +513,16 @@ id = RailsConsoleAi.run_agent("How many users signed up yesterday?", name: 'dail
 # => 4821 (Integer session id, returned immediately)
 
 RailsConsoleAi.check_agent(id)
-# => 'queued' | 'running' | 'ready' | 'failed' | nil
+# => 'queued' | 'running' | 'ready' | 'failed' | 'aborted' | nil
 
 RailsConsoleAi.get_agent_response(id)
 # => { status: 'ready', result: "1,432 users signed up yesterday.\n", error: nil }
+
+RailsConsoleAi.abort_agent(id)
+# => true (aborted) | false (already finished, or unknown id)
 ```
+
+`abort_agent` cancels a run: a queued run is never picked up, and a run already executing keeps going but its result is discarded when it completes -- the session stays `status='aborted'`.
 
 `run_agent` enqueues a row in the sessions table with `mode='agent_api'` and `status='queued'`. A separate long-running rake task picks them up and runs each in its own thread using the same engine that powers `ai "..."` in the console.
 
