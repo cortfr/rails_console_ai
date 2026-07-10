@@ -1,35 +1,51 @@
-require 'set'
-
 module RailsConsoleAi
   class Configuration
     PROVIDERS = %i[anthropic openai local bedrock].freeze
 
-    # cache_read: 0.1x input, cache_write: 1.25x input for Anthropic models
-    PRICING = {
-      'claude-sonnet-4-6' => { input: 3.0 / 1_000_000, output: 15.0 / 1_000_000, cache_read: 0.30 / 1_000_000, cache_write: 3.75 / 1_000_000 },
-      'claude-opus-4-6'   => { input: 15.0 / 1_000_000, output: 75.0 / 1_000_000, cache_read: 1.50 / 1_000_000, cache_write: 18.75 / 1_000_000 },
-      'claude-haiku-4-5-20251001' => { input: 0.80 / 1_000_000, output: 4.0 / 1_000_000, cache_read: 0.08 / 1_000_000, cache_write: 1.0 / 1_000_000 },
-      # Bedrock model IDs (same pricing as direct API)
-      'us.anthropic.claude-sonnet-4-6' => { input: 3.0 / 1_000_000, output: 15.0 / 1_000_000, cache_read: 0.30 / 1_000_000, cache_write: 3.75 / 1_000_000 },
-      'us.anthropic.claude-opus-4-6-v1' => { input: 15.0 / 1_000_000, output: 75.0 / 1_000_000, cache_read: 1.50 / 1_000_000, cache_write: 18.75 / 1_000_000 },
+    # Per-family model attributes, matched by substring so one entry covers every
+    # ID variant of a family: bare Anthropic IDs (claude-sonnet-5), dated
+    # snapshots (claude-haiku-4-5-20251001), and Bedrock inference profiles
+    # (us.anthropic.claude-sonnet-5, global.anthropic.claude-opus-4-6-v1).
+    #
+    # input/output are $ per MTok (converted to per-token in .pricing_for).
+    # Cache pricing is derived: read = 0.1x input, write = 1.25x input.
+    # temperature: false marks families that reject the `temperature` parameter
+    # (removed on opus-4-7+, sonnet-5, and fable-5).
+    MODEL_FAMILIES = {
+      'claude-fable-5'    => { input: 10.0, output: 50.0, max_tokens: 16_000, temperature: false },
+      'claude-opus-4-8'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, temperature: false },
+      'claude-opus-4-7'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, temperature: false },
+      'claude-opus-4-6'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, temperature: true },
+      'claude-sonnet-5'   => { input: 3.0,  output: 15.0, max_tokens: 16_000, temperature: false },
+      'claude-sonnet-4-6' => { input: 3.0,  output: 15.0, max_tokens: 16_000, temperature: true },
+      'claude-haiku-4-5'  => { input: 1.0,  output: 5.0,  max_tokens: 16_000, temperature: true },
     }.freeze
 
-    DEFAULT_MAX_TOKENS = {
-      'claude-sonnet-4-6' => 16_000,
-      'claude-haiku-4-5-20251001' => 16_000,
-      'claude-opus-4-6'   => 4_096,
-    }.freeze
+    # Family keys sorted longest-first so a more specific family always wins
+    # if keys ever overlap (e.g. a future 'claude-sonnet-5-5' entry would match
+    # before 'claude-sonnet-5').
+    MODEL_FAMILY_KEYS = MODEL_FAMILIES.keys.sort_by { |k| -k.length }.freeze
 
-    # Models that reject the `temperature` parameter. Configuration#resolved_temperature
-    # returns nil for these so providers can omit the field from the request.
-    MODELS_WITHOUT_TEMPERATURE = Set.new(%w[
-      claude-opus-4-7
-      anthropic.claude-opus-4-7
-      us.anthropic.claude-opus-4-7
-      eu.anthropic.claude-opus-4-7
-      jp.anthropic.claude-opus-4-7
-      global.anthropic.claude-opus-4-7
-    ]).freeze
+    # Returns the family attributes for a model ID, or nil for unknown models.
+    def self.model_family(model_id)
+      return nil unless model_id
+      key = MODEL_FAMILY_KEYS.find { |k| model_id.include?(k) }
+      key && MODEL_FAMILIES[key]
+    end
+
+    # Per-token pricing for a model ID, matched by family. Returns
+    # { input:, output:, cache_read:, cache_write: } or nil for unknown models.
+    def self.pricing_for(model_id)
+      family = model_family(model_id)
+      return nil unless family
+      input = family[:input] / 1_000_000
+      {
+        input: input,
+        output: family[:output] / 1_000_000,
+        cache_read: input * 0.1,
+        cache_write: input * 1.25,
+      }
+    end
 
     attr_accessor :provider, :api_key, :model, :thinking_model, :max_tokens,
                   :auto_execute, :temperature,
@@ -176,26 +192,28 @@ module RailsConsoleAi
 
       case @provider
       when :anthropic
-        'claude-sonnet-4-6'
+        'claude-sonnet-5'
       when :openai
         'gpt-5.3-codex'
       when :local
         @local_model
       when :bedrock
-        'us.anthropic.claude-sonnet-4-6'
+        'us.anthropic.claude-sonnet-5'
       end
     end
 
     def resolved_max_tokens
       return @max_tokens if @max_tokens
 
-      DEFAULT_MAX_TOKENS.fetch(resolved_model, 4096)
+      family = self.class.model_family(resolved_model)
+      family ? family[:max_tokens] : 4096
     end
 
-    # Returns nil for models that reject the `temperature` parameter (e.g. opus-4-7).
-    # Providers should use this in place of @temperature.
+    # Returns nil for model families that reject the `temperature` parameter
+    # (opus-4-7+, sonnet-5, fable-5) so providers omit the field from the request.
     def resolved_temperature
-      return nil if MODELS_WITHOUT_TEMPERATURE.include?(resolved_model)
+      family = self.class.model_family(resolved_model)
+      return nil if family && family[:temperature] == false
       @temperature
     end
 
@@ -204,13 +222,13 @@ module RailsConsoleAi
 
       case @provider
       when :anthropic
-        'claude-opus-4-6'
+        'claude-opus-4-8'
       when :openai
         'gpt-5.3-codex'
       when :local
         @local_model
       when :bedrock
-        'us.anthropic.claude-opus-4-6-v1'
+        'us.anthropic.claude-opus-4-8'
       end
     end
 

@@ -291,7 +291,7 @@ RailsConsoleAi.configure do |config|
 end
 ```
 
-Default model: `claude-sonnet-4-6`. Thinking model: `claude-opus-4-6`. Prompt caching is enabled automatically.
+Default model: `claude-sonnet-5`. Thinking model: `claude-opus-4-8`. Prompt caching is enabled automatically.
 
 ### OpenAI
 
@@ -317,8 +317,8 @@ gem 'aws-sdk-bedrockruntime'
 RailsConsoleAi.configure do |config|
   config.provider = :bedrock
   config.bedrock_region = 'us-east-1'
-  # config.model = 'us.anthropic.claude-sonnet-4-6'           # default
-  # config.thinking_model = 'us.anthropic.claude-opus-4-6-v1' # default
+  # config.model = 'us.anthropic.claude-sonnet-5'        # default
+  # config.thinking_model = 'us.anthropic.claude-opus-4-8' # default
 end
 ```
 
@@ -365,25 +365,25 @@ Before adopting a new Claude model, smoke-test it against the Anthropic or Bedro
 
 ```bash
 # Anthropic — provider inferred from the `claude-` prefix
-ANTHROPIC_API_KEY=sk-ant-... bin/smoke_model.rb --model claude-opus-4-7
+ANTHROPIC_API_KEY=sk-ant-... bin/smoke_model.rb --model claude-opus-4-8
 
 # Bedrock — provider inferred from the regional `us.anthropic.` prefix.
 # Requires the aws-sdk-bedrockruntime gem and AWS credentials in the environment.
-bin/smoke_model.rb --model us.anthropic.claude-opus-4-7
+bin/smoke_model.rb --model us.anthropic.claude-opus-4-8
 
 # Bedrock in another region
-bin/smoke_model.rb --model eu.anthropic.claude-opus-4-7 --region eu-west-1
+bin/smoke_model.rb --model eu.anthropic.claude-opus-4-8 --region eu-west-1
 
 # Subset of checks, e.g. when iterating on cache behavior
-bin/smoke_model.rb --model claude-sonnet-4-6 --checks cache
+bin/smoke_model.rb --model claude-sonnet-5 --checks cache
 
 # Force a provider when the model ID is ambiguous
-bin/smoke_model.rb --provider anthropic --model claude-opus-4-7
+bin/smoke_model.rb --provider anthropic --model claude-opus-4-8
 ```
 
 `DEBUG=1` enables the providers' raw request/response logging.
 
-If the model rejects a parameter the gem sends by default (e.g. opus-4-7 deprecated `temperature`), add the model ID to `Configuration::MODELS_WITHOUT_TEMPERATURE` in `lib/rails_console_ai/configuration.rb` so the providers omit the field.
+Pricing, default max tokens, and parameter support (e.g. which families reject `temperature`) are keyed by model family in `Configuration::MODEL_FAMILIES` (`lib/rails_console_ai/configuration.rb`). Family matching is by substring, so one entry covers bare IDs, dated snapshots, and Bedrock inference profiles (`us.` / `global.` prefixes). When adopting a new model family, add an entry there and smoke-test it.
 
 ## Configuration
 

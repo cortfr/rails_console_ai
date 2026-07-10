@@ -390,7 +390,7 @@ module RailsConsoleAi
       $stdout.puts "\e[36m  Cost estimate:\e[0m"
 
       @token_usage.each do |model, usage|
-        pricing = Configuration::PRICING[model]
+        pricing = Configuration.pricing_for(model)
         pricing ||= { input: 0.0, output: 0.0 } if RailsConsoleAi.configuration.provider == :local
         input_str = "in: #{format_tokens(usage[:input])}"
         output_str = "out: #{format_tokens(usage[:output])}"
@@ -1386,7 +1386,7 @@ module RailsConsoleAi
       cache_w = result.cache_write_input_tokens || 0
       parts << "cache r: #{format_tokens(cache_r)} w: #{format_tokens(cache_w)}" if cache_r > 0 || cache_w > 0
       model = effective_model
-      pricing = Configuration::PRICING[model]
+      pricing = Configuration.pricing_for(model)
       if pricing
         cost = ((result.input_tokens || 0) * pricing[:input]) + ((result.output_tokens || 0) * pricing[:output])
         if (cache_r > 0 || cache_w > 0) && pricing[:cache_read]
@@ -1419,7 +1419,7 @@ module RailsConsoleAi
       input_t = result.input_tokens || 0
       output_t = result.output_tokens || 0
       model = effective_model
-      pricing = Configuration::PRICING[model]
+      pricing = Configuration.pricing_for(model)
       pricing ||= { input: 0.0, output: 0.0 } if RailsConsoleAi.configuration.provider == :local
 
       cache_r = result.cache_read_input_tokens || 0

@@ -78,7 +78,12 @@ RSpec.describe RailsConsoleAi::Configuration do
 
     it 'returns default model for anthropic' do
       config.provider = :anthropic
-      expect(config.resolved_model).to eq('claude-sonnet-4-6')
+      expect(config.resolved_model).to eq('claude-sonnet-5')
+    end
+
+    it 'returns default model for bedrock' do
+      config.provider = :bedrock
+      expect(config.resolved_model).to eq('us.anthropic.claude-sonnet-5')
     end
 
     it 'returns default model for openai' do
@@ -89,6 +94,102 @@ RSpec.describe RailsConsoleAi::Configuration do
     it 'returns local_model for local provider' do
       config.provider = :local
       expect(config.resolved_model).to eq('qwen2.5:7b')
+    end
+  end
+
+  describe '#resolved_thinking_model' do
+    it 'returns default thinking model for anthropic' do
+      config.provider = :anthropic
+      expect(config.resolved_thinking_model).to eq('claude-opus-4-8')
+    end
+
+    it 'returns default thinking model for bedrock' do
+      config.provider = :bedrock
+      expect(config.resolved_thinking_model).to eq('us.anthropic.claude-opus-4-8')
+    end
+  end
+
+  describe '.model_family' do
+    it 'matches bare Anthropic model IDs' do
+      expect(described_class.model_family('claude-sonnet-5')[:input]).to eq(3.0)
+    end
+
+    it 'matches Bedrock inference profile IDs' do
+      expect(described_class.model_family('us.anthropic.claude-opus-4-8')[:input]).to eq(5.0)
+      expect(described_class.model_family('global.anthropic.claude-sonnet-5')[:input]).to eq(3.0)
+    end
+
+    it 'matches dated snapshots and version suffixes' do
+      expect(described_class.model_family('claude-haiku-4-5-20251001')[:input]).to eq(1.0)
+      expect(described_class.model_family('us.anthropic.claude-opus-4-6-v1')[:input]).to eq(5.0)
+    end
+
+    it 'returns nil for unknown models' do
+      expect(described_class.model_family('gpt-5.3-codex')).to be_nil
+      expect(described_class.model_family(nil)).to be_nil
+    end
+  end
+
+  describe '.pricing_for' do
+    it 'returns per-token pricing with derived cache rates' do
+      pricing = described_class.pricing_for('us.anthropic.claude-sonnet-5')
+      expect(pricing[:input]).to eq(3.0 / 1_000_000)
+      expect(pricing[:output]).to eq(15.0 / 1_000_000)
+      expect(pricing[:cache_read]).to be_within(1e-12).of(0.30 / 1_000_000)
+      expect(pricing[:cache_write]).to be_within(1e-12).of(3.75 / 1_000_000)
+    end
+
+    it 'prices opus 4.x at $5/$25 per MTok' do
+      pricing = described_class.pricing_for('claude-opus-4-6')
+      expect(pricing[:input]).to eq(5.0 / 1_000_000)
+      expect(pricing[:output]).to eq(25.0 / 1_000_000)
+    end
+
+    it 'returns nil for unknown models' do
+      expect(described_class.pricing_for('qwen2.5:7b')).to be_nil
+    end
+  end
+
+  describe '#resolved_max_tokens' do
+    it 'returns explicit max_tokens when set' do
+      config.max_tokens = 1234
+      expect(config.resolved_max_tokens).to eq(1234)
+    end
+
+    it 'resolves family default for Bedrock profile IDs' do
+      config.provider = :bedrock
+      config.model = 'us.anthropic.claude-sonnet-5'
+      expect(config.resolved_max_tokens).to eq(16_000)
+    end
+
+    it 'falls back to 4096 for unknown models' do
+      config.model = 'some-unknown-model'
+      expect(config.resolved_max_tokens).to eq(4096)
+    end
+  end
+
+  describe '#resolved_temperature' do
+    it 'returns nil for families that reject temperature' do
+      %w[
+        claude-sonnet-5
+        us.anthropic.claude-sonnet-5
+        claude-opus-4-7
+        us.anthropic.claude-opus-4-8
+        claude-fable-5
+      ].each do |model|
+        config.model = model
+        expect(config.resolved_temperature).to be_nil, "expected nil temperature for #{model}"
+      end
+    end
+
+    it 'returns the configured temperature for families that accept it' do
+      config.model = 'us.anthropic.claude-sonnet-4-6'
+      expect(config.resolved_temperature).to eq(0.2)
+    end
+
+    it 'returns the configured temperature for unknown models' do
+      config.model = 'qwen2.5:7b'
+      expect(config.resolved_temperature).to eq(0.2)
     end
   end
 

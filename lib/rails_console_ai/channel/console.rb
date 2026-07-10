@@ -368,7 +368,7 @@ module RailsConsoleAi
         config = RailsConsoleAi.configuration
         model = @engine.effective_model
         thinking = config.resolved_thinking_model
-        pricing = Configuration::PRICING[model]
+        pricing = Configuration.pricing_for(model)
 
         @real_stdout.puts "\e[36m  Model info:\e[0m"
         @real_stdout.puts "\e[2m    Provider:        #{config.provider}\e[0m"

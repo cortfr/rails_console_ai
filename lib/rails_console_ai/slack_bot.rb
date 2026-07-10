@@ -706,7 +706,7 @@ module RailsConsoleAi
       config = RailsConsoleAi.configuration
       model = engine ? engine.effective_model : config.resolved_model
       thinking = config.resolved_thinking_model
-      pricing = Configuration::PRICING[model]
+      pricing = Configuration.pricing_for(model)
 
       lines = ["*Model info:*"]
       lines << "  Provider: `#{config.provider}`"
@@ -739,7 +739,7 @@ module RailsConsoleAi
       total_cost = 0.0
 
       token_usage.each do |model, usage|
-        pricing = Configuration::PRICING[model]
+        pricing = Configuration.pricing_for(model)
         pricing ||= { input: 0.0, output: 0.0 } if RailsConsoleAi.configuration.provider == :local
         input_str = "in: #{usage[:input]}"
         output_str = "out: #{usage[:output]}"

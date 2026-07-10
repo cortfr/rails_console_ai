@@ -5,11 +5,11 @@ RailsConsoleAi.configure do |config|
   # API key (or set ANTHROPIC_API_KEY / OPENAI_API_KEY env var)
   # config.api_key = 'sk-...'
 
-  # Model override (defaults: claude-opus-4-6 for Anthropic, gpt-5.3-codex for OpenAI)
-  # config.model = 'claude-opus-4-6'
+  # Model override (defaults: claude-sonnet-5 for Anthropic, gpt-5.3-codex for OpenAI)
+  # config.model = 'claude-opus-4-8'
 
-  # Max tokens for LLM response
-  config.max_tokens = 4096
+  # Max tokens for LLM response (default resolves per model family; 16000 for Claude models)
+  # config.max_tokens = 4096
 
   # Temperature (0.0 - 1.0)
   config.temperature = 0.2
@@ -35,7 +35,7 @@ RailsConsoleAi.configure do |config|
   # AWS Bedrock provider (uses AWS credential chain — no API key needed):
   # config.provider = :bedrock
   # config.bedrock_region = 'us-east-1'
-  # config.model = 'us.anthropic.claude-sonnet-4-6'
+  # config.model = 'us.anthropic.claude-sonnet-5'
 
   # Debug mode: prints full API requests/responses and tool calls to stderr
   # config.debug = true

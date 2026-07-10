@@ -1,3 +1,5 @@
+require 'set'
+
 require 'rails_console_ai/version'
 require 'rails_console_ai/configuration'
 
