@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.32.0]
+
+- Switch default models to Claude Sonnet 5 and Opus 4.8, and rework pricing to match models by family so dated snapshots and Bedrock IDs are covered
+- Add an abort mechanism for background sub-agents
+- Require human approval before AI-proposed memory changes take effect
+- Keep `explore_output` focused on exploring a previous command's output instead of spinning off into database reads
+- Fix loading `ApplicationController` under the classic autoloader
+
 ## [0.31.0]
 
 - Simplify DB-backed skills, sub-agents, and memories to a single content field per record, replacing the separate frontmatter/body columns and streamlining the models, controllers, and forms
