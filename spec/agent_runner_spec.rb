@@ -54,12 +54,16 @@ RSpec.describe RailsConsoleAi::AgentRunner do
     let(:session) { double('Session', id: 11, query: 'how many users?', user_name: 'cli') }
     let(:captured_channel) { instance_double(RailsConsoleAi::Channel::Api, captured_output: "Let me query the users table.\n") }
     let(:engine) { instance_double(RailsConsoleAi::ConversationEngine) }
+    let(:abort_scope) { double('abort_scope') }
 
     before do
       require 'rails_console_ai/channel/api'
       require 'rails_console_ai/conversation_engine'
       allow(RailsConsoleAi::Channel::Api).to receive(:new).and_return(captured_channel)
       allow(RailsConsoleAi::ConversationEngine).to receive(:new).and_return(engine)
+      # aborted? polls the row's status mid-run; report "not aborted" by default.
+      allow(mock_session_class).to receive(:where).with(id: 11).and_return(abort_scope)
+      allow(abort_scope).to receive(:pluck).with(:status).and_return(['running'])
     end
 
     it 'composes the result from LLM prose + the code return value' do
