@@ -70,6 +70,7 @@ module RailsConsoleAi
                   :auto_execute, :temperature,
                   :timeout, :debug, :max_tool_rounds,
                   :error_hints,
+                  :token_nudge_threshold, :token_stop_threshold,
                   :storage_adapter, :memories_enabled,
                   :session_logging, :connection_class,
                   :admin_username, :admin_password,
@@ -96,6 +97,8 @@ module RailsConsoleAi
       @debug        = false
       @max_tool_rounds = 200
       @error_hints = DEFAULT_ERROR_HINTS.dup
+      @token_nudge_threshold = 500_000    # input tokens in one tool loop → nudge model to wrap up (nil disables)
+      @token_stop_threshold  = 1_000_000  # input tokens in one tool loop → force a final answer (nil disables)
       @storage_adapter  = nil
       @memories_enabled = true
       @session_logging  = true

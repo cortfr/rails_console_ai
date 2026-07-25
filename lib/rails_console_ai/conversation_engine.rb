@@ -7,6 +7,8 @@ module RailsConsoleAi
     LARGE_OUTPUT_PREVIEW_CHARS = 16_000  # chars — how much of the output the LLM sees upfront
     LOOP_WARN_THRESHOLD = 3              # same tool+args repeated → inject warning
     LOOP_BREAK_THRESHOLD = 5             # same tool+args repeated → break loop
+    REPEAT_ERROR_WARN_THRESHOLD = 3      # same error signature (any args) → inject warning
+    REPEAT_ERROR_BREAK_THRESHOLD = 5     # same error signature (any args) → force wrap-up
 
     def initialize(binding_context:, channel:, slack_thread_ts: nil, slack_channel_name: nil)
       @binding_context = binding_context
@@ -798,7 +800,11 @@ module RailsConsoleAi
       last_tool_names = []
 
       exhausted = false
+      wrap_up_reason = nil
       tool_call_counts = Hash.new(0)
+      error_sig_counts = Hash.new(0)
+      warned_error_sigs = Set.new
+      token_nudge_sent = false
 
       max_rounds.times do |round|
         if @channel.cancelled?
@@ -920,6 +926,12 @@ module RailsConsoleAi
             $stderr.puts "\e[35m[debug] tool result (#{tool_result.to_s.length} chars)\e[0m"
           end
 
+          # Track repeated error signatures across DIFFERENT tool calls — the
+          # identical-call loop detection below misses "same dead end, new code".
+          if (sig = error_signature(tool_result))
+            error_sig_counts[sig] += 1
+          end
+
           tool_msg = provider.format_tool_result(tc[:id], tool_result)
           full_text = tool_result.to_s
           output_id = @executor.store_output(full_text)
@@ -944,23 +956,68 @@ module RailsConsoleAi
           if tool_call_counts[key] >= LOOP_BREAK_THRESHOLD
             @channel.display_status("  Loop detected: #{tc[:name]} called #{tool_call_counts[key]} times with same args — stopping.")
             exhausted = true
+            wrap_up_reason ||= :tool_loop
           elsif tool_call_counts[key] >= LOOP_WARN_THRESHOLD
             @channel.display_status("  Warning: #{tc[:name]} called #{tool_call_counts[key]} times with same args — consider a different approach.")
             messages << { role: :user, content: "You are repeating the same tool call (#{tc[:name]}) with the same arguments. This is not making progress. Try a different approach or provide your answer now." }
           end
         end
+
+        # Circuit breaker: the same error signature recurring across different
+        # tool calls means no new information is being gained (e.g. every
+        # decryption attempt failing with "bad decrypt" regardless of the code).
+        error_sig_counts.each do |sig, count|
+          if count >= REPEAT_ERROR_BREAK_THRESHOLD
+            @channel.display_status("  Circuit breaker: same error hit #{count} times (#{sig}) — stopping.")
+            exhausted = true
+            wrap_up_reason ||= :repeated_errors
+          elsif count >= REPEAT_ERROR_WARN_THRESHOLD && !warned_error_sigs.include?(sig)
+            warned_error_sigs << sig
+            @channel.display_status("  Warning: same error hit #{count} times — nudging model to change strategy.")
+            messages << { role: :user, content: "You have now hit the same error #{count} times (#{sig}). Trying variations of the same approach is not producing new information. If this error cannot be resolved from this session, stop investigating it: summarize what you have established, state what you could not determine and why, and give the user your best answer." }
+          end
+        end
+
+        # Circuit breaker: token budget for a single tool loop.
+        config = RailsConsoleAi.configuration
+        if config.token_stop_threshold && total_input >= config.token_stop_threshold
+          @channel.display_status("  Token budget exceeded (#{format_tokens(total_input)} input tokens this request) — forcing wrap-up.")
+          exhausted = true
+          wrap_up_reason ||= :token_budget
+        elsif config.token_nudge_threshold && total_input >= config.token_nudge_threshold && !token_nudge_sent
+          token_nudge_sent = true
+          @channel.display_status("  High token usage (#{format_tokens(total_input)} input tokens this request) — nudging model to wrap up.")
+          messages << { role: :user, content: "This investigation has consumed #{format_tokens(total_input)} input tokens without reaching a conclusion. Wrap up now: stop opening new lines of investigation, summarize what you have established, state what you could not determine and why, and give the user your best answer. Only make another tool call if you are confident a single call will resolve the question." }
+        end
+
         break if exhausted
 
         # If the user declined execution, don't call the LLM again —
         # just return to the prompt so they can correct their request.
         break if @executor.last_cancelled?
 
-        exhausted = true if round == max_rounds - 1
+        if round == max_rounds - 1
+          exhausted = true
+          wrap_up_reason ||= :round_cap
+        end
       end
 
       if exhausted
-        $stdout.puts "\e[33m  Hit tool round limit (#{max_rounds}). Forcing final answer. Increase with: RailsConsoleAi.configure { |c| c.max_tool_rounds = 200 }\e[0m"
-        messages << { role: :user, content: "You've used all available tool rounds. Please provide your best answer now based on what you've learned so far." }
+        final_nudge =
+          case wrap_up_reason
+          when :repeated_errors
+            "You have hit the same error repeatedly without gaining new information. Do not attempt any further tool calls. Give the user a final answer now: (1) what you established, (2) what you could not determine and the blocking error, and (3) what a human should do next."
+          when :token_budget
+            "This session has exceeded its token budget. Do not attempt any further tool calls. Give the user a final answer now: (1) what you established, (2) what you could not determine and why, and (3) what a human should do next."
+          when :tool_loop
+            "You kept repeating the same tool call with the same arguments. Do not attempt any further tool calls. Provide your best answer now based on what you've learned so far."
+          else
+            "You've used all available tool rounds. Please provide your best answer now based on what you've learned so far."
+          end
+        if wrap_up_reason.nil? || wrap_up_reason == :round_cap
+          $stdout.puts "\e[33m  Hit tool round limit (#{max_rounds}). Forcing final answer. Increase with: RailsConsoleAi.configure { |c| c.max_tool_rounds = 200 }\e[0m"
+        end
+        messages << { role: :user, content: final_nudge }
         result = provider.chat(messages, system_prompt: active_system_prompt)
         total_input += result.input_tokens || 0
         total_output += result.output_tokens || 0
@@ -1167,6 +1224,15 @@ module RailsConsoleAi
 
     def truncate(str, max)
       str.length > max ? str[0..max] + '...' : str
+    end
+
+    # Extract a normalized error signature from a tool result so we can detect
+    # "same failure, different code" loops. Digits are collapsed so record IDs,
+    # counts, and offsets don't make identical failures look distinct.
+    def error_signature(tool_result)
+      line = tool_result.to_s[/^ERROR: [^\n]+/]
+      return nil unless line
+      line.gsub(/\d+/, 'N')[0, 160]
     end
 
     # Wraps mid-task user messages with explicit framing so the model treats them

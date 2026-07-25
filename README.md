@@ -396,8 +396,47 @@ RailsConsoleAi.configure do |config|
   config.timeout = 30                 # HTTP timeout in seconds
   config.max_tool_rounds = 200        # safety cap on tool-use loops
   config.code_search_paths = %w[app]  # directories for list_files / search_code
+
+  # Runaway-loop circuit breakers (see "Runaway sessions" below)
+  config.token_nudge_threshold = 500_000    # input tokens in one tool loop → nudge model to wrap up (nil disables)
+  config.token_stop_threshold  = 1_000_000  # input tokens in one tool loop → force a final answer (nil disables)
 end
 ```
+
+### Runaway sessions & known-issue hints
+
+Two mechanisms stop the LLM from burning tokens on a dead end:
+
+**Known-issue hints** — when executed code fails (or prints a rescued error) matching a
+known environment-level problem, the tool result includes explicit guidance telling the
+model not to retry. The built-in hint recognizes decryption failures
+(`OpenSSL::Cipher::CipherError` / "bad decrypt" / `ActiveRecord::Encryption` errors),
+which indicate a missing or placeholder encryption key in the console process — an
+environment issue no amount of retrying can fix. Repeat occurrences escalate the message.
+Apps can add their own:
+
+```ruby
+RailsConsoleAi.configure do |config|
+  config.error_hints << {
+    name: :vpn_required,
+    pattern: /Errno::ECONNREFUSED.*10\.8\./,
+    hint: "This host is only reachable over the VPN, which this console does not have. " \
+          "Do not retry; report the limitation to the user."
+  }
+end
+```
+
+**Circuit breakers** — inside a single tool loop, the engine tracks:
+
+- *Identical tool calls* (same tool + same args): warns at 3, breaks at 5.
+- *Repeated error signatures* (same normalized error from **different** code): warns at 3,
+  breaks at 5. This catches "new code, same dead end" loops that identical-call detection
+  misses. Digits are normalized so varying record IDs don't disguise the same failure.
+- *Token budget*: at `token_nudge_threshold` cumulative input tokens the model is told to
+  wrap up; at `token_stop_threshold` the loop is stopped and a final answer is forced.
+
+When any breaker trips, the model is asked to summarize what it established, what it
+could not determine and why, and what a human should do next — instead of iterating.
 
 ### Code Search Paths
 
