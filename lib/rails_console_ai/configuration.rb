@@ -47,9 +47,29 @@ module RailsConsoleAi
       }
     end
 
+    # Known environment-level failures the executor recognizes and explains to the
+    # LLM on the FIRST occurrence, so it doesn't burn rounds rediscovering them
+    # through trial and error. Each entry: { name:, pattern:, hint: }.
+    # The pattern is matched against the execution error AND the captured output
+    # (to catch errors rescued and printed by the generated code itself).
+    DEFAULT_ERROR_HINTS = [
+      {
+        name: :decryption_failure,
+        pattern: /OpenSSL::Cipher::CipherError|bad decrypt|ActiveRecord::Encryption::Errors/i,
+        hint: "Decryption failed — this console process's encryption key (e.g. ENV['ENCRYPTION_KEY']) " \
+              "appears to be missing, invalid, or a placeholder for the data you are reading. This is an " \
+              "environment configuration issue, not a data issue, and it affects EVERY encrypted field in " \
+              "this session. Retrying with different code (reloading records, toggling encryption flags, " \
+              "decrypting other fields or records) will fail the same way. Do NOT retry. Report this " \
+              "limitation to the user, tell them the encryption key needs to be configured for this " \
+              "environment, and answer using only what you can determine without decrypting."
+      }
+    ].freeze
+
     attr_accessor :provider, :api_key, :model, :thinking_model, :max_tokens,
                   :auto_execute, :temperature,
                   :timeout, :debug, :max_tool_rounds,
+                  :error_hints,
                   :storage_adapter, :memories_enabled,
                   :session_logging, :connection_class,
                   :admin_username, :admin_password,
@@ -75,6 +95,7 @@ module RailsConsoleAi
       @timeout      = 30
       @debug        = false
       @max_tool_rounds = 200
+      @error_hints = DEFAULT_ERROR_HINTS.dup
       @storage_adapter  = nil
       @memories_enabled = true
       @session_logging  = true

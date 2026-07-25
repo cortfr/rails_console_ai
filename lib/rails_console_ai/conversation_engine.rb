@@ -46,6 +46,7 @@ module RailsConsoleAi
         if executed && @executor.last_error && !@executor.last_safety_error
           error_msg = "Code execution failed with error: #{@executor.last_error}"
           error_msg = error_msg[0..1000] + '...' if error_msg.length > 1000
+          error_msg += "\n\n#{@executor.last_error_hint}" if @executor.last_error_hint
           conversation << { role: :assistant, content: @_last_result_text }
           conversation << { role: :user, content: error_msg }
 
@@ -347,6 +348,7 @@ module RailsConsoleAi
       elsif @executor.last_error
         error_msg = "Code execution failed with error: #{@executor.last_error}"
         error_msg = error_msg[0..1000] + '...' if error_msg.length > 1000
+        error_msg += "\n\n#{@executor.last_error_hint}" if @executor.last_error_hint
         @history << { role: :user, content: error_msg }
         :error
       else

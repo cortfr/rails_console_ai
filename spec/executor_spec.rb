@@ -323,4 +323,60 @@ RSpec.describe RailsConsoleAi::Executor do
       expect(result).to be_nil
     end
   end
+
+  describe '#last_error_hint (known-issue detection)' do
+    it 'is nil for ordinary errors' do
+      executor.execute('raise "boom"')
+      expect(executor.last_error_hint).to be_nil
+    end
+
+    it 'is nil on success with clean output' do
+      executor.execute('1 + 1')
+      expect(executor.last_error_hint).to be_nil
+    end
+
+    it 'detects a decryption failure on the first occurrence' do
+      executor.execute('require "openssl"; raise OpenSSL::Cipher::CipherError, "bad decrypt"')
+      expect(executor.last_error).to include('CipherError')
+      expect(executor.last_error_hint).to include('KNOWN ISSUE DETECTED (decryption_failure)')
+      expect(executor.last_error_hint).to include('environment configuration issue')
+      expect(executor.last_error_hint).to include('Do NOT retry')
+    end
+
+    it 'escalates on repeated occurrences of the same issue' do
+      executor.execute('require "openssl"; raise OpenSSL::Cipher::CipherError, "bad decrypt"')
+      executor.execute('require "openssl"; raise OpenSSL::Cipher::CipherError, "bad decrypt"')
+      expect(executor.last_error_hint).to include('failure #2')
+      expect(executor.last_error_hint).to include('Stop retrying')
+    end
+
+    it 'detects a rescued decryption failure printed to output' do
+      code = <<~RUBY
+        begin
+          require "openssl"
+          raise OpenSSL::Cipher::CipherError, "bad decrypt"
+        rescue => e
+          puts "decrypt attempt failed: \#{e.message}"
+        end
+      RUBY
+      executor.execute(code, display: false)
+      expect(executor.last_error).to be_nil
+      expect(executor.last_error_hint).to include('decryption_failure')
+    end
+
+    it 'resets between executions' do
+      executor.execute('require "openssl"; raise OpenSSL::Cipher::CipherError, "bad decrypt"')
+      executor.execute('1 + 1')
+      expect(executor.last_error_hint).to be_nil
+    end
+
+    it 'honors custom hints from configuration' do
+      RailsConsoleAi.configuration.error_hints = [
+        { name: :custom, pattern: /flux capacitor/, hint: 'The flux capacitor is offline.' }
+      ]
+      executor.execute('raise "flux capacitor not charged"')
+      expect(executor.last_error_hint).to include('custom')
+      expect(executor.last_error_hint).to include('The flux capacitor is offline.')
+    end
+  end
 end

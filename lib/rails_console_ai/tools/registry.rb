@@ -698,13 +698,16 @@ module RailsConsoleAi
         end
 
         if @executor.last_error
-          return "ERROR: #{@executor.last_error}"
+          result = "ERROR: #{@executor.last_error}"
+          result += "\n\n#{@executor.last_error_hint}" if @executor.last_error_hint
+          return result
         end
 
         output = @executor.last_output
         parts = []
         parts << "Output:\n#{output.strip}" if output && !output.strip.empty?
         parts << "Return value: #{exec_result.inspect}"
+        parts << @executor.last_error_hint if @executor.last_error_hint
         parts.join("\n\n")
       end
 
@@ -808,6 +811,7 @@ module RailsConsoleAi
           step_report = "Step #{i + 1} (#{step['description']}):\n"
           if error
             step_report += "ERROR: #{error}\n"
+            step_report += "#{@executor.last_error_hint}\n" if @executor.last_error_hint
           end
           if output && !output.strip.empty?
             step_report += "Output: #{output.strip}\n"

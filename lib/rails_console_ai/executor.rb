@@ -44,7 +44,8 @@ module RailsConsoleAi
   class Executor
     CODE_REGEX = /```ruby\s*\n(.*?)```/m
 
-    attr_reader :binding_context, :last_error, :last_safety_error, :last_safety_exception
+    attr_reader :binding_context, :last_error, :last_safety_error, :last_safety_exception,
+                :last_error_hint
     attr_accessor :on_prompt
 
     def initialize(binding_context, channel: nil)
@@ -55,6 +56,7 @@ module RailsConsoleAi
       @output_store = {}
       @output_counter = 0
       @active_skill_bypass_methods = Set.new
+      @error_hint_counts = Hash.new(0)
     end
 
     def extract_code(response)
@@ -98,6 +100,7 @@ module RailsConsoleAi
       @last_error = nil
       @last_safety_error = false
       @last_safety_exception = nil
+      @last_error_hint = nil
       captured_output = StringIO.new
       old_stdout = $stdout
       # Three capture strategies:
@@ -140,6 +143,8 @@ module RailsConsoleAi
       display_result(result) if display
 
       @last_output = captured_output.string
+      # Code may have rescued a known failure and printed it — still surface the hint.
+      @last_error_hint = build_error_hint(@last_output)
       result
     rescue Interrupt
       restore_stdout(use_thread_local, old_stdout)
@@ -174,6 +179,7 @@ module RailsConsoleAi
         return nil
       end
       @last_error = "#{e.class}: #{e.message}"
+      @last_error_hint = build_error_hint(@last_error, captured_output&.string)
       backtrace = e.backtrace.first(3).map { |line| "  #{line}" }.join("\n")
       log_execution_error("Error: #{@last_error}\n#{backtrace}")
       @last_output = captured_output&.string
@@ -345,6 +351,29 @@ module RailsConsoleAi
     end
 
     private
+
+    # Match the error/output against configured known-issue patterns
+    # (Configuration#error_hints). Returns a guidance string for the LLM, or nil.
+    # The first occurrence explains the issue; repeats escalate so the model
+    # stops probing the same dead end.
+    def build_error_hint(*texts)
+      text = texts.compact.join("\n")
+      return nil if text.strip.empty?
+
+      hint_def = Array(RailsConsoleAi.configuration.error_hints).find do |h|
+        h[:pattern] && text.match?(h[:pattern])
+      end
+      return nil unless hint_def
+
+      count = (@error_hint_counts[hint_def[:name]] += 1)
+      if count == 1
+        "KNOWN ISSUE DETECTED (#{hint_def[:name]}): #{hint_def[:hint]}"
+      else
+        "KNOWN ISSUE (#{hint_def[:name]}) — this is failure ##{count} for the same underlying problem. " \
+        "You were already told this cannot succeed from this session. Stop retrying now and report the " \
+        "limitation to the user. Reminder: #{hint_def[:hint]}"
+      end
+    end
 
     def restore_stdout(use_thread_local, old_stdout)
       if use_thread_local
