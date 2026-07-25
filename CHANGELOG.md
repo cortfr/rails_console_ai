@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.33.0]
+
+- Support Claude Opus 5 and make it the default model for the Anthropic and Bedrock providers
+- Add runaway-loop circuit breakers to the tool loop — break when the same error signature repeats (warn at 3 occurrences, stop at 5) or when a token budget is exceeded (nudge at 500K input tokens, force a final answer at 1M), with a tailored wrap-up prompt for each break reason
+- Fail fast on known environment errors: a built-in hint recognizes decryption key misconfiguration (`bad decrypt` / `ActiveRecord::Encryption`) and tells the model not to retry, and apps can register their own hints via `config.error_hints`
+
 ## [0.32.0]
 
 - Switch default models to Claude Sonnet 5 and Opus 4.8, and rework pricing to match models by family so dated snapshots and Bedrock IDs are covered
