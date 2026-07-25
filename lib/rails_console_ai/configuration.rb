@@ -13,6 +13,7 @@ module RailsConsoleAi
     # (removed on opus-4-7+, sonnet-5, and fable-5).
     MODEL_FAMILIES = {
       'claude-fable-5'    => { input: 10.0, output: 50.0, max_tokens: 16_000, temperature: false },
+      'claude-opus-5'     => { input: 5.0,  output: 25.0, max_tokens: 16_000, temperature: false },
       'claude-opus-4-8'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, temperature: false },
       'claude-opus-4-7'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, temperature: false },
       'claude-opus-4-6'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, temperature: true },
@@ -246,13 +247,13 @@ module RailsConsoleAi
 
       case @provider
       when :anthropic
-        'claude-opus-4-8'
+        'claude-opus-5'
       when :openai
         'gpt-5.3-codex'
       when :local
         @local_model
       when :bedrock
-        'us.anthropic.claude-opus-4-8'
+        'us.anthropic.claude-opus-5'
       end
     end
 

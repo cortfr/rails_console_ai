@@ -100,12 +100,12 @@ RSpec.describe RailsConsoleAi::Configuration do
   describe '#resolved_thinking_model' do
     it 'returns default thinking model for anthropic' do
       config.provider = :anthropic
-      expect(config.resolved_thinking_model).to eq('claude-opus-4-8')
+      expect(config.resolved_thinking_model).to eq('claude-opus-5')
     end
 
     it 'returns default thinking model for bedrock' do
       config.provider = :bedrock
-      expect(config.resolved_thinking_model).to eq('us.anthropic.claude-opus-4-8')
+      expect(config.resolved_thinking_model).to eq('us.anthropic.claude-opus-5')
     end
   end
 
@@ -175,6 +175,8 @@ RSpec.describe RailsConsoleAi::Configuration do
         us.anthropic.claude-sonnet-5
         claude-opus-4-7
         us.anthropic.claude-opus-4-8
+        claude-opus-5
+        us.anthropic.claude-opus-5
         claude-fable-5
       ].each do |model|
         config.model = model

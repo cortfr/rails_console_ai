@@ -25,7 +25,7 @@ RSpec.describe RailsConsoleAi::ConversationEngine, 'model override' do
 
     it 'returns the override after upgrade_to_thinking_model' do
       suppress_output { engine.upgrade_to_thinking_model }
-      expect(engine.effective_model).to eq('claude-opus-4-8')
+      expect(engine.effective_model).to eq('claude-opus-5')
     end
 
     it 'returns the default after downgrade_from_thinking_model' do
@@ -43,7 +43,7 @@ RSpec.describe RailsConsoleAi::ConversationEngine, 'model override' do
 
     it 'returns the thinking model' do
       result = suppress_output { engine.upgrade_to_thinking_model }
-      expect(result).to eq('claude-opus-4-8')
+      expect(result).to eq('claude-opus-5')
     end
 
     it 'is scoped to the engine instance' do
@@ -51,7 +51,7 @@ RSpec.describe RailsConsoleAi::ConversationEngine, 'model override' do
 
       suppress_output { engine.upgrade_to_thinking_model }
 
-      expect(engine.effective_model).to eq('claude-opus-4-8')
+      expect(engine.effective_model).to eq('claude-opus-5')
       expect(engine2.effective_model).to eq('claude-sonnet-5')
     end
   end
@@ -59,16 +59,16 @@ RSpec.describe RailsConsoleAi::ConversationEngine, 'model override' do
   describe '#maybe_auto_upgrade_thinking' do
     it 'upgrades when the user says "think harder"' do
       suppress_output { engine.maybe_auto_upgrade_thinking('please think harder about this') }
-      expect(engine.effective_model).to eq('claude-opus-4-8')
+      expect(engine.effective_model).to eq('claude-opus-5')
     end
 
     it 'upgrades on variants like "think deeper" and "think carefully"' do
       suppress_output { engine.maybe_auto_upgrade_thinking('think deeper here') }
-      expect(engine.effective_model).to eq('claude-opus-4-8')
+      expect(engine.effective_model).to eq('claude-opus-5')
 
       engine2 = described_class.new(binding_context: test_binding, channel: channel)
       suppress_output { engine2.maybe_auto_upgrade_thinking('think carefully') }
-      expect(engine2.effective_model).to eq('claude-opus-4-8')
+      expect(engine2.effective_model).to eq('claude-opus-5')
     end
 
     it 'does not upgrade for ordinary messages' do
@@ -109,7 +109,7 @@ RSpec.describe RailsConsoleAi::ConversationEngine, 'model override' do
     it 'uses the overridden model after upgrade' do
       suppress_output { engine.upgrade_to_thinking_model }
       provider = engine.send(:provider)
-      expect(provider.config.resolved_model).to eq('claude-opus-4-8')
+      expect(provider.config.resolved_model).to eq('claude-opus-5')
     end
 
     it 'does not share config with the global singleton after upgrade' do
@@ -133,8 +133,8 @@ RSpec.describe RailsConsoleAi::ConversationEngine, 'model override' do
       engine.send(:track_usage, result)
 
       usage = engine.instance_variable_get(:@token_usage)
-      expect(usage['claude-opus-4-8'][:input]).to eq(100)
-      expect(usage['claude-opus-4-8'][:output]).to eq(50)
+      expect(usage['claude-opus-5'][:input]).to eq(100)
+      expect(usage['claude-opus-5'][:output]).to eq(50)
       expect(usage.key?('claude-sonnet-5')).to be false
     end
   end

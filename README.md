@@ -291,7 +291,7 @@ RailsConsoleAi.configure do |config|
 end
 ```
 
-Default model: `claude-sonnet-5`. Thinking model: `claude-opus-4-8`. Prompt caching is enabled automatically.
+Default model: `claude-sonnet-5`. Thinking model: `claude-opus-5`. Prompt caching is enabled automatically.
 
 ### OpenAI
 
@@ -318,7 +318,7 @@ RailsConsoleAi.configure do |config|
   config.provider = :bedrock
   config.bedrock_region = 'us-east-1'
   # config.model = 'us.anthropic.claude-sonnet-5'        # default
-  # config.thinking_model = 'us.anthropic.claude-opus-4-8' # default
+  # config.thinking_model = 'us.anthropic.claude-opus-5'   # default
 end
 ```
 
