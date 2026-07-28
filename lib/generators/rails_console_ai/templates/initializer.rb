@@ -72,6 +72,13 @@ RailsConsoleAi.configure do |config|
   # Built-in guard for mailers — disables ActionMailer delivery:
   # config.use_builtin_safety_guard :mailers
   #
+  # Built-in guard for in-process requests — blocks ActionDispatch::Integration::Session
+  # (the console `app` helper) and direct Rack dispatch against the running app.
+  # These run the full middleware stack inside this process and can hang the session
+  # thread indefinitely, so ALL verbs are blocked (including GET). Strongly recommended
+  # for Slack/API channels:
+  # config.use_builtin_safety_guard :in_process_requests
+  #
   # config.safety_guard :jobs do |&execute|
   #   Sidekiq::Testing.fake! { execute.call }
   # end

@@ -176,15 +176,17 @@ Safety guards prevent AI-generated code from causing side effects. When a guard 
 
 ```ruby
 RailsConsoleAi.configure do |config|
-  config.use_builtin_safety_guard :database_writes  # blocks INSERT/UPDATE/DELETE/DROP/etc.
-  config.use_builtin_safety_guard :http_mutations    # blocks POST/PUT/PATCH/DELETE via Net::HTTP
-  config.use_builtin_safety_guard :mailers           # disables ActionMailer delivery
+  config.use_builtin_safety_guard :database_writes      # blocks INSERT/UPDATE/DELETE/DROP/etc.
+  config.use_builtin_safety_guard :http_mutations        # blocks POST/PUT/PATCH/DELETE via Net::HTTP
+  config.use_builtin_safety_guard :mailers               # disables ActionMailer delivery
+  config.use_builtin_safety_guard :in_process_requests   # blocks in-process requests against the app itself
 end
 ```
 
 - **`:database_writes`** — intercepts the ActiveRecord connection adapter to block write SQL. Works on Rails 5+ with any database adapter.
 - **`:http_mutations`** — intercepts `Net::HTTP#request` to block non-GET/HEAD/OPTIONS requests. Covers libraries built on Net::HTTP (HTTParty, RestClient, Faraday).
 - **`:mailers`** — sets `ActionMailer::Base.perform_deliveries = false` during execution.
+- **`:in_process_requests`** — blocks `ActionDispatch::Integration::Session` requests (the console `app` helper) and direct Rack dispatch (`Rails.application.call`). These run the app's full middleware stack inside the current process and can deadlock or hang the session thread indefinitely, so **all verbs are blocked, including GET**. Allowlist entries are request paths.
 
 ### Custom Guards
 

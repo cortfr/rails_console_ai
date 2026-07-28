@@ -364,6 +364,81 @@ module RailsConsoleAi
       }
     end
 
+    # Blocks in-process HTTP dispatch against the running app itself.
+    # An ActionDispatch::Integration::Session request (the console `app` helper,
+    # or a manually built integration session) runs the app's full middleware
+    # stack inside the current process and can deadlock or hang the session
+    # thread indefinitely — so ALL verbs are blocked, including GET.
+    module InProcessRequestBlocker
+      def process(*args, **kwargs, &block)
+        RailsConsoleAi::BuiltinGuards.check_in_process_request!(args[0], args[1])
+        super
+      end
+    end
+
+    # Backstop for the same hazard via direct Rack dispatch
+    # (e.g. Rails.application.call(env)), which bypasses Integration::Session.
+    module EngineCallBlocker
+      def call(env, *args)
+        if env.is_a?(Hash)
+          RailsConsoleAi::BuiltinGuards.check_in_process_request!(env['REQUEST_METHOD'], env['PATH_INFO'])
+        end
+        super
+      end
+    end
+
+    def self.check_in_process_request!(http_method, path)
+      return unless Thread.current[:rails_console_ai_block_in_process_requests]
+      return if Thread.current[:rails_console_ai_bypass_guards]
+
+      key = path.to_s
+      guards = RailsConsoleAi.configuration.safety_guards
+      return if !key.empty? && guards.allowed?(:in_process_requests, key)
+
+      label = [http_method.to_s.upcase, key].reject(&:empty?).join(' ')
+      raise RailsConsoleAi::SafetyError.new(
+        "In-process HTTP request blocked (#{label.empty? ? 'app dispatch' : label}). " \
+        "Dispatching a request through the app's own middleware stack from this session " \
+        "can hang the process indefinitely, even for GET. Do not retry via another route " \
+        "or Rack — call the controller's underlying service or model code directly instead.",
+        guard: :in_process_requests,
+        blocked_key: key.empty? ? nil : key
+      )
+    end
+
+    def self.in_process_requests
+      ->(&block) {
+        ensure_in_process_blocker_installed!
+        prev = Thread.current[:rails_console_ai_block_in_process_requests]
+        Thread.current[:rails_console_ai_block_in_process_requests] = true
+        begin
+          block.call
+        ensure
+          Thread.current[:rails_console_ai_block_in_process_requests] = prev
+        end
+      }
+    end
+
+    def self.ensure_in_process_blocker_installed!
+      return if @in_process_blocker_installed
+
+      begin
+        require 'action_dispatch'
+        require 'action_dispatch/testing/integration'
+      rescue LoadError, NameError
+        nil # actionpack not (fully) available — the Engine backstop may still apply
+      end
+
+      if defined?(ActionDispatch::Integration::Session) &&
+         !ActionDispatch::Integration::Session.ancestors.include?(InProcessRequestBlocker)
+        ActionDispatch::Integration::Session.prepend(InProcessRequestBlocker)
+      end
+      if defined?(Rails::Engine) && !Rails::Engine.ancestors.include?(EngineCallBlocker)
+        Rails::Engine.prepend(EngineCallBlocker)
+      end
+      @in_process_blocker_installed = true
+    end
+
     def self.ensure_http_blocker_installed!
       return if @http_blocker_installed
 

@@ -172,12 +172,13 @@ module RailsConsoleAi
     end
 
     # Register a built-in safety guard by name.
-    # Available: :database_writes, :http_mutations, :mailers
+    # Available: :database_writes, :http_mutations, :mailers, :in_process_requests
     #
     # Options:
     #   allow: Array of strings or regexps to allowlist for this guard.
-    #     - :http_mutations  → hosts (e.g. "s3.amazonaws.com", /googleapis\.com/)
-    #     - :database_writes → table names (e.g. "rails_console_ai_sessions")
+    #     - :http_mutations      → hosts (e.g. "s3.amazonaws.com", /googleapis\.com/)
+    #     - :database_writes     → table names (e.g. "rails_console_ai_sessions")
+    #     - :in_process_requests → request paths (e.g. "/health")
     def use_builtin_safety_guard(name, allow: nil)
       require 'rails_console_ai/safety_guards'
       guard_name = name.to_sym
@@ -188,8 +189,10 @@ module RailsConsoleAi
         safety_guards.add(:http_mutations, &BuiltinGuards.http_mutations)
       when :mailers
         safety_guards.add(:mailers, &BuiltinGuards.mailers)
+      when :in_process_requests
+        safety_guards.add(:in_process_requests, &BuiltinGuards.in_process_requests)
       else
-        raise ConfigurationError, "Unknown built-in safety guard: #{name}. Available: database_writes, http_mutations, mailers"
+        raise ConfigurationError, "Unknown built-in safety guard: #{name}. Available: database_writes, http_mutations, mailers, in_process_requests"
       end
 
       if allow

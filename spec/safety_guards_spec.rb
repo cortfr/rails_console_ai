@@ -947,4 +947,168 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
       end
     end
   end
+
+  describe '.in_process_requests' do
+    it 'returns a callable guard' do
+      expect(described_class.in_process_requests).to respond_to(:call)
+    end
+
+    it 'sets and clears the thread-local flag' do
+      guard = described_class.in_process_requests
+      flag_during = nil
+
+      allow(described_class).to receive(:ensure_in_process_blocker_installed!)
+
+      guard.call do
+        flag_during = Thread.current[:rails_console_ai_block_in_process_requests]
+      end
+
+      expect(flag_during).to eq(true)
+      expect(Thread.current[:rails_console_ai_block_in_process_requests]).to be_nil
+    end
+
+    it 'clears the flag even on exception' do
+      guard = described_class.in_process_requests
+      allow(described_class).to receive(:ensure_in_process_blocker_installed!)
+
+      begin
+        guard.call { raise "boom" }
+      rescue
+      end
+
+      expect(Thread.current[:rails_console_ai_block_in_process_requests]).to be_nil
+    end
+
+    it 'restores a prior flag value when nested' do
+      guard = described_class.in_process_requests
+      allow(described_class).to receive(:ensure_in_process_blocker_installed!)
+
+      Thread.current[:rails_console_ai_block_in_process_requests] = true
+      guard.call { }
+      expect(Thread.current[:rails_console_ai_block_in_process_requests]).to be true
+    ensure
+      Thread.current[:rails_console_ai_block_in_process_requests] = nil
+    end
+  end
+
+  describe RailsConsoleAi::BuiltinGuards::InProcessRequestBlocker do
+    let(:test_class) do
+      Class.new do
+        def process(method, path, **kwargs)
+          "#{method.to_s.upcase} #{path}"
+        end
+      end
+    end
+
+    let(:blocked_class) do
+      klass = Class.new(test_class)
+      klass.prepend(RailsConsoleAi::BuiltinGuards::InProcessRequestBlocker)
+      klass
+    end
+
+    let(:session) { blocked_class.new }
+
+    context 'when block_in_process_requests flag is set' do
+      before { Thread.current[:rails_console_ai_block_in_process_requests] = true }
+      after  { Thread.current[:rails_console_ai_block_in_process_requests] = nil }
+
+      it 'blocks GET requests (not just mutations)' do
+        expect { session.process(:get, '/r/abc123') }
+          .to raise_error(RailsConsoleAi::SafetyError, /In-process HTTP request blocked \(GET \/r\/abc123\)/)
+      end
+
+      it 'blocks POST requests' do
+        expect { session.process(:post, '/users') }
+          .to raise_error(RailsConsoleAi::SafetyError, /In-process HTTP request blocked/)
+      end
+
+      it 'includes guard and blocked_key in SafetyError' do
+        error = nil
+        begin
+          session.process(:get, '/r/abc123')
+        rescue RailsConsoleAi::SafetyError => e
+          error = e
+        end
+        expect(error.guard).to eq(:in_process_requests)
+        expect(error.blocked_key).to eq('/r/abc123')
+      end
+
+      it 'allows requests to allowlisted paths' do
+        RailsConsoleAi.configuration.safety_guards.allow(:in_process_requests, '/health')
+        expect(session.process(:get, '/health')).to eq('GET /health')
+      ensure
+        Thread.current[:rails_console_ai_allowlist] = nil
+      end
+
+      it 'allows requests matching allowlisted regexp' do
+        RailsConsoleAi.configuration.safety_guards.allow(:in_process_requests, %r{\A/health})
+        expect(session.process(:get, '/health/full')).to eq('GET /health/full')
+      ensure
+        Thread.current[:rails_console_ai_allowlist] = nil
+      end
+
+      it 'is bypassed by the bypass_guards flag' do
+        Thread.current[:rails_console_ai_bypass_guards] = true
+        begin
+          expect(session.process(:get, '/r/abc123')).to eq('GET /r/abc123')
+        ensure
+          Thread.current[:rails_console_ai_bypass_guards] = nil
+        end
+      end
+    end
+
+    context 'when block_in_process_requests flag is not set' do
+      it 'allows requests' do
+        expect(session.process(:get, '/r/abc123')).to eq('GET /r/abc123')
+      end
+    end
+  end
+
+  describe RailsConsoleAi::BuiltinGuards::EngineCallBlocker do
+    let(:test_class) do
+      Class.new do
+        def call(env, *args)
+          [200, {}, ['ok']]
+        end
+      end
+    end
+
+    let(:blocked_class) do
+      klass = Class.new(test_class)
+      klass.prepend(RailsConsoleAi::BuiltinGuards::EngineCallBlocker)
+      klass
+    end
+
+    let(:app) { blocked_class.new }
+    let(:env) { { 'REQUEST_METHOD' => 'GET', 'PATH_INFO' => '/r/abc123' } }
+
+    context 'when block_in_process_requests flag is set' do
+      before { Thread.current[:rails_console_ai_block_in_process_requests] = true }
+      after  { Thread.current[:rails_console_ai_block_in_process_requests] = nil }
+
+      it 'blocks direct Rack dispatch' do
+        expect { app.call(env) }
+          .to raise_error(RailsConsoleAi::SafetyError, /In-process HTTP request blocked \(GET \/r\/abc123\)/)
+      end
+
+      it 'is bypassed by the bypass_guards flag' do
+        Thread.current[:rails_console_ai_bypass_guards] = true
+        begin
+          expect(app.call(env)).to eq([200, {}, ['ok']])
+        ensure
+          Thread.current[:rails_console_ai_bypass_guards] = nil
+        end
+      end
+
+      it 'passes through non-hash env arguments without raising' do
+        expect(app.call(nil)).to eq([200, {}, ['ok']])
+      end
+    end
+
+    context 'when block_in_process_requests flag is not set' do
+      it 'allows dispatch' do
+        expect(app.call(env)).to eq([200, {}, ['ok']])
+      end
+    end
+  end
 end
