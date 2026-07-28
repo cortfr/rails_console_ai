@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.34.0]
+
+- Add an `:in_process_requests` built-in safety guard that blocks in-process HTTP dispatch against the app itself — `ActionDispatch::Integration::Session` requests (the console `app` helper) and direct Rack dispatch (`Rails.application.call`) — for all verbs including GET, since these can hang the session thread indefinitely; allowlist entries are request paths
+- Create/update the session record with a `running` status before each turn's tool loop starts, so a turn that hangs or dies mid-loop still leaves a visible session record, and show each session's status in the admin sessions page
+- Make session logging drop attributes the sessions table doesn't have a column for yet, so a gem newer than the table degrades to a partial row instead of losing the insert
+- Fix the sessions page cost display after the pricing refactor
+
 ## [0.33.0]
 
 - Support Claude Opus 5 and make it the default model for the Anthropic and Bedrock providers
