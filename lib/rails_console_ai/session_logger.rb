@@ -32,7 +32,7 @@ module RailsConsoleAi
           opts = attrs[:options]
           create_attrs[:options] = opts.is_a?(String) ? opts : opts.to_json
         end
-        record = session_class.create!(create_attrs)
+        record = session_class.create!(filter_to_columns(create_attrs))
         record.id
       rescue => e
         msg = "RailsConsoleAi: session logging failed: #{e.class}: #{e.message}"
@@ -70,6 +70,7 @@ module RailsConsoleAi
         updates[:result]        = attrs[:result]         if attrs.key?(:result)
         updates[:error_message] = attrs[:error_message]  if attrs.key?(:error_message)
 
+        updates = filter_to_columns(updates)
         session_class.where(id: id).update_all(updates) unless updates.empty?
       rescue => e
         msg = "RailsConsoleAi: session update failed: #{e.class}: #{e.message}"
@@ -79,6 +80,17 @@ module RailsConsoleAi
       end
 
       private
+
+      # Drop attrs the table doesn't have a column for, so a gem that's newer
+      # than the table (e.g. status added before RailsConsoleAi.migrate! ran)
+      # degrades to a partial row instead of losing the whole insert.
+      def filter_to_columns(attrs)
+        return attrs unless session_class.respond_to?(:column_names)
+        cols = session_class.column_names.map(&:to_s)
+        attrs.select { |k, _| cols.include?(k.to_s) }
+      rescue StandardError
+        attrs
+      end
 
       def table_exists?
         # Only cache positive results — retry on failure so transient

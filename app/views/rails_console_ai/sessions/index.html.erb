@@ -17,6 +17,7 @@
         <th>Name</th>
         <th style="max-width: 400px;">Query</th>
         <th>Mode</th>
+        <th>Status</th>
         <th>Tokens</th>
         <th>Cost</th>
         <th>Duration</th>
@@ -31,6 +32,7 @@
           <td><%= session.name.present? ? session.name : '-' %></td>
           <td class="query-cell"><a href="<%= rails_console_ai.session_path(session) %>" title="<%= h session.query.truncate(200) %>"><%= truncate(session.query.gsub(/\s+/, ' ').strip, length: 80) %></a></td>
           <td><span class="badge badge-<%= session.mode %>"><%= session.mode %></span></td>
+          <td><% status = session.try(:status) %><%= status.present? ? content_tag(:span, status, class: "badge badge-status-#{status}") : '-' %></td>
           <td class="mono"><%= session.input_tokens + session.output_tokens %></td>
           <td class="mono"><%= format_cost(session) %></td>
           <td class="mono"><%= session.duration_ms ? "#{session.duration_ms}ms" : '-' %></td>

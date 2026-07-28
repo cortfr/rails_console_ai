@@ -77,6 +77,37 @@ RSpec.describe RailsConsoleAi::SessionLogger do
       expect(logger).to have_received(:warn).with(/session logging failed/)
     end
 
+    context 'when the table is older than the gem (column filtering)' do
+      before do
+        # Table predates the status/result/error_message migration
+        allow(mock_session).to receive(:column_names).and_return(
+          %w[id query conversation mode input_tokens output_tokens executed
+             code_executed code_output code_result console_output user_name
+             provider model duration_ms created_at]
+        )
+      end
+
+      it 'drops attrs with no matching column instead of losing the row' do
+        described_class.log(attrs.merge(status: 'running'))
+
+        expect(mock_session).to have_received(:create!) do |create_attrs|
+          expect(create_attrs).not_to have_key(:status)
+          expect(create_attrs[:query]).to eq('show all tables')
+        end
+      end
+
+      it 'keeps attrs whose columns exist' do
+        allow(mock_session).to receive(:column_names).and_return(
+          %w[id query conversation mode input_tokens output_tokens executed
+             code_executed code_output code_result console_output user_name
+             provider model duration_ms created_at status]
+        )
+        described_class.log(attrs.merge(status: 'running'))
+
+        expect(mock_session).to have_received(:create!).with(hash_including(status: 'running'))
+      end
+    end
+
     it 'serializes conversation as JSON' do
       described_class.log(attrs)
 

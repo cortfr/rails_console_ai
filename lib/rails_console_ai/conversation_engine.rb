@@ -242,6 +242,8 @@ module RailsConsoleAi
     end
 
     def execute_direct(raw_code)
+      @interactive_query ||= "> #{raw_code}"
+      log_interactive_turn(status: 'running')
       exec_result = @executor.execute_unsafe(raw_code)
 
       output_parts = []
@@ -260,14 +262,31 @@ module RailsConsoleAi
       end
       @history << { role: :user, content: context_msg, output_id: output_id }
 
-      @interactive_query ||= "> #{raw_code}"
       @last_interactive_code = raw_code
       @last_interactive_output = @executor.last_output
       @last_interactive_result = exec_result ? exec_result.inspect : nil
       @last_interactive_executed = true
+      log_interactive_turn(status: 'ready')
     end
 
+    # Wraps run_turn with session-row status tracking. The row is created/updated
+    # with status 'running' BEFORE the tool loop starts, so a turn that hangs or
+    # dies mid-loop (hung eval, OOM-killed pod, deploy) still leaves a visible
+    # session record instead of vanishing without a trace.
     def send_and_execute
+      log_interactive_turn(status: 'running')
+      status = run_turn
+      log_interactive_turn(status: status == :error ? 'failed' : 'ready')
+      status
+    rescue Interrupt
+      log_interactive_turn(status: 'ready')
+      raise
+    rescue StandardError
+      log_interactive_turn(status: 'failed')
+      raise
+    end
+
+    def run_turn
       begin
         result, tool_messages, last_llm_stats = send_query(nil, conversation: @history)
       rescue Providers::ProviderError => e
@@ -568,7 +587,7 @@ module RailsConsoleAi
 
     # --- Session logging ---
 
-    def log_interactive_turn
+    def log_interactive_turn(status: nil)
       require 'rails_console_ai/session_logger'
       session_attrs = {
         conversation:  @history,
@@ -580,6 +599,7 @@ module RailsConsoleAi
         executed:      @last_interactive_executed,
         console_output: @channel.respond_to?(:console_capture_string) ? @channel.console_capture_string : nil
       }
+      session_attrs[:status] = status if status
 
       if @interactive_session_id
         SessionLogger.update(@interactive_session_id, session_attrs)
