@@ -1,7 +1,7 @@
 module RailsConsoleAi
   module SessionsHelper
     def estimated_cost(session)
-      pricing = Configuration::PRICING[session.model]
+      pricing = Configuration.pricing_for(session.model)
       return nil unless pricing
 
       (session.input_tokens * pricing[:input]) + (session.output_tokens * pricing[:output])
