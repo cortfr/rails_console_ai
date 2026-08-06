@@ -778,12 +778,21 @@ RSpec.describe RailsConsoleAi::Repl do
       )
       final_result = chat_result("I gave up.")
 
-      call_count = 0
-      allow(mock_provider).to receive(:chat_with_tools) do
-        call_count += 1
-        tool_call_result
+      tool_round_count = 0
+      allow(mock_provider).to receive(:chat_with_tools) do |msgs, **_kwargs|
+        if msgs.last[:role] == :user && msgs.last[:content].to_s.include?('best answer now')
+          final_result
+        else
+          tool_round_count += 1
+          tool_call_result
+        end
       end
-      allow(mock_provider).to receive(:chat).and_return(final_result)
+      # The finalize call must not use the no-tools chat: on Bedrock it fails
+      # because the transcript contains toolUse/toolResult blocks.
+      allow(mock_provider).to receive(:chat) do
+        raise RailsConsoleAi::Providers::ProviderError,
+          'AWS Bedrock error: The toolConfig field must be defined when using toolUse and toolResult content blocks.'
+      end
       allow(mock_provider).to receive(:format_assistant_message).and_return(
         { role: 'assistant', content: [{ 'type' => 'tool_use', 'id' => 'tc_1', 'name' => 'list_tables', 'input' => {} }] }
       )
@@ -792,10 +801,11 @@ RSpec.describe RailsConsoleAi::Repl do
       )
 
       engine = repl.instance_variable_get(:@engine)
-      _result, _msgs, _stats = engine.send(:send_query_with_tools, [{ role: :user, content: 'show tables' }])
+      result, _msgs, _stats = engine.send(:send_query_with_tools, [{ role: :user, content: 'show tables' }])
 
-      # Should break at 5 (LOOP_BREAK_THRESHOLD), not run all 200 rounds
-      expect(call_count).to eq(5)
+      # Should break at 5 (LOOP_BREAK_THRESHOLD) tool rounds, not run all 200
+      expect(tool_round_count).to eq(5)
+      expect(result.text).to eq('I gave up.')
     end
   end
 

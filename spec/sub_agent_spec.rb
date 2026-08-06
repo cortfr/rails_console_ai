@@ -173,6 +173,106 @@ RSpec.describe RailsConsoleAi::SubAgent do
       expect(parent_binding.local_variables).not_to include(:output)
     end
 
+    # Bedrock rejects any request whose messages contain toolUse/toolResult
+    # blocks unless the request defines toolConfig, so the forced-final-answer
+    # call after max_rounds must keep the tool definitions on the request
+    # (production error via explore_output / delegate_task: "The toolConfig
+    # field must be defined when using toolUse and toolResult content blocks").
+    describe 'finalize after exhausting max_rounds' do
+      let(:tool_call_result) do
+        RailsConsoleAi::Providers::ChatResult.new(
+          text: nil,
+          input_tokens: 10,
+          output_tokens: 5,
+          stop_reason: :tool_use,
+          tool_calls: [{ id: 'tu1', name: 'execute_code', arguments: { 'code' => '1 + 1' } }]
+        )
+      end
+
+      before do
+        allow(parent_channel).to receive(:display_tool_call)
+        allow(parent_channel).to receive(:display_thinking)
+        allow(parent_channel).to receive(:display_warning)
+        allow(parent_channel).to receive(:display_error)
+        allow(parent_channel).to receive(:display_result_output)
+        allow(provider).to receive(:format_assistant_message).and_return(
+          { role: :assistant, content: [{ 'type' => 'tool_use', 'id' => 'tu1', 'name' => 'execute_code', 'input' => { 'code' => '1 + 1' } }] }
+        )
+        allow(provider).to receive(:format_tool_result) do |id, content|
+          { role: :user, content: [{ 'type' => 'tool_result', 'tool_use_id' => id, 'content' => content }] }
+        end
+        # The finalize call must not use the no-tools chat: on Bedrock it fails
+        # because the transcript contains toolUse/toolResult blocks.
+        allow(provider).to receive(:chat) do
+          raise RailsConsoleAi::Providers::ProviderError,
+            'AWS Bedrock error: The toolConfig field must be defined when using toolUse and toolResult content blocks.'
+        end
+      end
+
+      def build_sub_agent
+        described_class.new(
+          task: 'investigate',
+          agent_config: { 'tools' => ['execute_code'], 'max_rounds' => 2 },
+          binding_context: binding_context,
+          parent_channel: parent_channel,
+          executor: executor
+        )
+      end
+
+      it 'finalizes via chat_with_tools over the tool-bearing transcript' do
+        final_result = RailsConsoleAi::Providers::ChatResult.new(
+          text: 'Best answer from what I learned.', input_tokens: 10, output_tokens: 5, stop_reason: :end_turn
+        )
+        observed_messages = []
+        allow(provider).to receive(:chat_with_tools) do |msgs, **_kwargs|
+          observed_messages << Marshal.load(Marshal.dump(msgs))
+          msgs.last[:content].to_s.include?('best answer now') ? final_result : tool_call_result
+        end
+
+        result = build_sub_agent.run
+        expect(result).to eq('Best answer from what I learned.')
+
+        finalize_msgs = observed_messages.last
+        expect(finalize_msgs.last[:content]).to include('best answer now')
+        # The transcript sent to the finalize call still contains tool_use
+        # blocks — the exact shape Bedrock rejects without toolConfig.
+        tool_use_msgs = finalize_msgs.select do |m|
+          m[:content].is_a?(Array) && m[:content].any? { |b| b['type'] == 'tool_use' }
+        end
+        expect(tool_use_msgs).not_to be_empty
+      end
+
+      it 'takes the text and ignores tool calls if the finalize response still tries to use tools' do
+        finalize_with_tools = RailsConsoleAi::Providers::ChatResult.new(
+          text: 'Partial answer.',
+          input_tokens: 10,
+          output_tokens: 5,
+          stop_reason: :tool_use,
+          tool_calls: [{ id: 'tu_final', name: 'execute_code', arguments: { 'code' => 'one_more' } }]
+        )
+        allow(provider).to receive(:chat_with_tools) do |msgs, **_kwargs|
+          msgs.last[:content].to_s.include?('best answer now') ? finalize_with_tools : tool_call_result
+        end
+
+        expect(build_sub_agent.run).to eq('Partial answer.')
+      end
+
+      it 'returns a placeholder when the finalize response has no text' do
+        empty_finalize = RailsConsoleAi::Providers::ChatResult.new(
+          text: '',
+          input_tokens: 10,
+          output_tokens: 5,
+          stop_reason: :tool_use,
+          tool_calls: [{ id: 'tu_final', name: 'execute_code', arguments: { 'code' => 'one_more' } }]
+        )
+        allow(provider).to receive(:chat_with_tools) do |msgs, **_kwargs|
+          msgs.last[:content].to_s.include?('best answer now') ? empty_finalize : tool_call_result
+        end
+
+        expect(build_sub_agent.run).to eq('(sub-agent returned no result)')
+      end
+    end
+
     it 'includes agent body in system prompt' do
       agent_config = { 'name' => 'Find shard', 'body' => 'Check user.shard column.' }
 

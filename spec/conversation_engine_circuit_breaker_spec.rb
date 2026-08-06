@@ -10,19 +10,35 @@ require 'rails_console_ai/conversation_engine'
 # - token budget: input tokens in a single tool loop cross nudge/stop thresholds
 RSpec.describe RailsConsoleAi::ConversationEngine, 'runaway-loop circuit breakers' do
   # Always asks for another execute_code call with NEW arguments each round
-  # (defeating identical-call loop detection) until the engine forces a
-  # final answer via provider.chat.
+  # (defeating identical-call loop detection) until the engine forces a final
+  # answer via the finalize call. The finalize call must go through
+  # chat_with_tools: `chat` here mimics Bedrock, which rejects transcripts
+  # containing tool_use/tool_result blocks when the request defines no tools.
   class FakeLoopingProvider
-    attr_reader :tool_rounds, :chat_calls, :last_chat_messages
+    # All four wrap-up nudges say "final answer now" or "best answer now";
+    # the mid-loop warn nudges say neither.
+    FINAL_NUDGE = /(final|best) answer now/
 
-    def initialize(input_tokens_per_round: 1_000)
+    attr_reader :tool_rounds, :finalize_calls, :last_finalize_messages
+
+    def initialize(input_tokens_per_round: 1_000, finalize_result: nil)
       @round = 0
       @tool_rounds = 0
-      @chat_calls = 0
+      @finalize_calls = 0
       @input_tokens_per_round = input_tokens_per_round
+      @finalize_result = finalize_result
     end
 
-    def chat_with_tools(_messages, tools:, system_prompt:)
+    def chat_with_tools(messages, tools:, system_prompt:)
+      last = messages.last
+      if last[:role] == :user && last[:content].to_s.match?(FINAL_NUDGE)
+        @finalize_calls += 1
+        @last_finalize_messages = messages
+        return @finalize_result || RailsConsoleAi::Providers::ChatResult.new(
+          text: 'Final summary.', input_tokens: 10, output_tokens: 10, stop_reason: :end_turn
+        )
+      end
+
       @round += 1
       @tool_rounds += 1
       RailsConsoleAi::Providers::ChatResult.new(
@@ -36,11 +52,8 @@ RSpec.describe RailsConsoleAi::ConversationEngine, 'runaway-loop circuit breaker
     end
 
     def chat(messages, system_prompt: nil)
-      @chat_calls += 1
-      @last_chat_messages = messages
-      RailsConsoleAi::Providers::ChatResult.new(
-        text: 'Final summary.', input_tokens: 10, output_tokens: 10, stop_reason: :end_turn
-      )
+      raise RailsConsoleAi::Providers::ProviderError,
+        'AWS Bedrock error: The toolConfig field must be defined when using toolUse and toolResult content blocks.'
     end
 
     def format_assistant_message(result)
@@ -56,7 +69,7 @@ RSpec.describe RailsConsoleAi::ConversationEngine, 'runaway-loop circuit breaker
 
   # Tools stub whose execute returns whatever the block produces (call count passed in).
   class FakeToolsStub
-    attr_reader :definitions
+    attr_reader :definitions, :calls
 
     def initialize(&result_fn)
       @result_fn = result_fn
@@ -119,7 +132,7 @@ RSpec.describe RailsConsoleAi::ConversationEngine, 'runaway-loop circuit breaker
 
     it 'injects a strategy-change nudge at the warn threshold' do
       run_loop(provider, tools)
-      warn_msg = provider.last_chat_messages.find do |m|
+      warn_msg = provider.last_finalize_messages.find do |m|
         m[:role] == :user && m[:content].to_s.include?('hit the same error')
       end
       expect(warn_msg).not_to be_nil
@@ -128,9 +141,9 @@ RSpec.describe RailsConsoleAi::ConversationEngine, 'runaway-loop circuit breaker
     it 'breaks at the break threshold and forces a final answer' do
       result, = run_loop(provider, tools)
       expect(provider.tool_rounds).to eq(described_class::REPEAT_ERROR_BREAK_THRESHOLD)
-      expect(provider.chat_calls).to eq(1)
+      expect(provider.finalize_calls).to eq(1)
       expect(result.text).to eq('Final summary.')
-      expect(provider.last_chat_messages.last[:content]).to include('hit the same error repeatedly')
+      expect(provider.last_finalize_messages.last[:content]).to include('hit the same error repeatedly')
       expect(statuses.join("\n")).to include('Circuit breaker')
     end
 
@@ -160,13 +173,13 @@ RSpec.describe RailsConsoleAi::ConversationEngine, 'runaway-loop circuit breaker
 
       # nudge lands after round 3 (3000 >= 2500), stop after round 5 (5000 >= 4500)
       expect(provider.tool_rounds).to eq(5)
-      expect(provider.chat_calls).to eq(1)
+      expect(provider.finalize_calls).to eq(1)
       expect(result.text).to eq('Final summary.')
-      nudge = provider.last_chat_messages.find do |m|
+      nudge = provider.last_finalize_messages.find do |m|
         m[:role] == :user && m[:content].to_s.include?('Wrap up now')
       end
       expect(nudge).not_to be_nil
-      expect(provider.last_chat_messages.last[:content]).to include('exceeded its token budget')
+      expect(provider.last_finalize_messages.last[:content]).to include('exceeded its token budget')
     end
 
     it 'is disabled when thresholds are nil' do
@@ -178,6 +191,46 @@ RSpec.describe RailsConsoleAi::ConversationEngine, 'runaway-loop circuit breaker
 
       run_loop(provider, tools)
       expect(provider.tool_rounds).to eq(6) # only the round cap stops it
+    end
+  end
+
+  # Bedrock rejects any request whose messages contain toolUse/toolResult
+  # blocks unless the request defines toolConfig — so the forced-final-answer
+  # call must keep the tool definitions on the request (production error:
+  # "The toolConfig field must be defined when using toolUse and toolResult
+  # content blocks", seen via explore_output and delegate_task).
+  describe 'wrap-up finalize call' do
+    let(:tools) { FakeToolsStub.new { |n| "Output:\nok #{n}\n\nReturn value: nil" } }
+
+    it 'uses chat_with_tools over the tool-bearing transcript' do
+      RailsConsoleAi.configuration.max_tool_rounds = 3
+      provider = FakeLoopingProvider.new
+
+      result, = run_loop(provider, tools)
+
+      expect(provider.finalize_calls).to eq(1)
+      expect(result.text).to eq('Final summary.')
+      # The finalize transcript still contains tool_use blocks — the exact
+      # shape Bedrock rejects when the request defines no tools. If the
+      # engine regresses to provider.chat, the fake raises the Bedrock error.
+      tool_use_msgs = provider.last_finalize_messages.select do |m|
+        m[:content].is_a?(Array) && m[:content].any? { |b| b['type'] == 'tool_use' }
+      end
+      expect(tool_use_msgs).not_to be_empty
+    end
+
+    it 'takes the text and ignores tool calls if the finalize response still tries to use tools' do
+      RailsConsoleAi.configuration.max_tool_rounds = 3
+      provider = FakeLoopingProvider.new(finalize_result: RailsConsoleAi::Providers::ChatResult.new(
+        text: 'Partial answer.', input_tokens: 10, output_tokens: 10, stop_reason: :tool_use,
+        tool_calls: [{ id: 'call_final', name: 'execute_code', arguments: { 'code' => 'one_more' } }]
+      ))
+
+      result, = run_loop(provider, tools)
+
+      expect(result.text).to eq('Partial answer.')
+      expect(result.tool_use?).to be_falsey
+      expect(tools.calls).to eq(3) # the finalize response's tool call was not executed
     end
   end
 end

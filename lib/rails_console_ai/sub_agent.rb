@@ -144,13 +144,18 @@ module RailsConsoleAi
       end
 
       if exhausted
-        messages << { role: :user, content: "Provide your best answer now based on what you've learned." }
-        result = provider.chat(messages, system_prompt: system_prompt)
+        messages << { role: :user, content: "Provide your best answer now based on what you've learned. Do not call any more tools." }
+        # Must be chat_with_tools, not chat: the transcript contains
+        # tool_use/tool_result blocks, and Bedrock/Anthropic reject those unless
+        # the request also defines tools. Any tool calls in the response are
+        # ignored — only the text is used.
+        result = provider.chat_with_tools(messages, tools: tools, system_prompt: system_prompt)
         @input_tokens += result.input_tokens || 0
         @output_tokens += result.output_tokens || 0
       end
 
-      result&.text || '(sub-agent returned no result)'
+      text = result&.text.to_s
+      text.strip.empty? ? '(sub-agent returned no result)' : text
     end
 
     def format_user_interruption(messages)

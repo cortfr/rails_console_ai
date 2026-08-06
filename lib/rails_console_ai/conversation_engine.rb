@@ -1038,7 +1038,11 @@ module RailsConsoleAi
           $stdout.puts "\e[33m  Hit tool round limit (#{max_rounds}). Forcing final answer. Increase with: RailsConsoleAi.configure { |c| c.max_tool_rounds = 200 }\e[0m"
         end
         messages << { role: :user, content: final_nudge }
-        result = provider.chat(messages, system_prompt: active_system_prompt)
+        # Must be chat_with_tools, not chat: the transcript contains
+        # tool_use/tool_result blocks, and Bedrock/Anthropic reject those unless
+        # the request also defines tools. Any tool calls in the response are
+        # ignored — only the text is used.
+        result = provider.chat_with_tools(messages, tools: tools, system_prompt: active_system_prompt)
         total_input += result.input_tokens || 0
         total_output += result.output_tokens || 0
       end
