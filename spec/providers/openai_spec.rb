@@ -10,6 +10,10 @@ RSpec.describe RailsConsoleAi::Providers::OpenAI do
       c.model = 'gpt-test'
       c.max_tokens = 1024
       c.temperature = 0.5
+      # These examples assert how errors surface, not how they are retried. Left at
+      # the default, the 429 case below would wait out real backoff between three
+      # attempts. Retry behaviour has its own spec: spec/provider_retries_spec.rb.
+      c.max_retries = 0
     end
   end
 

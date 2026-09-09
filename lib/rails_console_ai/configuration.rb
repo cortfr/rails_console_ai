@@ -71,7 +71,7 @@ module RailsConsoleAi
 
     attr_accessor :provider, :api_key, :model, :thinking_model, :max_tokens,
                   :auto_execute, :temperature,
-                  :timeout, :debug, :max_tool_rounds,
+                  :timeout, :open_timeout, :max_retries, :debug, :max_tool_rounds,
                   :error_hints,
                   :token_nudge_threshold, :token_stop_threshold,
                   :cache_ttl,
@@ -97,7 +97,13 @@ module RailsConsoleAi
       @max_tokens   = nil
       @auto_execute = false
       @temperature  = 0.2
-      @timeout      = 30
+      # Read timeout for one provider request. Adaptive thinking plus a large output
+      # cap means a single agentic call can legitimately run for minutes; the old 30s
+      # cut those off mid-generation, which loses the turn and the tokens already
+      # spent on it, and sends the user back to re-ask from a cold cache.
+      @timeout      = 300
+      @open_timeout = 10    # establishing the connection, not generating the response
+      @max_retries  = 2     # transient failures only — see Providers::Base#with_retries
       @debug        = false
       @max_tool_rounds = 200
       @error_hints = DEFAULT_ERROR_HINTS.dup

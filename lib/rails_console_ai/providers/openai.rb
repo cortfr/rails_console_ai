@@ -59,7 +59,7 @@ module RailsConsoleAi
 
         json_body = JSON.generate(body)
         debug_request("#{API_URL}/v1/chat/completions", body)
-        response = conn.post('/v1/chat/completions', json_body)
+        response = with_retries { conn.post('/v1/chat/completions', json_body) }
         debug_response(response.body)
         data = parse_response(response)
         usage = data['usage'] || {}

@@ -20,8 +20,16 @@ RSpec.describe RailsConsoleAi::Configuration do
       expect(config.temperature).to eq(0.2)
     end
 
-    it 'sets timeout to 30' do
-      expect(config.timeout).to eq(30)
+    it 'sets a read timeout that allows for a multi-minute agentic call' do
+      expect(config.timeout).to eq(300)
+    end
+
+    it 'keeps the connect timeout short and separate from the read timeout' do
+      expect(config.open_timeout).to eq(10)
+    end
+
+    it 'sets max_retries to 2' do
+      expect(config.max_retries).to eq(2)
     end
 
     it 'sets max_tool_rounds to 200' do

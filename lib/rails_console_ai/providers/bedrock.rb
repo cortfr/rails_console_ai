@@ -96,6 +96,10 @@ module RailsConsoleAi
           client_opts[:region] = region if region && !region.empty?
           t = config.respond_to?(:resolved_timeout) ? config.resolved_timeout : config.timeout
           client_opts[:http_read_timeout] = t
+          # Separate budget from generation time, same reasoning as
+          # Providers::Base#build_connection. The AWS SDK does its own retrying of
+          # throttling and 5xx, so there is no with_retries wrapper on this path.
+          client_opts[:http_open_timeout] = config.open_timeout if config.respond_to?(:open_timeout)
           Aws::BedrockRuntime::Client.new(client_opts)
         end
       end
