@@ -124,7 +124,27 @@ RSpec.describe 'provider request retries' do
     expect(a_request(:post, 'https://api.anthropic.com/v1/messages')).to have_been_made.once
   end
 
-  describe 'connection timeouts' do
+  describe 'timeout configuration' do
+    # The connection is built per request from the config, and the options are set
+    # on that connection object — nothing touches Faraday's global defaults, so a
+    # long timeout here cannot reach another thread's HTTP clients.
+    it 'builds a fresh connection per request rather than sharing one' do
+      a = provider.send(:build_connection, 'https://example.test')
+      b = provider.send(:build_connection, 'https://example.test')
+
+      expect(a).not_to be(b)
+      a.options.timeout = 1
+      expect(b.options.timeout).to eq(300)
+    end
+
+    it 'reads the timeout at request time, so a config change takes effect' do
+      config.timeout = 45
+      expect(provider.send(:build_connection, 'https://example.test').options.timeout).to eq(45)
+
+      config.timeout = 90
+      expect(provider.send(:build_connection, 'https://example.test').options.timeout).to eq(90)
+    end
+
     it 'gives the read and connect phases separate budgets' do
       config.timeout = 300
       config.open_timeout = 10

@@ -20,8 +20,11 @@ RailsConsoleAi.configure do |config|
   # Max tool-use rounds per query (safety cap)
   config.max_tool_rounds = 10
 
-  # HTTP timeout in seconds
-  config.timeout = 30
+  # Read timeout in seconds for one provider request. The default (300) allows for
+  # a long thinking turn; a value too low cuts off generation mid-stream, which
+  # loses the turn and the tokens already spent on it. The connect timeout is
+  # separate (config.open_timeout, default 10).
+  # config.timeout = 300
 
   # Local model provider (Ollama, vLLM, or any OpenAI-compatible server):
   # config.provider = :local

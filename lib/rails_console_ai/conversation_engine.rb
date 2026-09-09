@@ -148,9 +148,6 @@ module RailsConsoleAi
       sys_prompt = init_system_prompt(existing_guide)
       messages = [{ role: :user, content: "Explore this Rails application and generate the application guide." }]
 
-      original_timeout = RailsConsoleAi.configuration.timeout
-      RailsConsoleAi.configuration.timeout = [original_timeout, 120].max
-
       result, _ = send_query_with_tools(messages, system_prompt: sys_prompt, tools_override: init_tools)
 
       guide_text = result.text.to_s.strip
@@ -176,8 +173,6 @@ module RailsConsoleAi
     rescue => e
       @channel.display_error("RailsConsoleAi Error: #{e.class}: #{e.message}")
       nil
-    ensure
-      RailsConsoleAi.configuration.timeout = original_timeout if original_timeout
     end
 
     # --- Interactive session management ---
