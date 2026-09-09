@@ -10,6 +10,7 @@ module RailsConsoleAi
     LOOP_BREAK_THRESHOLD = 5             # same tool+args repeated → break loop
     REPEAT_ERROR_WARN_THRESHOLD = 3      # same error signature (any args) → inject warning
     REPEAT_ERROR_BREAK_THRESHOLD = 5     # same error signature (any args) → force wrap-up
+    CONTEXT_WARN_FRACTION = 0.7          # share of the model's context window → suggest /compact
 
     def initialize(binding_context:, channel:, slack_thread_ts: nil, slack_channel_name: nil)
       @binding_context = binding_context
@@ -208,8 +209,11 @@ module RailsConsoleAi
       @session_name = session.name
       @total_input_tokens = session.input_tokens || 0
       @total_output_tokens = session.output_tokens || 0
-      @total_cache_read_tokens = (session.try(:cache_read_tokens) || 0)
-      @total_cache_write_tokens = (session.try(:cache_write_tokens) || 0)
+      # respond_to? rather than #try: the columns are only present after
+      # RailsConsoleAi.migrate! has run, and this path must not depend on
+      # ActiveSupport being loaded.
+      @total_cache_read_tokens = session_column(session, :cache_read_tokens)
+      @total_cache_write_tokens = session_column(session, :cache_write_tokens)
       @prior_duration_ms = session.duration_ms || 0
 
       if session.model && (session.input_tokens.to_i > 0 || session.output_tokens.to_i > 0)
@@ -218,6 +222,12 @@ module RailsConsoleAi
         @token_usage[session.model][:cache_read] = @total_cache_read_tokens
         @token_usage[session.model][:cache_write] = @total_cache_write_tokens
       end
+    end
+
+    # Reads a column that may not exist yet on this install (added by migrate!).
+    def session_column(session, name)
+      return 0 unless session.respond_to?(name)
+      session.public_send(name).to_i
     end
 
     def set_interactive_query(text)
@@ -594,13 +604,27 @@ module RailsConsoleAi
       end
     end
 
+    # Warn when the conversation is closing in on the model's context window — the
+    # one thing a long conversation still costs. It used to warn at 50K characters
+    # (~12K tokens) on the theory that a big conversation is an expensive one; that
+    # was true when every round re-sent the whole history at full input price, but
+    # the history is cached now and a warm 15K-token prefix is unremarkable. Warning
+    # there just nags, and the advice actively costs money: /compact rewrites the
+    # prefix, throwing away the cache, and spends a summarization call doing it.
+    #
+    # So this fires on headroom instead, and says what compacting costs.
     def warn_if_history_large
-      chars = @history.sum { |m| m[:content].to_s.length }
+      return if @compact_warned
 
-      if chars > 50_000 && !@compact_warned
-        @compact_warned = true
-        $stdout.puts "\e[33m  Conversation is getting large (~#{format_tokens(chars)} chars). Consider running /compact to reduce context size.\e[0m"
-      end
+      tokens = estimate_request_tokens(@history)
+      window = Configuration.context_window_for(effective_model)
+      return if tokens < window * CONTEXT_WARN_FRACTION
+
+      @compact_warned = true
+      pct = ((tokens.to_f / window) * 100).round
+      $stdout.puts "\e[33m  Conversation is using ~#{format_tokens(tokens)} of the #{format_tokens(window)} " \
+                   "context window (~#{pct}%). /compact will summarize it to free room — it also resets the " \
+                   "prompt cache, so only run it when you need the headroom.\e[0m"
     end
 
     # --- Session logging ---

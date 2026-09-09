@@ -164,6 +164,19 @@ RSpec.describe RailsConsoleAi::Configuration do
     end
   end
 
+  describe '.context_window_for' do
+    it 'returns the family context window' do
+      expect(described_class.context_window_for('claude-sonnet-5')).to eq(1_000_000)
+      expect(described_class.context_window_for('us.anthropic.claude-opus-5')).to eq(1_000_000)
+      expect(described_class.context_window_for('claude-haiku-4-5')).to eq(200_000)
+    end
+
+    it 'falls back to a conservative window for unknown models' do
+      expect(described_class.context_window_for('qwen2.5:7b')).to eq(200_000)
+      expect(described_class.context_window_for(nil)).to eq(200_000)
+    end
+  end
+
   describe '#resolved_max_tokens' do
     it 'returns explicit max_tokens when set' do
       config.max_tokens = 1234

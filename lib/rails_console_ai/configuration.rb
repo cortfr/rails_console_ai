@@ -11,16 +11,22 @@ module RailsConsoleAi
     # Cache pricing is derived: read = 0.1x input, write = 1.25x input.
     # temperature: false marks families that reject the `temperature` parameter
     # (removed on opus-4-7+, sonnet-5, and fable-5).
+    # max_tokens is the OUTPUT cap we request; context is the total window.
     MODEL_FAMILIES = {
-      'claude-fable-5'    => { input: 10.0, output: 50.0, max_tokens: 16_000, temperature: false },
-      'claude-opus-5'     => { input: 5.0,  output: 25.0, max_tokens: 16_000, temperature: false },
-      'claude-opus-4-8'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, temperature: false },
-      'claude-opus-4-7'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, temperature: false },
-      'claude-opus-4-6'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, temperature: true },
-      'claude-sonnet-5'   => { input: 2.0,  output: 10.0, max_tokens: 16_000, temperature: false },
-      'claude-sonnet-4-6' => { input: 3.0,  output: 15.0, max_tokens: 16_000, temperature: true },
-      'claude-haiku-4-5'  => { input: 1.0,  output: 5.0,  max_tokens: 16_000, temperature: true },
+      'claude-fable-5'    => { input: 10.0, output: 50.0, max_tokens: 16_000, context: 1_000_000, temperature: false },
+      'claude-opus-5'     => { input: 5.0,  output: 25.0, max_tokens: 16_000, context: 1_000_000, temperature: false },
+      'claude-opus-4-8'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, context: 1_000_000, temperature: false },
+      'claude-opus-4-7'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, context: 1_000_000, temperature: false },
+      'claude-opus-4-6'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, context: 1_000_000, temperature: true },
+      'claude-sonnet-5'   => { input: 2.0,  output: 10.0, max_tokens: 16_000, context: 1_000_000, temperature: false },
+      'claude-sonnet-4-6' => { input: 3.0,  output: 15.0, max_tokens: 16_000, context: 1_000_000, temperature: true },
+      'claude-haiku-4-5'  => { input: 1.0,  output: 5.0,  max_tokens: 16_000, context: 200_000,   temperature: true },
     }.freeze
+
+    # Assumed context window for models with no family entry — local models and
+    # anything newer than this table. Deliberately small: under-guessing warns a
+    # little early, over-guessing means no warning before the request is rejected.
+    DEFAULT_CONTEXT_WINDOW = 200_000
 
     # Family keys sorted longest-first so a more specific family always wins
     # if keys ever overlap (e.g. a future 'claude-sonnet-5-5' entry would match
@@ -48,6 +54,12 @@ module RailsConsoleAi
         cache_read: input * 0.1,
         cache_write: input * (cache_ttl.to_s == '1h' ? 2.0 : 1.25),
       }
+    end
+
+    # Total context window for a model ID, matched by family.
+    def self.context_window_for(model_id)
+      family = model_family(model_id)
+      (family && family[:context]) || DEFAULT_CONTEXT_WINDOW
     end
 
     # Known environment-level failures the executor recognizes and explains to the
