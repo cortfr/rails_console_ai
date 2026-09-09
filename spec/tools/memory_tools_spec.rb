@@ -266,6 +266,10 @@ RSpec.describe RailsConsoleAi::Tools::MemoryTools do
       allow(RailsConsoleAi::Storage::DatabaseStorage).to receive(:memories_available?).and_return(true)
       allow(RailsConsoleAi::Storage::DatabaseStorage).to receive(:all_memories)
         .and_return([proposed_mem, approved_mem])
+      # The AR model lives in app/models and is Rails-autoloaded, so in the spec env
+      # the constant only exists if another spec file required it first. Same guard
+      # as spec/tools/registry_spec.rb uses for RailsConsoleAi::Skill.
+      stub_const('RailsConsoleAi::Memory', Class.new) unless defined?(RailsConsoleAi::Memory)
       allow(RailsConsoleAi::Memory).to receive(:record_use!)
     end
 

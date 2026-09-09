@@ -1,6 +1,7 @@
 require 'spec_helper'
 require 'rails_console_ai/tools/registry'
 require 'rails_console_ai/executor'
+require 'tmpdir' # Dir.mktmpdir below; only reached the load path via other spec files
 
 RSpec.describe RailsConsoleAi::Tools::Registry do
   subject(:registry) { described_class.new }

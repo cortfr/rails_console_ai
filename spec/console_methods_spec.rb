@@ -1,5 +1,10 @@
 require 'spec_helper'
 require 'rails_console_ai/console_methods'
+# ConsoleMethods requires this lazily, inside each ai_* method. The #ai_resume
+# examples below stub the constant in a `before` hook, which runs first — so
+# without this the constant does not exist yet, and the spec passes only when some
+# earlier spec file happened to load it.
+require 'rails_console_ai/repl'
 
 RSpec.describe RailsConsoleAi::ConsoleMethods do
   let(:test_class) { Class.new { include RailsConsoleAi::ConsoleMethods } }
