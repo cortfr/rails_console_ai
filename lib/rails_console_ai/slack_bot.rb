@@ -739,7 +739,7 @@ module RailsConsoleAi
       total_cost = 0.0
 
       token_usage.each do |model, usage|
-        pricing = Configuration.pricing_for(model)
+        pricing = Configuration.pricing_for(model, cache_ttl: RailsConsoleAi.configuration.resolved_cache_ttl)
         pricing ||= { input: 0.0, output: 0.0 } if RailsConsoleAi.configuration.provider == :local
         input_str = "in: #{usage[:input]}"
         output_str = "out: #{usage[:output]}"
@@ -755,7 +755,8 @@ module RailsConsoleAi
         elsif pricing
           cost = Configuration.estimate_cost(model,
             input: usage[:input], output: usage[:output],
-            cache_read: usage[:cache_read] || 0, cache_write: usage[:cache_write] || 0)
+            cache_read: usage[:cache_read] || 0, cache_write: usage[:cache_write] || 0,
+            cache_ttl: RailsConsoleAi.configuration.resolved_cache_ttl)
           total_cost += cost if cost
           cache_read = usage[:cache_read] || 0
           cache_write = usage[:cache_write] || 0
@@ -768,7 +769,7 @@ module RailsConsoleAi
       end
 
       lines << "*Total: $#{'%.2f' % total_cost}*"
-      lines.join("\\n")
+      lines.join("\n")
     end
 
     def bang_context(engine)

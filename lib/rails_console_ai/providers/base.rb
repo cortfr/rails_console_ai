@@ -29,14 +29,79 @@ module RailsConsoleAi
 
       private
 
+      # Read and connect timeouts are separate budgets. Establishing the TCP/TLS
+      # connection either happens in a couple of seconds or is not going to, while
+      # generation legitimately takes minutes with adaptive thinking and a large
+      # output cap — sharing one value between them means either a connect timeout
+      # that hangs or a read timeout that cuts off generation mid-stream. A cut-off
+      # request loses the turn AND the tokens already spent producing it.
       def build_connection(url, headers = {})
         Faraday.new(url: url) do |f|
-          t = config.respond_to?(:resolved_timeout) ? config.resolved_timeout : config.timeout
-          f.options.timeout = t
-          f.options.open_timeout = t
+          f.options.timeout = config.respond_to?(:resolved_timeout) ? config.resolved_timeout : config.timeout
+          f.options.open_timeout = config.respond_to?(:open_timeout) ? config.open_timeout : 10
           f.headers.update(headers)
           f.headers['Content-Type'] = 'application/json'
           f.adapter Faraday.default_adapter
+        end
+      end
+
+      # Transient failures worth another attempt: rate limits, upstream overload,
+      # and connections that never got established. Deliberately NOT retried:
+      #
+      # - Timeouts. A request that used its whole read budget is not obviously
+      #   going to do better on a second try, and each retry both doubles the wait
+      #   and pays again for a generation nobody will read. Raise instead, and say
+      #   which knob to turn.
+      # - 4xx other than 429. A malformed request stays malformed.
+      RETRYABLE_STATUSES = [408, 409, 429, 500, 502, 503, 504, 529].freeze
+
+      def with_retries
+        max = config.respond_to?(:max_retries) ? config.max_retries.to_i : 2
+        attempt = 0
+
+        loop do
+          response = nil
+          reason = nil
+
+          begin
+            response = yield
+          rescue Faraday::TimeoutError
+            t = config.respond_to?(:resolved_timeout) ? config.resolved_timeout : config.timeout
+            raise ProviderError,
+              "Provider request timed out after #{t}s. Raise it with: " \
+              "RailsConsoleAi.configure { |c| c.timeout = #{t * 2} }"
+          rescue Faraday::ConnectionFailed, Faraday::SSLError => e
+            raise ProviderError, "Could not reach the provider: #{e.message}" if attempt >= max
+
+            reason = e.class.name
+          end
+
+          if response
+            return response if response.success?
+            return response unless RETRYABLE_STATUSES.include?(response.status)
+            return response if attempt >= max
+
+            reason = "HTTP #{response.status}"
+          end
+
+          delay = retry_delay(response, attempt)
+          RailsConsoleAi.logger.warn(
+            "RailsConsoleAi: #{reason} from provider, retrying in #{'%.1f' % delay}s " \
+            "(attempt #{attempt + 1} of #{max})"
+          )
+          sleep(delay)
+          attempt += 1
+        end
+      end
+
+      # Honour Retry-After when the server sends one; otherwise exponential backoff
+      # with jitter, so concurrent sessions don't retry in lockstep.
+      def retry_delay(response, attempt)
+        header = response && (response.headers['retry-after'] || response.headers['Retry-After'])
+        if header && header.to_f > 0
+          [header.to_f, 60.0].min
+        else
+          (2**attempt) + rand
         end
       end
 

@@ -1,10 +1,17 @@
 module RailsConsoleAi
   module SessionsHelper
+    # The cache buckets have to be included: `input_tokens` is the uncached
+    # remainder only, so on a well-cached session pricing input+output alone reads
+    # as near-zero for exactly the sessions that cost the most.
     def estimated_cost(session)
-      pricing = Configuration.pricing_for(session.model)
-      return nil unless pricing
-
-      (session.input_tokens * pricing[:input]) + (session.output_tokens * pricing[:output])
+      Configuration.estimate_cost(
+        session.model,
+        input: session.input_tokens,
+        output: session.output_tokens,
+        cache_read: session.try(:cache_read_tokens).to_i,
+        cache_write: session.try(:cache_write_tokens).to_i,
+        cache_ttl: RailsConsoleAi.configuration.resolved_cache_ttl
+      )
     end
 
     def format_cost(session)

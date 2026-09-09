@@ -427,7 +427,11 @@ RSpec.describe RailsConsoleAi::Repl do
       expect(output).to include('out: 100')
     end
 
-    it 'warns when history gets large' do
+    it 'warns when history approaches the context window' do
+      # A real 1M-token window would need megabytes of fixture history to cross the
+      # threshold; the behaviour under test is the warning, not the window size.
+      allow(RailsConsoleAi::Configuration).to receive(:context_window_for).and_return(10_000)
+
       readline_count = 0
       allow(Readline).to receive(:readline) do
         readline_count += 1
@@ -450,10 +454,40 @@ RSpec.describe RailsConsoleAi::Repl do
 
       output = capture_stdout { repl.interactive }
 
-      expect(output).to include('Consider running /compact')
+      expect(output).to include('context window')
+      expect(output).to include('/compact')
+      # Compacting is no longer free advice — it resets the prompt cache.
+      expect(output).to include('resets the prompt cache')
+    end
+
+    # The point of the raised threshold: a conversation can be big without being
+    # anywhere near the window, and on a cached prefix that is unremarkable.
+    it 'does not warn for a conversation that is merely large' do
+      readline_count = 0
+      allow(Readline).to receive(:readline) do
+        readline_count += 1
+        case readline_count
+        when 1
+          # ~80K chars, ~20K tokens: would have tripped the old 50K-char warning,
+          # but it is 2% of Sonnet 5's window.
+          repl.instance_variable_set(:@history, (1..20).flat_map do |i|
+            [{ role: :user, content: "Question #{i} " + ('x' * 2000) },
+             { role: :assistant, content: "Answer #{i} " + ('y' * 2000) }]
+          end)
+          'tell me more'
+        when 2 then nil
+        end
+      end
+
+      stub_no_tools(chat_result('Sure.'))
+
+      output = capture_stdout { repl.interactive }
+
+      expect(output).not_to include('context window')
     end
 
     it 'only warns once per session' do
+      allow(RailsConsoleAi::Configuration).to receive(:context_window_for).and_return(10_000)
       stub_no_tools(chat_result("Response."))
 
       readline_count = 0
@@ -477,7 +511,7 @@ RSpec.describe RailsConsoleAi::Repl do
       output = capture_stdout { repl.interactive }
 
       # Should only appear once despite two turns with large history
-      expect(output.scan(/Consider running \/compact/).length).to eq(1)
+      expect(output.scan(/context window/).length).to eq(1)
     end
 
     it 'handles compaction errors gracefully' do

@@ -23,9 +23,32 @@ module RailsConsoleAi
 
       def build_body(messages, system_prompt:, tools:)
         body = super
-        body[:cache_control] = { type: 'ephemeral' } if cache_supported?
+        # Root-level cache_control is OpenRouter's automatic mode: it places a
+        # breakpoint on the last cacheable block and moves it forward as the
+        # conversation grows, which is what a tool loop needs — otherwise every
+        # round re-bills the whole accumulated history at full input price.
+        body[:cache_control] = cache_control if cache_supported?
         body[:session_id] = routing_session_id if routing_session_id
         body
+      end
+
+      # The static system prefix gets its own explicit breakpoint so it has a
+      # guaranteed read point no matter what happens later in `messages`; the
+      # automatic breakpoint above then covers the growing tail. OpenRouter
+      # expresses Anthropic breakpoints as OpenAI-style multipart content.
+      def system_message(system_prompt)
+        return super unless cache_supported?
+
+        { role: 'system',
+          content: [{ type: 'text', text: system_prompt, cache_control: cache_control }] }
+      end
+
+      # Same TTL on every breakpoint: entries with the longer TTL must precede
+      # shorter ones, and an explicit marker whose TTL differs from the root-level
+      # field's is rejected outright.
+      def cache_control
+        ttl = config.respond_to?(:resolved_cache_ttl) ? config.resolved_cache_ttl : nil
+        ttl ? { type: 'ephemeral', ttl: ttl } : { type: 'ephemeral' }
       end
 
       def build_result(data, body:, tools: nil)

@@ -46,17 +46,17 @@ module RailsConsoleAi
         inference[:temperature] = temp unless temp.nil?
         params = {
           model_id: config.resolved_model,
-          messages: format_messages(messages),
+          messages: mark_conversation_breakpoint(format_messages(messages)),
           inference_config: inference
         }
         if system_prompt
           sys_blocks = [{ text: system_prompt }]
-          sys_blocks << { cache_point: { type: 'default' } } if cache_supported?
+          sys_blocks << cache_point if cache_supported?
           params[:system] = sys_blocks
         end
         if tools
           bedrock_tools = tools.to_bedrock_format
-          bedrock_tools << { cache_point: { type: 'default' } } if bedrock_tools.any? && cache_supported?
+          bedrock_tools << cache_point if bedrock_tools.any? && cache_supported?
           params[:tool_config] = { tools: bedrock_tools }
         end
 
@@ -96,6 +96,10 @@ module RailsConsoleAi
           client_opts[:region] = region if region && !region.empty?
           t = config.respond_to?(:resolved_timeout) ? config.resolved_timeout : config.timeout
           client_opts[:http_read_timeout] = t
+          # Separate budget from generation time, same reasoning as
+          # Providers::Base#build_connection. The AWS SDK does its own retrying of
+          # throttling and 5xx, so there is no with_retries wrapper on this path.
+          client_opts[:http_open_timeout] = config.open_timeout if config.respond_to?(:open_timeout)
           Aws::BedrockRuntime::Client.new(client_opts)
         end
       end
@@ -139,6 +143,46 @@ module RailsConsoleAi
           end
         end
         merged
+      end
+
+      # Converse takes a cache breakpoint as a content block. `ttl` is optional and
+      # only present on newer aws-sdk-bedrockruntime versions — the SDK validates
+      # params against its own struct and raises on an unknown member, so the
+      # member is probed rather than assumed. Omitting it means the 5-minute
+      # default, which is also what `cache_ttl = nil` asks for.
+      def cache_point
+        ttl = config.respond_to?(:resolved_cache_ttl) ? config.resolved_cache_ttl : nil
+        return { cache_point: { type: 'default' } } unless ttl && cache_ttl_supported?
+
+        { cache_point: { type: 'default', ttl: ttl } }
+      end
+
+      def cache_ttl_supported?
+        return @cache_ttl_supported if defined?(@cache_ttl_supported)
+
+        # The struct is only defined once aws-sdk-bedrockruntime is loaded, and
+        # #client does that lazily. Probing first would fail-open to "no TTL" on
+        # the first request of the process — silently, which is the failure mode
+        # this whole change exists to avoid. #client is memoized and needed a few
+        # lines later anyway.
+        client
+
+        @cache_ttl_supported =
+          defined?(Aws::BedrockRuntime::Types::CachePointBlock) &&
+          Aws::BedrockRuntime::Types::CachePointBlock.members.include?(:ttl)
+      end
+
+      # Same reasoning as Providers::Anthropic#mark_conversation_breakpoint: the
+      # system/tools cache points only cover the static prefix, so without a cache
+      # point in the conversation the accumulated history is re-billed at full
+      # price on every round of a tool loop. `format_messages` has already duped
+      # the content arrays, so appending is safe.
+      def mark_conversation_breakpoint(formatted)
+        return formatted unless cache_supported?
+        return formatted if formatted.empty?
+
+        formatted.last[:content] << cache_point
+        formatted
       end
 
       def extract_text(response)

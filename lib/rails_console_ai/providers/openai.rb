@@ -43,7 +43,7 @@ module RailsConsoleAi
         conn = build_connection(api_base, request_headers)
         body = build_body(messages, system_prompt: system_prompt, tools: tools)
         debug_request("#{api_base}#{endpoint_path}", body)
-        response = conn.post(endpoint_path, JSON.generate(body))
+        response = with_retries { conn.post(endpoint_path, JSON.generate(body)) }
         debug_response(response.body)
         build_result(parse_response(response), body: body, tools: tools)
       end
@@ -60,9 +60,15 @@ module RailsConsoleAi
         { 'Authorization' => "Bearer #{config.resolved_api_key}" }
       end
 
+      # Overridable: providers that support explicit cache breakpoints emit
+      # multipart content here instead of a bare string.
+      def system_message(system_prompt)
+        { role: 'system', content: system_prompt }
+      end
+
       def build_body(messages, system_prompt:, tools:)
         formatted = []
-        formatted << { role: 'system', content: system_prompt } if system_prompt
+        formatted << system_message(system_prompt) if system_prompt
         formatted.concat(format_messages(messages))
 
         body = {

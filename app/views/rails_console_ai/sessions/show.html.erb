@@ -44,6 +44,12 @@
       <label>Tokens (in / out)</label>
       <span class="mono"><%= @session.input_tokens %> / <%= @session.output_tokens %></span>
     </div>
+    <% if (@session.try(:cache_read_tokens).to_i + @session.try(:cache_write_tokens).to_i) > 0 %>
+      <div class="meta-item">
+        <label>Cache (read / write)</label>
+        <span class="mono"><%= @session.cache_read_tokens %> / <%= @session.cache_write_tokens %></span>
+      </div>
+    <% end %>
     <div class="meta-item">
       <label>Est. Cost</label>
       <span class="mono"><%= format_cost(@session) %></span>

@@ -10,6 +10,8 @@ module RailsConsoleAi
           conversation:  Array(attrs[:conversation]).to_json,
           input_tokens:  attrs[:input_tokens] || 0,
           output_tokens: attrs[:output_tokens] || 0,
+          cache_read_tokens:  attrs[:cache_read_tokens] || 0,
+          cache_write_tokens: attrs[:cache_write_tokens] || 0,
           user_name:     attrs[:user_name] || current_user_name,
           mode:          attrs[:mode].to_s,
           name:          attrs[:name],
@@ -59,6 +61,8 @@ module RailsConsoleAi
         updates[:conversation]  = Array(attrs[:conversation]).to_json if attrs.key?(:conversation)
         updates[:input_tokens]  = attrs[:input_tokens]  if attrs.key?(:input_tokens)
         updates[:output_tokens] = attrs[:output_tokens] if attrs.key?(:output_tokens)
+        updates[:cache_read_tokens]  = attrs[:cache_read_tokens]  if attrs.key?(:cache_read_tokens)
+        updates[:cache_write_tokens] = attrs[:cache_write_tokens] if attrs.key?(:cache_write_tokens)
         updates[:code_executed] = attrs[:code_executed]  if attrs.key?(:code_executed)
         updates[:code_output]   = attrs[:code_output]    if attrs.key?(:code_output)
         updates[:code_result]   = attrs[:code_result]    if attrs.key?(:code_result)

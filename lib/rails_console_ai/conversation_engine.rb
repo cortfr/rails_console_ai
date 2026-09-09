@@ -1,6 +1,7 @@
 module RailsConsoleAi
   class ConversationEngine
     attr_reader :history, :total_input_tokens, :total_output_tokens,
+                :total_cache_read_tokens, :total_cache_write_tokens,
                 :interactive_session_id, :session_name
 
     LARGE_OUTPUT_THRESHOLD = 20_000      # chars — truncate tool results larger than this immediately
@@ -9,6 +10,7 @@ module RailsConsoleAi
     LOOP_BREAK_THRESHOLD = 5             # same tool+args repeated → break loop
     REPEAT_ERROR_WARN_THRESHOLD = 3      # same error signature (any args) → inject warning
     REPEAT_ERROR_BREAK_THRESHOLD = 5     # same error signature (any args) → force wrap-up
+    CONTEXT_WARN_FRACTION = 0.7          # share of the model's context window → suggest /compact
 
     def initialize(binding_context:, channel:, slack_thread_ts: nil, slack_channel_name: nil)
       @binding_context = binding_context
@@ -23,6 +25,8 @@ module RailsConsoleAi
       @history = []
       @total_input_tokens = 0
       @total_output_tokens = 0
+      @total_cache_read_tokens = 0
+      @total_cache_write_tokens = 0
       @token_usage = Hash.new { |h, k| h[k] = { input: 0, output: 0 } }
       @interactive_session_id = nil
       @session_name = nil
@@ -43,7 +47,7 @@ module RailsConsoleAi
       start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       console_capture = StringIO.new
       exec_result = with_console_capture(console_capture) do
-        conversation = [{ role: :user, content: query }]
+        conversation = [{ role: :user, content: user_turn(query) }]
         exec_result, code, executed = one_shot_round(conversation)
 
         if executed && @executor.last_error && !@executor.last_safety_error
@@ -86,7 +90,7 @@ module RailsConsoleAi
       start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       console_capture = StringIO.new
       with_console_capture(console_capture) do
-        result, _ = send_query(query)
+        result, _ = send_query(user_turn(query))
         track_usage(result)
         @executor.display_response(result.text)
         display_usage(result)
@@ -116,7 +120,7 @@ module RailsConsoleAi
       @channel.log_input(text) if @channel.respond_to?(:log_input)
       @interactive_query ||= text
       maybe_auto_upgrade_thinking(text)
-      @history << { role: :user, content: text }
+      @history << { role: :user, content: user_turn(text) }
 
       status = send_and_execute
       if status == :error
@@ -185,6 +189,8 @@ module RailsConsoleAi
       @history = []
       @total_input_tokens = 0
       @total_output_tokens = 0
+      @total_cache_read_tokens = 0
+      @total_cache_write_tokens = 0
       @token_usage = Hash.new { |h, k| h[k] = { input: 0, output: 0 } }
       @interactive_query = nil
       @interactive_session_id = nil
@@ -204,12 +210,25 @@ module RailsConsoleAi
       @session_name = session.name
       @total_input_tokens = session.input_tokens || 0
       @total_output_tokens = session.output_tokens || 0
+      # respond_to? rather than #try: the columns are only present after
+      # RailsConsoleAi.migrate! has run, and this path must not depend on
+      # ActiveSupport being loaded.
+      @total_cache_read_tokens = session_column(session, :cache_read_tokens)
+      @total_cache_write_tokens = session_column(session, :cache_write_tokens)
       @prior_duration_ms = session.duration_ms || 0
 
       if session.model && (session.input_tokens.to_i > 0 || session.output_tokens.to_i > 0)
         @token_usage[session.model][:input] = session.input_tokens.to_i
         @token_usage[session.model][:output] = session.output_tokens.to_i
+        @token_usage[session.model][:cache_read] = @total_cache_read_tokens
+        @token_usage[session.model][:cache_write] = @total_cache_write_tokens
       end
+    end
+
+    # Reads a column that may not exist yet on this install (added by migrate!).
+    def session_column(session, name)
+      return 0 unless session.respond_to?(name)
+      session.public_send(name).to_i
     end
 
     def set_interactive_query(text)
@@ -217,7 +236,7 @@ module RailsConsoleAi
     end
 
     def add_user_message(text)
-      @history << { role: :user, content: text }
+      @history << { role: :user, content: user_turn(text) }
     end
 
     def pop_last_message
@@ -415,11 +434,12 @@ module RailsConsoleAi
       $stdout.puts "\e[36m  Cost estimate:\e[0m"
 
       @token_usage.each do |model, usage|
-        pricing = Configuration.pricing_for(model)
+        pricing = Configuration.pricing_for(model, cache_ttl: RailsConsoleAi.configuration.resolved_cache_ttl)
         pricing ||= { input: 0.0, output: 0.0 } if RailsConsoleAi.configuration.provider == :local
         input_str = "in: #{format_tokens(usage[:input])}"
         output_str = "out: #{format_tokens(usage[:output])}"
 
+        # A provider that reports real dollars (OpenRouter) beats any estimate.
         reported_cost = usage[:cost]
         if reported_cost && reported_cost > 0
           has_reported_cost = true
@@ -432,7 +452,8 @@ module RailsConsoleAi
         elsif pricing
           cost = Configuration.estimate_cost(model,
             input: usage[:input], output: usage[:output],
-            cache_read: usage[:cache_read] || 0, cache_write: usage[:cache_write] || 0)
+            cache_read: usage[:cache_read] || 0, cache_write: usage[:cache_write] || 0,
+            cache_ttl: RailsConsoleAi.configuration.resolved_cache_ttl)
           total_cost += cost
           cache_str = ""
           cache_read = usage[:cache_read] || 0
@@ -474,13 +495,27 @@ module RailsConsoleAi
       conversation_messages(messages, **opts)
     end
 
+    # The system prompt must stay byte-identical for the life of a session: it
+    # renders ahead of the entire conversation, so any change to it invalidates
+    # the system cache AND every cached message after it. Everything here is
+    # fixed for the session — the binding's variable list, which changes whenever
+    # the console (or generated code) assigns a local, rides along with the user
+    # turn instead. See #user_turn.
     def context
       base = @context_base ||= context_builder.build
       parts = [base]
       parts << safety_context
       parts << @channel.system_instructions
-      parts << binding_variable_summary
       parts.compact.join("\n\n")
+    end
+
+    # Composes a user turn with the console binding's current variables appended.
+    # This belongs in `messages`, not in the system prompt: a message at turn 5
+    # invalidates nothing before turn 5, and because it is persisted into history
+    # rather than injected per-request, the prefix stays append-only.
+    def user_turn(text)
+      summary = binding_variable_summary
+      summary ? "#{text}\n\n#{summary}" : text
     end
 
     AUTO_THINK_PATTERN = /\bthink\s+(harder|deeper|hard|carefully|more\s+carefully)\b/i
@@ -584,13 +619,27 @@ module RailsConsoleAi
       end
     end
 
+    # Warn when the conversation is closing in on the model's context window — the
+    # one thing a long conversation still costs. It used to warn at 50K characters
+    # (~12K tokens) on the theory that a big conversation is an expensive one; that
+    # was true when every round re-sent the whole history at full input price, but
+    # the history is cached now and a warm 15K-token prefix is unremarkable. Warning
+    # there just nags, and the advice actively costs money: /compact rewrites the
+    # prefix, throwing away the cache, and spends a summarization call doing it.
+    #
+    # So this fires on headroom instead, and says what compacting costs.
     def warn_if_history_large
-      chars = @history.sum { |m| m[:content].to_s.length }
+      return if @compact_warned
 
-      if chars > 50_000 && !@compact_warned
-        @compact_warned = true
-        $stdout.puts "\e[33m  Conversation is getting large (~#{format_tokens(chars)} chars). Consider running /compact to reduce context size.\e[0m"
-      end
+      tokens = estimate_request_tokens(@history)
+      window = Configuration.context_window_for(effective_model)
+      return if tokens < window * CONTEXT_WARN_FRACTION
+
+      @compact_warned = true
+      pct = ((tokens.to_f / window) * 100).round
+      $stdout.puts "\e[33m  Conversation is using ~#{format_tokens(tokens)} of the #{format_tokens(window)} " \
+                   "context window (~#{pct}%). /compact will summarize it to free room — it also resets the " \
+                   "prompt cache, so only run it when you need the headroom.\e[0m"
     end
 
     # --- Session logging ---
@@ -824,10 +873,32 @@ module RailsConsoleAi
       max_rounds = RailsConsoleAi.configuration.max_tool_rounds
       total_input = 0
       total_output = 0
+      # Cache activity has to be summed across rounds and reported out with the
+      # rest of the usage: it is the only evidence that caching is working, and
+      # `input_tokens` alone can't show it (the API reports only the UNCACHED
+      # remainder there — total prompt size is input + cache_read + cache_write).
+      total_cache_read = 0
+      total_cache_write = 0
+      # Prompt volume actually sent this loop. `total_input` alone is NOT it: the
+      # API reports only the uncached remainder there, so once caching is working
+      # it stays near zero no matter how large the conversation grows. The token
+      # budget below has to be measured against the full prompt or it never fires.
+      total_prompt = -> { total_input + total_cache_read + total_cache_write }
       result = nil
       new_messages = []
       last_thinking = nil
       last_tool_names = []
+
+      # Steering messages go into BOTH the request and the persisted history.
+      # Injecting a message for one request and dropping it from history rewrites
+      # the prefix the next turn sends, so every cached block from that point on
+      # misses — and the model also loses the fact that it was already nudged.
+      add_nudge = lambda do |text|
+        msg = { role: :user, content: text }
+        messages << msg
+        new_messages << msg
+        msg
+      end
 
       exhausted = false
       wrap_up_reason = nil
@@ -865,7 +936,7 @@ module RailsConsoleAi
 
         if round > 0
           req_tokens = estimate_request_tokens(messages)
-          @channel.display_status("  #{llm_status(round, messages, req_tokens, total_input, last_thinking, last_tool_names)}")
+          @channel.display_status("  #{llm_status(round, messages, req_tokens, total_prompt.call, last_thinking, last_tool_names)}")
         end
 
         if RailsConsoleAi.configuration.debug
@@ -881,6 +952,8 @@ module RailsConsoleAi
         end
         total_input += result.input_tokens || 0
         total_output += result.output_tokens || 0
+        total_cache_read += result.cache_read_input_tokens || 0
+        total_cache_write += result.cache_write_input_tokens || 0
 
         break if @channel.cancelled?
 
@@ -990,7 +1063,7 @@ module RailsConsoleAi
             wrap_up_reason ||= :tool_loop
           elsif tool_call_counts[key] >= LOOP_WARN_THRESHOLD
             @channel.display_status("  Warning: #{tc[:name]} called #{tool_call_counts[key]} times with same args — consider a different approach.")
-            messages << { role: :user, content: "You are repeating the same tool call (#{tc[:name]}) with the same arguments. This is not making progress. Try a different approach or provide your answer now." }
+            add_nudge.call("You are repeating the same tool call (#{tc[:name]}) with the same arguments. This is not making progress. Try a different approach or provide your answer now.")
           end
         end
 
@@ -1005,20 +1078,21 @@ module RailsConsoleAi
           elsif count >= REPEAT_ERROR_WARN_THRESHOLD && !warned_error_sigs.include?(sig)
             warned_error_sigs << sig
             @channel.display_status("  Warning: same error hit #{count} times — nudging model to change strategy.")
-            messages << { role: :user, content: "You have now hit the same error #{count} times (#{sig}). Trying variations of the same approach is not producing new information. If this error cannot be resolved from this session, stop investigating it: summarize what you have established, state what you could not determine and why, and give the user your best answer." }
+            add_nudge.call("You have now hit the same error #{count} times (#{sig}). Trying variations of the same approach is not producing new information. If this error cannot be resolved from this session, stop investigating it: summarize what you have established, state what you could not determine and why, and give the user your best answer.")
           end
         end
 
         # Circuit breaker: token budget for a single tool loop.
         config = RailsConsoleAi.configuration
-        if config.token_stop_threshold && total_input >= config.token_stop_threshold
-          @channel.display_status("  Token budget exceeded (#{format_tokens(total_input)} input tokens this request) — forcing wrap-up.")
+        prompt_tokens = total_prompt.call
+        if config.token_stop_threshold && prompt_tokens >= config.token_stop_threshold
+          @channel.display_status("  Token budget exceeded (#{format_tokens(prompt_tokens)} prompt tokens this request) — forcing wrap-up.")
           exhausted = true
           wrap_up_reason ||= :token_budget
-        elsif config.token_nudge_threshold && total_input >= config.token_nudge_threshold && !token_nudge_sent
+        elsif config.token_nudge_threshold && prompt_tokens >= config.token_nudge_threshold && !token_nudge_sent
           token_nudge_sent = true
-          @channel.display_status("  High token usage (#{format_tokens(total_input)} input tokens this request) — nudging model to wrap up.")
-          messages << { role: :user, content: "This investigation has consumed #{format_tokens(total_input)} input tokens without reaching a conclusion. Wrap up now: stop opening new lines of investigation, summarize what you have established, state what you could not determine and why, and give the user your best answer. Only make another tool call if you are confident a single call will resolve the question." }
+          @channel.display_status("  High token usage (#{format_tokens(prompt_tokens)} prompt tokens this request) — nudging model to wrap up.")
+          add_nudge.call("This investigation has consumed #{format_tokens(prompt_tokens)} prompt tokens without reaching a conclusion. Wrap up now: stop opening new lines of investigation, summarize what you have established, state what you could not determine and why, and give the user your best answer. Only make another tool call if you are confident a single call will resolve the question.")
         end
 
         break if exhausted
@@ -1048,7 +1122,7 @@ module RailsConsoleAi
         if wrap_up_reason.nil? || wrap_up_reason == :round_cap
           $stdout.puts "\e[33m  Hit tool round limit (#{max_rounds}). Forcing final answer. Increase with: RailsConsoleAi.configure { |c| c.max_tool_rounds = 200 }\e[0m"
         end
-        messages << { role: :user, content: final_nudge }
+        add_nudge.call(final_nudge)
         # Must be chat_with_tools, not chat: the transcript contains
         # tool_use/tool_result blocks, and Bedrock/Anthropic reject those unless
         # the request also defines tools. Any tool calls in the response are
@@ -1056,6 +1130,8 @@ module RailsConsoleAi
         result = provider.chat_with_tools(messages, tools: tools, system_prompt: active_system_prompt)
         total_input += result.input_tokens || 0
         total_output += result.output_tokens || 0
+        total_cache_read += result.cache_read_input_tokens || 0
+        total_cache_write += result.cache_write_input_tokens || 0
       end
 
       last_llm_stats = result ? format_llm_stats(result) : nil
@@ -1063,6 +1139,8 @@ module RailsConsoleAi
         text: result ? result.text : '',
         input_tokens: total_input,
         output_tokens: total_output,
+        cache_read_input_tokens: total_cache_read,
+        cache_write_input_tokens: total_cache_write,
         stop_reason: result ? result.stop_reason : :end_turn
       )
       [final_result, new_messages, last_llm_stats]
@@ -1071,6 +1149,8 @@ module RailsConsoleAi
     def track_usage(result)
       @total_input_tokens += result.input_tokens || 0
       @total_output_tokens += result.output_tokens || 0
+      @total_cache_read_tokens += result.cache_read_input_tokens || 0
+      @total_cache_write_tokens += result.cache_write_input_tokens || 0
 
       model = effective_model
       @token_usage[model][:input] += result.input_tokens || 0
@@ -1120,6 +1200,8 @@ module RailsConsoleAi
       merged = attrs.merge(
         input_tokens: @total_input_tokens,
         output_tokens: @total_output_tokens,
+        cache_read_tokens: @total_cache_read_tokens,
+        cache_write_tokens: @total_cache_write_tokens,
         duration_ms: duration_ms,
         model: effective_model
       )
@@ -1493,14 +1575,11 @@ module RailsConsoleAi
       if result.cost
         parts << "$#{'%.4f' % result.cost}"
       else
-        model = effective_model
-        pricing = Configuration.pricing_for(model)
-        if pricing
-          cost = Configuration.estimate_cost(model,
-            input: result.input_tokens || 0, output: result.output_tokens || 0,
-            cache_read: cache_r, cache_write: cache_w)
-          parts << "~$#{'%.4f' % cost}" if cost
-        end
+        cost = Configuration.estimate_cost(effective_model,
+          input: result.input_tokens || 0, output: result.output_tokens || 0,
+          cache_read: cache_r, cache_write: cache_w,
+          cache_ttl: RailsConsoleAi.configuration.resolved_cache_ttl)
+        parts << "~$#{'%.4f' % cost}" if cost
       end
 
       parts.join(' | ')
@@ -1526,7 +1605,7 @@ module RailsConsoleAi
       input_t = result.input_tokens || 0
       output_t = result.output_tokens || 0
       model = effective_model
-      pricing = Configuration.pricing_for(model)
+      pricing = Configuration.pricing_for(model, cache_ttl: RailsConsoleAi.configuration.resolved_cache_ttl)
       pricing ||= { input: 0.0, output: 0.0 } if RailsConsoleAi.configuration.provider == :local
 
       cache_r = result.cache_read_input_tokens || 0
@@ -1534,16 +1613,18 @@ module RailsConsoleAi
       parts = ["in: #{format_tokens(input_t)}", "out: #{format_tokens(output_t)}"]
       parts << "cache r: #{format_tokens(cache_r)} w: #{format_tokens(cache_w)}" if cache_r > 0 || cache_w > 0
 
+      ttl = RailsConsoleAi.configuration.resolved_cache_ttl
       if result.cost
         parts << "$#{'%.4f' % result.cost}"
         session_has_reported = @token_usage.any? { |_, u| u[:cost] && u[:cost] > 0 }
         session_cost = session_has_reported ? @token_usage.sum { |_, u| u[:cost] || 0 } :
-          Configuration.estimate_cost(model, input: total_input, output: total_output) || 0
+          Configuration.estimate_cost(model, input: total_input, output: total_output, cache_ttl: ttl) || 0
         $stderr.puts "\n#{d}[debug]   ← response: #{parts.join(' | ')}  (session: $#{'%.4f' % session_cost})#{r}"
       elsif pricing
-        cost = Configuration.estimate_cost(model, input: input_t, output: output_t, cache_read: cache_r, cache_write: cache_w)
+        cost = Configuration.estimate_cost(model, input: input_t, output: output_t,
+          cache_read: cache_r, cache_write: cache_w, cache_ttl: ttl)
         parts << "~$#{'%.4f' % cost}" if cost
-        session_cost = Configuration.estimate_cost(model, input: total_input, output: total_output) || 0
+        session_cost = Configuration.estimate_cost(model, input: total_input, output: total_output, cache_ttl: ttl) || 0
         $stderr.puts "\n#{d}[debug]   ← response: #{parts.join(' | ')}  (session: ~$#{'%.4f' % session_cost})#{r}"
       else
         $stderr.puts "\n#{d}[debug]   ← response: #{parts.join(' | ')}#{r}"

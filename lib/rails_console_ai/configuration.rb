@@ -11,16 +11,22 @@ module RailsConsoleAi
     # Cache pricing is derived: read = 0.1x input, write = 1.25x input.
     # temperature: false marks families that reject the `temperature` parameter
     # (removed on opus-4-7+, sonnet-5, and fable-5).
+    # max_tokens is the OUTPUT cap we request; context is the total window.
     MODEL_FAMILIES = {
-      'claude-fable-5'    => { input: 10.0, output: 50.0, max_tokens: 16_000, temperature: false },
-      'claude-opus-5'     => { input: 5.0,  output: 25.0, max_tokens: 16_000, temperature: false },
-      'claude-opus-4-8'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, temperature: false },
-      'claude-opus-4-7'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, temperature: false },
-      'claude-opus-4-6'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, temperature: true },
-      'claude-sonnet-5'   => { input: 3.0,  output: 15.0, max_tokens: 16_000, temperature: false },
-      'claude-sonnet-4-6' => { input: 3.0,  output: 15.0, max_tokens: 16_000, temperature: true },
-      'claude-haiku-4-5'  => { input: 1.0,  output: 5.0,  max_tokens: 16_000, temperature: true },
+      'claude-fable-5'    => { input: 10.0, output: 50.0, max_tokens: 16_000, context: 1_000_000, temperature: false },
+      'claude-opus-5'     => { input: 5.0,  output: 25.0, max_tokens: 16_000, context: 1_000_000, temperature: false },
+      'claude-opus-4-8'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, context: 1_000_000, temperature: false },
+      'claude-opus-4-7'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, context: 1_000_000, temperature: false },
+      'claude-opus-4-6'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, context: 1_000_000, temperature: true },
+      'claude-sonnet-5'   => { input: 2.0,  output: 10.0, max_tokens: 16_000, context: 1_000_000, temperature: false },
+      'claude-sonnet-4-6' => { input: 3.0,  output: 15.0, max_tokens: 16_000, context: 1_000_000, temperature: true },
+      'claude-haiku-4-5'  => { input: 1.0,  output: 5.0,  max_tokens: 16_000, context: 200_000,   temperature: true },
     }.freeze
+
+    # Assumed context window for models with no family entry — local models and
+    # anything newer than this table. Deliberately small: under-guessing warns a
+    # little early, over-guessing means no warning before the request is rejected.
+    DEFAULT_CONTEXT_WINDOW = 200_000
 
     # Family keys sorted longest-first so a more specific family always wins
     # if keys ever overlap (e.g. a future 'claude-sonnet-5-5' entry would match
@@ -37,7 +43,9 @@ module RailsConsoleAi
 
     # Per-token pricing for a model ID, matched by family. Returns
     # { input:, output:, cache_read:, cache_write: } or nil for unknown models.
-    def self.pricing_for(model_id)
+    # Cache reads bill at 0.1x the base input rate; cache writes at 1.25x for the
+    # 5-minute cache and 2x for the 1-hour cache.
+    def self.pricing_for(model_id, cache_ttl: nil)
       family = model_family(model_id)
       return nil unless family
       input = family[:input] / 1_000_000
@@ -45,21 +53,30 @@ module RailsConsoleAi
         input: input,
         output: family[:output] / 1_000_000,
         cache_read: input * 0.1,
-        cache_write: input * 1.25,
+        cache_write: input * (cache_ttl.to_s == '1h' ? 2.0 : 1.25),
       }
     end
 
-    def self.estimate_cost(model, input:, output:, cache_read: 0, cache_write: 0)
-      pricing = pricing_for(model)
+    # The four usage buckets each bill at their own rate. The API's `input_tokens`
+    # is the UNCACHED remainder — cached tokens are reported separately and are not
+    # part of it (total prompt size is input + cache_read + cache_write), so
+    # discounting cache_read out of input double-counts and can drive a cost
+    # negative. Every estimated cost readout goes through here. Providers that
+    # report real dollars (OpenRouter) are preferred over this estimate.
+    def self.estimate_cost(model, input:, output:, cache_read: 0, cache_write: 0, cache_ttl: nil)
+      pricing = pricing_for(model, cache_ttl: cache_ttl)
       return nil unless pricing
 
-      cost = (input * pricing[:input]) + (output * pricing[:output])
-      if (cache_read > 0 || cache_write > 0) && pricing[:cache_read]
-        cost -= cache_read * pricing[:input]
-        cost += cache_read * pricing[:cache_read]
-        cost += cache_write * (pricing[:cache_write] - pricing[:input])
-      end
-      cost
+      ((input || 0) * pricing[:input]) +
+        ((output || 0) * pricing[:output]) +
+        ((cache_read || 0) * pricing[:cache_read]) +
+        ((cache_write || 0) * pricing[:cache_write])
+    end
+
+    # Total context window for a model ID, matched by family.
+    def self.context_window_for(model_id)
+      family = model_family(model_id)
+      (family && family[:context]) || DEFAULT_CONTEXT_WINDOW
     end
 
     # Known environment-level failures the executor recognizes and explains to the
@@ -83,9 +100,10 @@ module RailsConsoleAi
 
     attr_accessor :provider, :api_key, :model, :thinking_model, :max_tokens,
                   :auto_execute, :temperature,
-                  :timeout, :debug, :max_tool_rounds,
+                  :timeout, :open_timeout, :max_retries, :debug, :max_tool_rounds,
                   :error_hints,
                   :token_nudge_threshold, :token_stop_threshold,
+                  :cache_ttl,
                   :storage_adapter, :memories_enabled,
                   :session_logging, :connection_class,
                   :admin_username, :admin_password,
@@ -109,12 +127,29 @@ module RailsConsoleAi
       @max_tokens   = nil
       @auto_execute = false
       @temperature  = 0.2
-      @timeout      = 30
+      # Read timeout for one provider request. Adaptive thinking plus a large output
+      # cap means a single agentic call can legitimately run for minutes; the old 30s
+      # cut those off mid-generation, which loses the turn and the tokens already
+      # spent on it, and sends the user back to re-ask from a cold cache.
+      @timeout      = 300
+      @open_timeout = 10    # establishing the connection, not generating the response
+      @max_retries  = 2     # transient failures only — see Providers::Base#with_retries
       @debug        = false
       @max_tool_rounds = 200
       @error_hints = DEFAULT_ERROR_HINTS.dup
-      @token_nudge_threshold = 500_000    # input tokens in one tool loop → nudge model to wrap up (nil disables)
-      @token_stop_threshold  = 1_000_000  # input tokens in one tool loop → force a final answer (nil disables)
+      # Measured against total prompt tokens sent in one tool loop — uncached input
+      # plus cache reads plus cache writes. Not the API's `input_tokens` alone:
+      # that is only the uncached remainder, so with caching on it stays near zero
+      # regardless of conversation size and neither guard would ever fire.
+      @token_nudge_threshold = 500_000    # prompt tokens in one tool loop → nudge model to wrap up (nil disables)
+      @token_stop_threshold  = 1_000_000  # prompt tokens in one tool loop → force a final answer (nil disables)
+      # Prompt cache lifetime: nil/'5m' for the 5-minute default, '1h' for the
+      # 1-hour cache. Within a tool loop, rounds are seconds apart and 5m is
+      # strictly cheaper (a read refreshes the entry, and the write costs 1.25x
+      # vs 2x). '1h' pays off when a human sits between turns for more than five
+      # minutes — long interactive console sessions and Slack threads — because
+      # a miss there resends the whole conversation at full price.
+      @cache_ttl = nil
       @storage_adapter  = nil
       @memories_enabled = true
       @session_logging  = true
@@ -267,6 +302,13 @@ module RailsConsoleAi
       family = self.class.model_family(resolved_model)
       return nil if family && family[:temperature] == false
       @temperature
+    end
+
+    # Returns '1h' when the 1-hour prompt cache is requested, else nil (the
+    # 5-minute default). Providers that offer only one cache duration ignore it.
+    def resolved_cache_ttl
+      return nil unless @cache_ttl
+      @cache_ttl.to_s == '1h' ? '1h' : nil
     end
 
     def resolved_thinking_model
