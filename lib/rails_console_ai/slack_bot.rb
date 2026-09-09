@@ -739,7 +739,7 @@ module RailsConsoleAi
       total_cost = 0.0
 
       token_usage.each do |model, usage|
-        pricing = Configuration.pricing_for(model)
+        pricing = Configuration.pricing_for(model, cache_ttl: RailsConsoleAi.configuration.resolved_cache_ttl)
         pricing ||= { input: 0.0, output: 0.0 } if RailsConsoleAi.configuration.provider == :local
         input_str = "in: #{usage[:input]}"
         output_str = "out: #{usage[:output]}"
@@ -749,9 +749,11 @@ module RailsConsoleAi
           cache_read = usage[:cache_read] || 0
           cache_write = usage[:cache_write] || 0
           if (cache_read > 0 || cache_write > 0) && pricing[:cache_read]
-            cost -= cache_read * pricing[:input]
+            # input_tokens excludes cached tokens — bill each bucket at its own
+            # rate rather than discounting cache_read out of input (see
+            # ConversationEngine#display_cost_summary).
             cost += cache_read * pricing[:cache_read]
-            cost += cache_write * (pricing[:cache_write] - pricing[:input])
+            cost += cache_write * pricing[:cache_write]
           end
           total_cost += cost
           cache_str = ""

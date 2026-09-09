@@ -154,6 +154,8 @@ module RailsConsoleAi
           t.text    :conversation,  null: false
           t.integer :input_tokens,  default: 0
           t.integer :output_tokens, default: 0
+          t.integer :cache_read_tokens,  default: 0
+          t.integer :cache_write_tokens, default: 0
           t.string  :user_name,     limit: 255
           t.string  :mode,          limit: 20, null: false
           t.text    :code_executed
@@ -395,6 +397,18 @@ module RailsConsoleAi
       unless conn.column_exists?(table, :options)
         conn.add_column(table, :options, :text)
         migrations << 'options'
+      end
+
+      # Without these, a session row records only the UNCACHED remainder of its
+      # input and the admin cost column reads near-zero for every cached session.
+      unless conn.column_exists?(table, :cache_read_tokens)
+        conn.add_column(table, :cache_read_tokens, :integer, default: 0)
+        migrations << 'cache_read_tokens'
+      end
+
+      unless conn.column_exists?(table, :cache_write_tokens)
+        conn.add_column(table, :cache_write_tokens, :integer, default: 0)
+        migrations << 'cache_write_tokens'
       end
 
       unless conn.index_exists?(table, [:mode, :status], name: 'idx_rca_sessions_mode_status')

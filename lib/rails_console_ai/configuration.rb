@@ -17,7 +17,7 @@ module RailsConsoleAi
       'claude-opus-4-8'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, temperature: false },
       'claude-opus-4-7'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, temperature: false },
       'claude-opus-4-6'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, temperature: true },
-      'claude-sonnet-5'   => { input: 3.0,  output: 15.0, max_tokens: 16_000, temperature: false },
+      'claude-sonnet-5'   => { input: 2.0,  output: 10.0, max_tokens: 16_000, temperature: false },
       'claude-sonnet-4-6' => { input: 3.0,  output: 15.0, max_tokens: 16_000, temperature: true },
       'claude-haiku-4-5'  => { input: 1.0,  output: 5.0,  max_tokens: 16_000, temperature: true },
     }.freeze
@@ -36,7 +36,9 @@ module RailsConsoleAi
 
     # Per-token pricing for a model ID, matched by family. Returns
     # { input:, output:, cache_read:, cache_write: } or nil for unknown models.
-    def self.pricing_for(model_id)
+    # Cache reads bill at 0.1x the base input rate; cache writes at 1.25x for the
+    # 5-minute cache and 2x for the 1-hour cache.
+    def self.pricing_for(model_id, cache_ttl: nil)
       family = model_family(model_id)
       return nil unless family
       input = family[:input] / 1_000_000
@@ -44,7 +46,7 @@ module RailsConsoleAi
         input: input,
         output: family[:output] / 1_000_000,
         cache_read: input * 0.1,
-        cache_write: input * 1.25,
+        cache_write: input * (cache_ttl.to_s == '1h' ? 2.0 : 1.25),
       }
     end
 
@@ -72,6 +74,7 @@ module RailsConsoleAi
                   :timeout, :debug, :max_tool_rounds,
                   :error_hints,
                   :token_nudge_threshold, :token_stop_threshold,
+                  :cache_ttl,
                   :storage_adapter, :memories_enabled,
                   :session_logging, :connection_class,
                   :admin_username, :admin_password,
@@ -98,8 +101,19 @@ module RailsConsoleAi
       @debug        = false
       @max_tool_rounds = 200
       @error_hints = DEFAULT_ERROR_HINTS.dup
-      @token_nudge_threshold = 500_000    # input tokens in one tool loop → nudge model to wrap up (nil disables)
-      @token_stop_threshold  = 1_000_000  # input tokens in one tool loop → force a final answer (nil disables)
+      # Measured against total prompt tokens sent in one tool loop — uncached input
+      # plus cache reads plus cache writes. Not the API's `input_tokens` alone:
+      # that is only the uncached remainder, so with caching on it stays near zero
+      # regardless of conversation size and neither guard would ever fire.
+      @token_nudge_threshold = 500_000    # prompt tokens in one tool loop → nudge model to wrap up (nil disables)
+      @token_stop_threshold  = 1_000_000  # prompt tokens in one tool loop → force a final answer (nil disables)
+      # Prompt cache lifetime: nil/'5m' for the 5-minute default, '1h' for the
+      # 1-hour cache. Within a tool loop, rounds are seconds apart and 5m is
+      # strictly cheaper (a read refreshes the entry, and the write costs 1.25x
+      # vs 2x). '1h' pays off when a human sits between turns for more than five
+      # minutes — long interactive console sessions and Slack threads — because
+      # a miss there resends the whole conversation at full price.
+      @cache_ttl = nil
       @storage_adapter  = nil
       @memories_enabled = true
       @session_logging  = true
@@ -243,6 +257,13 @@ module RailsConsoleAi
       family = self.class.model_family(resolved_model)
       return nil if family && family[:temperature] == false
       @temperature
+    end
+
+    # Returns '1h' when the 1-hour prompt cache is requested, else nil (the
+    # 5-minute default). Providers that offer only one cache duration ignore it.
+    def resolved_cache_ttl
+      return nil unless @cache_ttl
+      @cache_ttl.to_s == '1h' ? '1h' : nil
     end
 
     def resolved_thinking_model

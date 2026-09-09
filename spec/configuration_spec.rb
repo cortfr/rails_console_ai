@@ -111,12 +111,12 @@ RSpec.describe RailsConsoleAi::Configuration do
 
   describe '.model_family' do
     it 'matches bare Anthropic model IDs' do
-      expect(described_class.model_family('claude-sonnet-5')[:input]).to eq(3.0)
+      expect(described_class.model_family('claude-sonnet-5')[:input]).to eq(2.0)
     end
 
     it 'matches Bedrock inference profile IDs' do
       expect(described_class.model_family('us.anthropic.claude-opus-4-8')[:input]).to eq(5.0)
-      expect(described_class.model_family('global.anthropic.claude-sonnet-5')[:input]).to eq(3.0)
+      expect(described_class.model_family('global.anthropic.claude-sonnet-5')[:input]).to eq(2.0)
     end
 
     it 'matches dated snapshots and version suffixes' do
@@ -133,10 +133,16 @@ RSpec.describe RailsConsoleAi::Configuration do
   describe '.pricing_for' do
     it 'returns per-token pricing with derived cache rates' do
       pricing = described_class.pricing_for('us.anthropic.claude-sonnet-5')
-      expect(pricing[:input]).to eq(3.0 / 1_000_000)
-      expect(pricing[:output]).to eq(15.0 / 1_000_000)
-      expect(pricing[:cache_read]).to be_within(1e-12).of(0.30 / 1_000_000)
-      expect(pricing[:cache_write]).to be_within(1e-12).of(3.75 / 1_000_000)
+      expect(pricing[:input]).to eq(2.0 / 1_000_000)
+      expect(pricing[:output]).to eq(10.0 / 1_000_000)
+      expect(pricing[:cache_read]).to be_within(1e-12).of(0.20 / 1_000_000)
+      expect(pricing[:cache_write]).to be_within(1e-12).of(2.50 / 1_000_000)
+    end
+
+    it 'prices 1-hour cache writes at 2x input instead of 1.25x' do
+      pricing = described_class.pricing_for('claude-sonnet-5', cache_ttl: '1h')
+      expect(pricing[:cache_write]).to be_within(1e-12).of(4.0 / 1_000_000)
+      expect(pricing[:cache_read]).to be_within(1e-12).of(0.20 / 1_000_000)
     end
 
     it 'prices opus 4.x at $5/$25 per MTok' do

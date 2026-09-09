@@ -51,6 +51,24 @@ RSpec.describe RailsConsoleAi::SessionLogger do
       )
     end
 
+    # Without these, a session row records only the uncached remainder of its input
+    # and the admin cost column reads near-zero for every well-cached session.
+    it 'records cache token counts' do
+      described_class.log(attrs.merge(cache_read_tokens: 28_846, cache_write_tokens: 14_991))
+
+      expect(mock_session).to have_received(:create!).with(
+        hash_including(cache_read_tokens: 28_846, cache_write_tokens: 14_991)
+      )
+    end
+
+    it 'defaults cache token counts to zero when the caller omits them' do
+      described_class.log(attrs)
+
+      expect(mock_session).to have_received(:create!).with(
+        hash_including(cache_read_tokens: 0, cache_write_tokens: 0)
+      )
+    end
+
     it 'returns nil when session_logging is disabled' do
       RailsConsoleAi.configure { |c| c.session_logging = false }
 
