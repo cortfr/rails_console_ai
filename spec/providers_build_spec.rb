@@ -15,6 +15,12 @@ RSpec.describe RailsConsoleAi::Providers do
       expect(provider).to be_a(RailsConsoleAi::Providers::OpenAI)
     end
 
+    it 'builds an OpenRouter provider for :openrouter' do
+      RailsConsoleAi.configure { |c| c.provider = :openrouter }
+      provider = described_class.build
+      expect(provider).to be_a(RailsConsoleAi::Providers::OpenRouter)
+    end
+
     it 'raises for unknown provider' do
       RailsConsoleAi.configure { |c| c.provider = :unknown }
       expect { described_class.build }.to raise_error(RailsConsoleAi::ConfigurationError)

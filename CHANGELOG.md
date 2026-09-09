@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.35.0]
+
+- **Add OpenRouter provider** — Access 400+ models (Anthropic Claude, OpenAI GPT, Google Gemini, DeepSeek, Llama, etc.) via a unified OpenAI-compatible API with automatic prompt caching for Anthropic-family models, real-time cost tracking (`usage.cost` now populates `ChatResult#cost`), and sticky session routing for cache warmth across the multi-turn tool-use loop
+- **Refactor OpenAI provider into seams** — Extract `api_base`, `endpoint_path`, `request_headers`, `build_body`, and `build_result` methods so subclasses like `Local` and the new `OpenRouter` can override only what differs, eliminating code duplication
+- **Add exact cost reporting** — When providers report actual cost (OpenRouter's `usage.cost`), display it directly (`$0.0431` vs estimated `~$0.04`) in `/cost`, Slack `/cost`, debug output, and session rollups; fall back to family-based estimates for Anthropic/Bedrock/OpenAI when cost isn't reported
+- **Extract `Configuration.estimate_cost` helper** — Consolidate 4 duplicated cost-calculation sites into one method with cache-adjustment math
+- **Add sticky routing via `session_id`** — OpenRouter provider sends a stable session ID per engine instance so multi-turn conversations stay on the same upstream provider endpoint, keeping prompt caches warm
+
 ## [0.34.0]
 
 - Add an `:in_process_requests` built-in safety guard that blocks in-process HTTP dispatch against the app itself — `ActionDispatch::Integration::Session` requests (the console `app` helper) and direct Rack dispatch (`Rails.application.call`) — for all verbs including GET, since these can hang the session thread indefinitely; allowlist entries are request paths

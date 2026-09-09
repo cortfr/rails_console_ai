@@ -1,6 +1,6 @@
 module RailsConsoleAi
   class Configuration
-    PROVIDERS = %i[anthropic openai local bedrock].freeze
+    PROVIDERS = %i[anthropic openai openrouter local bedrock].freeze
 
     # Per-family model attributes, matched by substring so one entry covers every
     # ID variant of a family: bare Anthropic IDs (claude-sonnet-5), dated
@@ -30,7 +30,8 @@ module RailsConsoleAi
     # Returns the family attributes for a model ID, or nil for unknown models.
     def self.model_family(model_id)
       return nil unless model_id
-      key = MODEL_FAMILY_KEYS.find { |k| model_id.include?(k) }
+      normalized = model_id.gsub(/(?<=\d)\.(?=\d)/, '-')
+      key = MODEL_FAMILY_KEYS.find { |k| normalized.include?(k) }
       key && MODEL_FAMILIES[key]
     end
 
@@ -46,6 +47,19 @@ module RailsConsoleAi
         cache_read: input * 0.1,
         cache_write: input * 1.25,
       }
+    end
+
+    def self.estimate_cost(model, input:, output:, cache_read: 0, cache_write: 0)
+      pricing = pricing_for(model)
+      return nil unless pricing
+
+      cost = (input * pricing[:input]) + (output * pricing[:output])
+      if (cache_read > 0 || cache_write > 0) && pricing[:cache_read]
+        cost -= cache_read * pricing[:input]
+        cost += cache_read * pricing[:cache_read]
+        cost += cache_write * (pricing[:cache_write] - pricing[:input])
+      end
+      cost
     end
 
     # Known environment-level failures the executor recognizes and explains to the
@@ -78,6 +92,7 @@ module RailsConsoleAi
                   :authenticate,
                   :slack_bot_token, :slack_app_token, :slack_channel_ids, :slack_allowed_usernames,
                   :local_url, :local_model, :local_api_key,
+                  :openrouter_url, :openrouter_app_name, :openrouter_site_url,
                   :bedrock_region,
                   :code_search_paths,
                   :channels,
@@ -115,6 +130,9 @@ module RailsConsoleAi
       @local_url        = 'http://localhost:11434'
       @local_model      = 'qwen2.5:7b'
       @local_api_key    = nil
+      @openrouter_url   = nil
+      @openrouter_app_name = nil
+      @openrouter_site_url = nil
       @bedrock_region   = nil
       @code_search_paths = %w[app]
       @channels = {}
@@ -208,6 +226,8 @@ module RailsConsoleAi
         ENV['ANTHROPIC_API_KEY']
       when :openai
         ENV['OPENAI_API_KEY']
+      when :openrouter
+        ENV['OPENROUTER_API_KEY']
       when :local
         @local_api_key || 'no-key'
       when :bedrock
@@ -223,6 +243,8 @@ module RailsConsoleAi
         'claude-sonnet-5'
       when :openai
         'gpt-5.3-codex'
+      when :openrouter
+        'anthropic/claude-sonnet-5'
       when :local
         @local_model
       when :bedrock
@@ -234,7 +256,9 @@ module RailsConsoleAi
       return @max_tokens if @max_tokens
 
       family = self.class.model_family(resolved_model)
-      family ? family[:max_tokens] : 4096
+      return family[:max_tokens] if family
+
+      @provider == :openrouter ? 16_000 : 4096
     end
 
     # Returns nil for model families that reject the `temperature` parameter
@@ -253,6 +277,8 @@ module RailsConsoleAi
         'claude-opus-5'
       when :openai
         'gpt-5.3-codex'
+      when :openrouter
+        'anthropic/claude-opus-5'
       when :local
         @local_model
       when :bedrock
@@ -263,6 +289,12 @@ module RailsConsoleAi
     def resolved_timeout
       @provider == :local ? [@timeout, 300].max : @timeout
     end
+
+    ENV_KEYS = {
+      anthropic: 'ANTHROPIC_API_KEY',
+      openai: 'OPENAI_API_KEY',
+      openrouter: 'OPENROUTER_API_KEY'
+    }.freeze
 
     def validate!
       unless PROVIDERS.include?(@provider)
@@ -280,7 +312,7 @@ module RailsConsoleAi
         end
       else
         unless resolved_api_key
-          env_var = @provider == :anthropic ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY'
+          env_var = ENV_KEYS[@provider] || 'API_KEY'
           raise ConfigurationError, "No API key. Set config.api_key or #{env_var} env var."
         end
       end

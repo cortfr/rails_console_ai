@@ -1,5 +1,5 @@
 RailsConsoleAi.configure do |config|
-  # LLM provider: :anthropic, :openai, or :local
+  # LLM provider: :anthropic, :openai, :openrouter, :bedrock, or :local
   config.provider = :anthropic
 
   # API key (or set ANTHROPIC_API_KEY / OPENAI_API_KEY env var)
@@ -28,6 +28,12 @@ RailsConsoleAi.configure do |config|
   # config.local_url = 'http://localhost:11434'
   # config.local_model = 'qwen2.5:7b'
   # config.local_api_key = nil
+
+  # OpenRouter provider (400+ models via unified API):
+  # config.provider = :openrouter
+  # config.model = 'anthropic/claude-sonnet-5'
+  # config.openrouter_site_url = 'https://yoursite.com'  # optional, for attribution
+  # config.openrouter_app_name = 'MyApp'                # optional, shown on openrouter.ai
 
   # Slack: which users the bot responds to (legacy — prefer channels config below)
   # config.slack_allowed_usernames = ['alice', 'bob']

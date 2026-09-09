@@ -13,11 +13,34 @@
 
 require 'optparse'
 
+# Load from local source only (not installed gem)
 $LOAD_PATH.unshift(File.expand_path('../lib', __dir__))
-require 'rails_console_ai'
-require 'rails_console_ai/providers/base'
-require 'rails_console_ai/providers/anthropic'
-require 'rails_console_ai/providers/bedrock'
+
+# Load core gem files - use require_relative to ensure local source
+require_relative '../lib/rails_console_ai/version'
+require_relative '../lib/rails_console_ai/configuration'
+require_relative '../lib/rails_console_ai/providers/base'
+require_relative '../lib/rails_console_ai/providers/anthropic'
+require_relative '../lib/rails_console_ai/providers/bedrock'
+require_relative '../lib/rails_console_ai/providers/openai'
+require_relative '../lib/rails_console_ai/providers/openrouter'
+
+# Stub out RailsConsoleAi module for this standalone script
+module RailsConsoleAi
+  class << self
+    def configuration
+      @configuration ||= Configuration.new
+    end
+
+    def configure
+      yield(configuration) if block_given?
+    end
+
+    def reset_configuration!
+      @configuration = Configuration.new
+    end
+  end
+end
 
 # ---------------------------------------------------------------------------
 # Tool shim — same surface as Tools::Registry, no executor required.
@@ -48,6 +71,10 @@ class WeatherTool
     DEFINITIONS.map { |d| { tool_spec: { name: d[:name], description: d[:description], input_schema: { json: d[:parameters] } } } }
   end
 
+  def to_openai_format
+    DEFINITIONS.map { |d| { 'type' => 'function', 'function' => { 'name' => d[:name], 'description' => d[:description], 'parameters' => d[:parameters] } } }
+  end
+
   def execute(name, args)
     HANDLERS.fetch(name) { ->(_) { "unknown tool: #{name}" } }.call(args || {})
   end
@@ -59,8 +86,11 @@ end
 
 def infer_provider(model)
   case model
-  when /\A(us|eu|apac)\.anthropic\./, /\Aanthropic\./ then 'bedrock'
-  when /\Aclaude-/                                    then 'anthropic'
+  when /\A(us|eu|apac)\.anthropic\./ then 'bedrock'
+  when /\Aanthropic\//               then 'openrouter'
+  when /\Aopenai\//                  then 'openrouter'
+  when %r{\A[^/]+/}                  then 'openrouter'  # any provider/model format
+  when /\Aclaude-/                   then 'anthropic'
   end
 end
 
@@ -68,8 +98,11 @@ def configure(provider, model, region)
   RailsConsoleAi.configure do |c|
     c.provider = provider.to_sym
     c.model    = model
-    if provider == 'anthropic'
+    case provider
+    when 'anthropic'
       c.api_key = ENV['ANTHROPIC_API_KEY']
+    when 'openrouter'
+      c.api_key = ENV['OPENROUTER_API_KEY']
     else
       c.bedrock_region = region
     end
@@ -82,8 +115,11 @@ def configure(provider, model, region)
 end
 
 def build_provider(provider, cfg)
-  klass = provider == 'anthropic' ? RailsConsoleAi::Providers::Anthropic : RailsConsoleAi::Providers::Bedrock
-  klass.new(cfg)
+  case provider
+  when 'anthropic'  then RailsConsoleAi::Providers::Anthropic.new(cfg)
+  when 'openrouter' then RailsConsoleAi::Providers::OpenRouter.new(cfg)
+  when 'bedrock'    then RailsConsoleAi::Providers::Bedrock.new(cfg)
+  end
 end
 
 # ---------------------------------------------------------------------------
@@ -209,7 +245,7 @@ end.parse!(ARGV)
 abort 'Missing --model. Run with --help for usage.' unless opts[:model]
 provider_name = opts[:provider] || infer_provider(opts[:model])
 abort "Could not infer provider from model #{opts[:model].inspect}; pass --provider anthropic|bedrock" unless provider_name
-abort "Unknown provider: #{provider_name}" unless %w[anthropic bedrock].include?(provider_name)
+abort "Unknown provider: #{provider_name}" unless %w[anthropic openrouter bedrock].include?(provider_name)
 
 requested = opts[:checks].split(',').map(&:strip)
 unknown = requested - CHECKS.keys

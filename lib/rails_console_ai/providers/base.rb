@@ -5,6 +5,7 @@ module RailsConsoleAi
   module Providers
     class Base
       attr_reader :config
+      attr_accessor :routing_session_id
 
       def initialize(config = RailsConsoleAi.configuration)
         @config = config
@@ -85,7 +86,7 @@ module RailsConsoleAi
     class ProviderError < StandardError; end
 
     ChatResult = Struct.new(:text, :input_tokens, :output_tokens, :tool_calls, :stop_reason,
-                            :cache_read_input_tokens, :cache_write_input_tokens, keyword_init: true) do
+                            :cache_read_input_tokens, :cache_write_input_tokens, :cost, keyword_init: true) do
       def total_tokens
         (input_tokens || 0) + (output_tokens || 0)
       end
@@ -103,6 +104,10 @@ module RailsConsoleAi
       when :openai
         require 'rails_console_ai/providers/openai'
         OpenAI.new(config)
+      when :openrouter
+        require 'rails_console_ai/providers/openai'
+        require 'rails_console_ai/providers/openrouter'
+        OpenRouter.new(config)
       when :local
         require 'rails_console_ai/providers/openai'
         require 'rails_console_ai/providers/local'
