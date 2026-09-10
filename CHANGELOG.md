@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.35.0]
+
+- Extend prompt caching to the full conversation history
+- Add an option for a one-hour prompt cache
+- Fix cost reporting to price cached reads and writes correctly
+- Correct the Claude Sonnet 5 pricing rate
+- Add separate connect and read timeouts for provider requests
+- Retry transient provider failures with exponential backoff
+- Warn when a conversation approaches the model's context window
+- Stop overriding a configured request timeout
+- Fix a failure when a turn hits the tool round limit
+
 ## [0.34.0]
 
 - Add an `:in_process_requests` built-in safety guard that blocks in-process HTTP dispatch against the app itself — `ActionDispatch::Integration::Session` requests (the console `app` helper) and direct Rack dispatch (`Rails.application.call`) — for all verbs including GET, since these can hang the session thread indefinitely; allowlist entries are request paths
