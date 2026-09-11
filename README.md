@@ -309,7 +309,7 @@ Skills and global `bypass_guards_for_methods` coexist — use config-level bypas
 
 ## LLM Providers
 
-RailsConsoleAi supports four LLM providers. Each uses a two-tier model system: a default model for speed/cost, and a thinking model activated via `/think` or by saying "think harder".
+RailsConsoleAi supports five LLM providers. Each uses a two-tier model system: a default model for speed/cost, and a thinking model activated via `/think` or by saying "think harder".
 
 ### Anthropic (default)
 
@@ -332,6 +332,29 @@ end
 ```
 
 Default model: `gpt-5.3-codex`. OpenAI applies prompt caching automatically on their end for prompts over 1024 tokens.
+
+### OpenRouter
+
+Access 400+ models (Claude, GPT, Gemini, DeepSeek, Llama, etc.) via OpenRouter with unified OpenAI-compatible API. Automatic prompt caching for Anthropic models, real-time cost tracking, and provider sticky routing for cache hits.
+
+```ruby
+RailsConsoleAi.configure do |config|
+  config.provider = :openrouter
+  config.api_key = 'sk-or-...'  # or set OPENROUTER_API_KEY env var
+  # config.model = 'anthropic/claude-sonnet-5'  # default
+  # config.openrouter_site_url = 'https://yoursite.com'  # attribution
+  # config.openrouter_app_name = 'MyApp'                # shown on openrouter.ai
+end
+```
+
+Default model: `anthropic/claude-sonnet-5`. Thinking model: `anthropic/claude-opus-5`.
+
+**Features:**
+- **Exact cost reporting**: The gem reports the actual USD cost from OpenRouter (`$0.0431` vs estimated `~$0.04`)
+- **Automatic prompt caching**: Anthropic-family models (`anthropic/claude-*`) get a top-level `cache_control` breakpoint for multi-turn cache hits
+- **Sticky routing**: Session-based routing keeps requests on the same provider endpoint for cache warmth across the tool-use loop
+
+**Timeout note:** OpenRouter adds latency from request queueing and provider fallbacks. If you're routing to reasoning models, you may want to raise `config.timeout` above the 30s default.
 
 ### AWS Bedrock
 
@@ -396,6 +419,9 @@ Before adopting a new Claude model, smoke-test it against the Anthropic or Bedro
 # Anthropic — provider inferred from the `claude-` prefix
 ANTHROPIC_API_KEY=sk-ant-... bin/smoke_model.rb --model claude-opus-4-8
 
+# OpenRouter — provider inferred from the `provider/model` format
+OPENROUTER_API_KEY=sk-or-... bin/smoke_model.rb --model anthropic/claude-opus-4
+
 # Bedrock — provider inferred from the regional `us.anthropic.` prefix.
 # Requires the aws-sdk-bedrockruntime gem and AWS credentials in the environment.
 bin/smoke_model.rb --model us.anthropic.claude-opus-4-8
@@ -418,7 +444,7 @@ Pricing, default max tokens, and parameter support (e.g. which families reject `
 
 ```ruby
 RailsConsoleAi.configure do |config|
-  config.provider = :anthropic       # :anthropic, :openai, :bedrock, :local
+  config.provider = :anthropic       # :anthropic, :openai, :openrouter, :bedrock, :local
   config.auto_execute = false         # true to skip confirmations
   config.session_logging = true       # requires ai_db_setup
   config.temperature = 0.2

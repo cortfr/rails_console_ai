@@ -3,38 +3,19 @@ module RailsConsoleAi
     class Local < OpenAI
       private
 
-      def call_api(messages, system_prompt: nil, tools: nil)
-        base_url = config.local_url
+      def api_base
+        config.local_url
+      end
 
-        headers = { 'Content-Type' => 'application/json' }
-        api_key = config.local_api_key
-        if api_key && api_key != 'no-key' && !api_key.empty?
-          headers['Authorization'] = "Bearer #{api_key}"
-        end
+      def request_headers
+        key = config.local_api_key
+        return {} if key.nil? || key.empty? || key == 'no-key'
+        { 'Authorization' => "Bearer #{key}" }
+      end
 
-        conn = build_connection(base_url, headers)
-
-        formatted = []
-        formatted << { role: 'system', content: system_prompt } if system_prompt
-        formatted.concat(format_messages(messages))
-
-        body = {
-          model: config.resolved_model,
-          max_tokens: config.resolved_max_tokens,
-          messages: formatted
-        }
-        temp = config.resolved_temperature
-        body[:temperature] = temp unless temp.nil?
-        body[:tools] = tools.to_openai_format if tools
-
-        estimated_input_tokens = estimate_tokens(formatted, system_prompt, tools)
-
-        json_body = JSON.generate(body)
-        debug_request("#{base_url}/v1/chat/completions", body)
-        response = conn.post('/v1/chat/completions', json_body)
-        debug_response(response.body)
-        data = parse_response(response)
+      def build_result(data, body:, tools: nil)
         usage = data['usage'] || {}
+        estimated_input_tokens = estimate_tokens(body)
 
         prompt_tokens = usage['prompt_tokens']
         if prompt_tokens && estimated_input_tokens > 0 && prompt_tokens < estimated_input_tokens * 0.5
@@ -50,9 +31,6 @@ module RailsConsoleAi
 
         tool_calls = extract_tool_calls(message)
 
-        # Fallback: some local models (e.g. Ollama) emit tool calls as JSON
-        # in the content field instead of using the structured tool_calls format.
-        # Only match when the JSON "name" is a known tool name to avoid false positives.
         if tool_calls.empty? && tools
           tool_names = tools.to_openai_format.map { |t| t.dig('function', 'name') }.compact
           text_calls = extract_tool_calls_from_text(message['content'], tool_names)
@@ -74,10 +52,12 @@ module RailsConsoleAi
         )
       end
 
-      def estimate_tokens(messages, system_prompt, tools)
-        chars = system_prompt.to_s.length
-        messages.each { |m| chars += m[:content].to_s.length + (m[:tool_calls].to_s.length) }
-        chars += tools.to_openai_format.to_s.length if tools
+      def estimate_tokens(body)
+        chars = 0
+        (body[:messages] || []).each do |m|
+          chars += m[:content].to_s.length + (m[:tool_calls].to_s.length)
+        end
+        chars += body[:tools].to_s.length if body[:tools]
         chars / 4
       end
 

@@ -10,7 +10,7 @@ module RailsConsoleAi
     LARGE_OUTPUT_THRESHOLD = 10_000
     LARGE_OUTPUT_PREVIEW_CHARS = 8_000
 
-    attr_reader :input_tokens, :output_tokens, :model_used
+    attr_reader :input_tokens, :output_tokens, :model_used, :cost
 
     def initialize(task:, agent_config:, binding_context:, parent_channel:, executor:,
                    output_payload: nil, output_local_name: :output)
@@ -23,6 +23,7 @@ module RailsConsoleAi
       @output_local_name = output_local_name
       @input_tokens = 0
       @output_tokens = 0
+      @cost = 0
       @model_used = nil
     end
 
@@ -83,6 +84,7 @@ module RailsConsoleAi
         end
         @input_tokens += result.input_tokens || 0
         @output_tokens += result.output_tokens || 0
+        @cost += result.cost || 0
 
         break if channel.cancelled?
         break unless result.tool_use?
@@ -152,6 +154,7 @@ module RailsConsoleAi
         result = provider.chat_with_tools(messages, tools: tools, system_prompt: system_prompt)
         @input_tokens += result.input_tokens || 0
         @output_tokens += result.output_tokens || 0
+        @cost += result.cost || 0
       end
 
       text = result&.text.to_s
@@ -181,7 +184,7 @@ module RailsConsoleAi
       config = RailsConsoleAi.configuration
       model_override = @agent_config['model'] || config.sub_agent_model
 
-      if model_override
+      p = if model_override
         config_dup = config.dup
         config_dup.model = model_override
         @model_used = model_override
@@ -190,6 +193,8 @@ module RailsConsoleAi
         @model_used = config.resolved_model
         Providers.build(config)
       end
+      p.routing_session_id = SecureRandom.hex(8) if p.respond_to?(:routing_session_id=)
+      p
     end
 
     def build_system_prompt

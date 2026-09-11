@@ -40,12 +40,35 @@ module RailsConsoleAi
       private
 
       def call_api(messages, system_prompt: nil, tools: nil)
-        conn = build_connection(API_URL, {
-          'Authorization' => "Bearer #{config.resolved_api_key}"
-        })
+        conn = build_connection(api_base, request_headers)
+        body = build_body(messages, system_prompt: system_prompt, tools: tools)
+        debug_request("#{api_base}#{endpoint_path}", body)
+        response = with_retries { conn.post(endpoint_path, JSON.generate(body)) }
+        debug_response(response.body)
+        build_result(parse_response(response), body: body, tools: tools)
+      end
 
+      def api_base
+        API_URL
+      end
+
+      def endpoint_path
+        '/v1/chat/completions'
+      end
+
+      def request_headers
+        { 'Authorization' => "Bearer #{config.resolved_api_key}" }
+      end
+
+      # Overridable: providers that support explicit cache breakpoints emit
+      # multipart content here instead of a bare string.
+      def system_message(system_prompt)
+        { role: 'system', content: system_prompt }
+      end
+
+      def build_body(messages, system_prompt:, tools:)
         formatted = []
-        formatted << { role: 'system', content: system_prompt } if system_prompt
+        formatted << system_message(system_prompt) if system_prompt
         formatted.concat(format_messages(messages))
 
         body = {
@@ -56,12 +79,10 @@ module RailsConsoleAi
         temp = config.resolved_temperature
         body[:temperature] = temp unless temp.nil?
         body[:tools] = tools.to_openai_format if tools
+        body
+      end
 
-        json_body = JSON.generate(body)
-        debug_request("#{API_URL}/v1/chat/completions", body)
-        response = with_retries { conn.post('/v1/chat/completions', json_body) }
-        debug_response(response.body)
-        data = parse_response(response)
+      def build_result(data, body:, tools: nil)
         usage = data['usage'] || {}
 
         choice = (data['choices'] || []).first || {}

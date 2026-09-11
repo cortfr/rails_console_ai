@@ -21,6 +21,7 @@ module RailsConsoleAi
       @slack_channel_name = slack_channel_name
       @executor = Executor.new(binding_context, channel: channel)
       @provider = nil
+      @routing_session_id = SecureRandom.hex(8)
       @context_builder = nil
       @context = nil
       @history = []
@@ -500,6 +501,7 @@ module RailsConsoleAi
       end
 
       total_cost = 0.0
+      has_reported_cost = false
       $stdout.puts "\e[36m  Cost estimate:\e[0m"
 
       @token_usage.each do |model, usage|
@@ -508,13 +510,25 @@ module RailsConsoleAi
         input_str = "in: #{format_tokens(usage[:input])}"
         output_str = "out: #{format_tokens(usage[:output])}"
 
-        if pricing
+        # A provider that reports real dollars (OpenRouter) beats any estimate.
+        reported_cost = usage[:cost]
+        if reported_cost && reported_cost > 0
+          has_reported_cost = true
+          total_cost += reported_cost
+          cache_str = ""
           cache_read = usage[:cache_read] || 0
           cache_write = usage[:cache_write] || 0
-          cost = usage_cost(pricing, input: usage[:input], output: usage[:output],
-                                     cache_read: cache_read, cache_write: cache_write)
+          cache_str = "  cache r: #{format_tokens(cache_read)} w: #{format_tokens(cache_write)}" if cache_read > 0 || cache_write > 0
+          $stdout.puts "\e[2m    #{model}:  #{input_str}  #{output_str}#{cache_str}  $#{'%.4f' % reported_cost}\e[0m"
+        elsif pricing
+          cost = Configuration.estimate_cost(model,
+            input: usage[:input], output: usage[:output],
+            cache_read: usage[:cache_read] || 0, cache_write: usage[:cache_write] || 0,
+            cache_ttl: RailsConsoleAi.configuration.resolved_cache_ttl)
           total_cost += cost
           cache_str = ""
+          cache_read = usage[:cache_read] || 0
+          cache_write = usage[:cache_write] || 0
           cache_str = "  cache r: #{format_tokens(cache_read)} w: #{format_tokens(cache_write)}" if cache_read > 0 || cache_write > 0
           $stdout.puts "\e[2m    #{model}:  #{input_str}  #{output_str}#{cache_str}  ~$#{'%.2f' % cost}\e[0m"
         else
@@ -522,7 +536,8 @@ module RailsConsoleAi
         end
       end
 
-      $stdout.puts "\e[36m    Total: ~$#{'%.2f' % total_cost}\e[0m"
+      label = has_reported_cost ? "Total:" : "Total: ~"
+      $stdout.puts "\e[36m    #{label}$#{'%.2f' % total_cost}\e[0m"
     end
 
     def display_conversation
@@ -772,7 +787,7 @@ module RailsConsoleAi
     private
 
     def record_sub_agent_usage(sub)
-      absorb_sub_agent_usage(input: sub.input_tokens, output: sub.output_tokens, model: sub.model_used)
+      absorb_sub_agent_usage(input: sub.input_tokens, output: sub.output_tokens, model: sub.model_used, cost: sub.cost)
     end
 
     def absorb_sub_agent_usage(usage)
@@ -781,6 +796,7 @@ module RailsConsoleAi
       return unless usage[:model]
       @token_usage[usage[:model]][:input] += usage[:input] || 0
       @token_usage[usage[:model]][:output] += usage[:output] || 0
+      @token_usage[usage[:model]][:cost] = (@token_usage[usage[:model]][:cost] || 0) + usage[:cost] if usage[:cost]
     end
 
     def safety_context
@@ -838,13 +854,15 @@ module RailsConsoleAi
 
     def provider
       @provider ||= begin
-        if @model_override
+        p = if @model_override
           config = RailsConsoleAi.configuration.dup
           config.model = @model_override
           Providers.build(config)
         else
           Providers.build
         end
+        p.routing_session_id = @routing_session_id if p.respond_to?(:routing_session_id=)
+        p
       end
     end
 
@@ -1216,6 +1234,7 @@ module RailsConsoleAi
       @token_usage[model][:output] += result.output_tokens || 0
       @token_usage[model][:cache_read] = (@token_usage[model][:cache_read] || 0) + (result.cache_read_input_tokens || 0)
       @token_usage[model][:cache_write] = (@token_usage[model][:cache_write] || 0) + (result.cache_write_input_tokens || 0)
+      @token_usage[model][:cost] = (@token_usage[model][:cost] || 0) + (result.cost || 0) if result.cost
     end
 
     def display_usage(result, show_session: false)
@@ -1276,18 +1295,6 @@ module RailsConsoleAi
     def estimate_request_tokens(messages)
       chars = messages.sum { |m| (m[:content] || m['content']).to_s.length }
       chars / 4
-    end
-
-    # The four usage buckets each bill at their own rate. `input_tokens` from the
-    # API is the UNCACHED remainder — cached tokens are reported separately and are
-    # not part of it (total prompt size is input + cache_read + cache_write), so
-    # discounting cache_read out of input double-counts and can drive a cost
-    # negative. Every cost readout goes through here.
-    def usage_cost(pricing, input:, output:, cache_read: 0, cache_write: 0)
-      ((input || 0) * pricing[:input]) +
-        ((output || 0) * pricing[:output]) +
-        ((cache_read || 0) * (pricing[:cache_read] || 0)) +
-        ((cache_write || 0) * (pricing[:cache_write] || 0))
     end
 
     def format_tokens(count)
@@ -1641,13 +1648,17 @@ module RailsConsoleAi
       cache_r = result.cache_read_input_tokens || 0
       cache_w = result.cache_write_input_tokens || 0
       parts << "cache r: #{format_tokens(cache_r)} w: #{format_tokens(cache_w)}" if cache_r > 0 || cache_w > 0
-      model = effective_model
-      pricing = Configuration.pricing_for(model, cache_ttl: RailsConsoleAi.configuration.resolved_cache_ttl)
-      if pricing
-        cost = usage_cost(pricing, input: result.input_tokens, output: result.output_tokens,
-                                   cache_read: cache_r, cache_write: cache_w)
-        parts << "~$#{'%.4f' % cost}"
+
+      if result.cost
+        parts << "$#{'%.4f' % result.cost}"
+      else
+        cost = Configuration.estimate_cost(effective_model,
+          input: result.input_tokens || 0, output: result.output_tokens || 0,
+          cache_read: cache_r, cache_write: cache_w,
+          cache_ttl: RailsConsoleAi.configuration.resolved_cache_ttl)
+        parts << "~$#{'%.4f' % cost}" if cost
       end
+
       parts.join(' | ')
     end
 
@@ -1679,11 +1690,18 @@ module RailsConsoleAi
       parts = ["in: #{format_tokens(input_t)}", "out: #{format_tokens(output_t)}"]
       parts << "cache r: #{format_tokens(cache_r)} w: #{format_tokens(cache_w)}" if cache_r > 0 || cache_w > 0
 
-      if pricing
-        cost = usage_cost(pricing, input: input_t, output: output_t,
-                                   cache_read: cache_r, cache_write: cache_w)
-        session_cost = (total_input * pricing[:input]) + (total_output * pricing[:output])
-        parts << "~$#{'%.4f' % cost}"
+      ttl = RailsConsoleAi.configuration.resolved_cache_ttl
+      if result.cost
+        parts << "$#{'%.4f' % result.cost}"
+        session_has_reported = @token_usage.any? { |_, u| u[:cost] && u[:cost] > 0 }
+        session_cost = session_has_reported ? @token_usage.sum { |_, u| u[:cost] || 0 } :
+          Configuration.estimate_cost(model, input: total_input, output: total_output, cache_ttl: ttl) || 0
+        $stderr.puts "\n#{d}[debug]   ← response: #{parts.join(' | ')}  (session: $#{'%.4f' % session_cost})#{r}"
+      elsif pricing
+        cost = Configuration.estimate_cost(model, input: input_t, output: output_t,
+          cache_read: cache_r, cache_write: cache_w, cache_ttl: ttl)
+        parts << "~$#{'%.4f' % cost}" if cost
+        session_cost = Configuration.estimate_cost(model, input: total_input, output: total_output, cache_ttl: ttl) || 0
         $stderr.puts "\n#{d}[debug]   ← response: #{parts.join(' | ')}  (session: ~$#{'%.4f' % session_cost})#{r}"
       else
         $stderr.puts "\n#{d}[debug]   ← response: #{parts.join(' | ')}#{r}"

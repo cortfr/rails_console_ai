@@ -744,18 +744,22 @@ module RailsConsoleAi
         input_str = "in: #{usage[:input]}"
         output_str = "out: #{usage[:output]}"
 
-        if pricing
-          cost = (usage[:input] * pricing[:input]) + (usage[:output] * pricing[:output])
+        reported_cost = usage[:cost]
+        if reported_cost && reported_cost > 0
+          total_cost += reported_cost
           cache_read = usage[:cache_read] || 0
           cache_write = usage[:cache_write] || 0
-          if (cache_read > 0 || cache_write > 0) && pricing[:cache_read]
-            # input_tokens excludes cached tokens — bill each bucket at its own
-            # rate rather than discounting cache_read out of input (see
-            # ConversationEngine#display_cost_summary).
-            cost += cache_read * pricing[:cache_read]
-            cost += cache_write * pricing[:cache_write]
-          end
-          total_cost += cost
+          cache_str = ""
+          cache_str = "  cache r: #{cache_read} w: #{cache_write}" if cache_read > 0 || cache_write > 0
+          lines << "  `#{model}`: #{input_str}  #{output_str}#{cache_str}  $#{'%.4f' % reported_cost}"
+        elsif pricing
+          cost = Configuration.estimate_cost(model,
+            input: usage[:input], output: usage[:output],
+            cache_read: usage[:cache_read] || 0, cache_write: usage[:cache_write] || 0,
+            cache_ttl: RailsConsoleAi.configuration.resolved_cache_ttl)
+          total_cost += cost if cost
+          cache_read = usage[:cache_read] || 0
+          cache_write = usage[:cache_write] || 0
           cache_str = ""
           cache_str = "  cache r: #{cache_read} w: #{cache_write}" if cache_read > 0 || cache_write > 0
           lines << "  `#{model}`: #{input_str}  #{output_str}#{cache_str}  ~$#{'%.2f' % cost}"
@@ -764,7 +768,7 @@ module RailsConsoleAi
         end
       end
 
-      lines << "*Total: ~$#{'%.2f' % total_cost}*"
+      lines << "*Total: $#{'%.2f' % total_cost}*"
       lines.join("\n")
     end
 

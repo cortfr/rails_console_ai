@@ -381,7 +381,7 @@ module RailsConsoleAi
         # the live database. Scoped via thread-local (explore_output runs synchronously),
         # so the parent session's guard state is untouched.
         result = RailsConsoleAi.configuration.safety_guards.with_database_blocked { sub.run }
-        @last_sub_agent_usage = { input: sub.input_tokens, output: sub.output_tokens, model: sub.model_used }
+        @last_sub_agent_usage = { input: sub.input_tokens, output: sub.output_tokens, model: sub.model_used, cost: sub.cost }
         "Exploration result (#{sub.input_tokens + sub.output_tokens} tokens used, #{payload.length} chars explored):\n#{result}"
       end
 
@@ -418,7 +418,7 @@ module RailsConsoleAi
           executor: @executor
         )
         result = sub.run
-        @last_sub_agent_usage = { input: sub.input_tokens, output: sub.output_tokens, model: sub.model_used }
+        @last_sub_agent_usage = { input: sub.input_tokens, output: sub.output_tokens, model: sub.model_used, cost: sub.cost }
         "Sub-agent result (#{sub.input_tokens + sub.output_tokens} tokens used):\n#{result}"
       end
 

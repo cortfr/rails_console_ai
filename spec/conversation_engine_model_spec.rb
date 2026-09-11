@@ -125,7 +125,8 @@ RSpec.describe RailsConsoleAi::ConversationEngine, 'model override' do
         input_tokens: 100,
         output_tokens: 50,
         cache_read_input_tokens: 0,
-        cache_write_input_tokens: 0)
+        cache_write_input_tokens: 0,
+        cost: nil)
     end
 
     it 'attributes tokens to the effective model' do

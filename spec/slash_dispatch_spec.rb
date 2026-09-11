@@ -95,7 +95,7 @@ RSpec.describe 'interactive slash commands' do
       expect(RailsConsoleAi::SubAgent).to receive(:new) do |args|
         expect(args[:task]).to eq('user 42')
         expect(args[:agent_config]).to eq(the_agent)
-        double(run: 'User 42 is on shard 3.', input_tokens: 90, output_tokens: 12, model_used: 'claude-sonnet-5')
+        double(run: 'User 42 is on shard 3.', input_tokens: 90, output_tokens: 12, model_used: 'claude-sonnet-5', cost: 0)
       end
 
       type('/find-shard user 42')
@@ -108,7 +108,7 @@ RSpec.describe 'interactive slash commands' do
 
     it 'bills the sub-agent tokens to the session' do
       allow(RailsConsoleAi::SubAgent).to receive(:new).and_return(
-        double(run: 'ok', input_tokens: 90, output_tokens: 12, model_used: 'claude-sonnet-5')
+        double(run: 'ok', input_tokens: 90, output_tokens: 12, model_used: 'claude-sonnet-5', cost: 0)
       )
 
       type('/find-shard user 42')
@@ -124,7 +124,7 @@ RSpec.describe 'interactive slash commands' do
 
     it 'does not reach the main provider' do
       allow(RailsConsoleAi::SubAgent).to receive(:new).and_return(
-        double(run: 'ok', input_tokens: 1, output_tokens: 1, model_used: 'm')
+        double(run: 'ok', input_tokens: 1, output_tokens: 1, model_used: 'm', cost: 0)
       )
       type('/find-shard user 42')
       expect(mock_provider).not_to have_received(:chat_with_tools)

@@ -125,6 +125,7 @@ module RailsConsoleAi
       lines << "  Model:          #{c.resolved_model}"
       lines << "  API key:        #{masked_key}"
       lines << "  Local URL:      #{c.local_url}" if c.provider == :local
+      lines << "  OpenRouter URL: #{c.openrouter_url}" if c.openrouter_url
       lines << "  Max tokens:     #{c.max_tokens || '(auto)'}"
       lines << "  Temperature:    #{c.temperature}"
       lines << "  Timeout:        #{c.timeout}s"

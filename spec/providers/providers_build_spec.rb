@@ -27,6 +27,15 @@ RSpec.describe RailsConsoleAi::Providers, '.build' do
     expect(provider).to be_a(RailsConsoleAi::Providers::OpenAI)
   end
 
+  it 'builds an OpenRouter provider' do
+    config = RailsConsoleAi::Configuration.new
+    config.provider = :openrouter
+    config.api_key = 'test-key'
+    provider = described_class.build(config)
+    expect(provider).to be_a(RailsConsoleAi::Providers::OpenRouter)
+    expect(provider).to be_a(RailsConsoleAi::Providers::OpenAI)
+  end
+
   it 'builds a Local provider' do
     config = RailsConsoleAi::Configuration.new
     config.provider = :local

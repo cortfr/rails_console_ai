@@ -441,6 +441,7 @@ module RailsConsoleAi
         end
         @real_stdout.puts "\e[2m    Bedrock region:  #{config.bedrock_region}\e[0m" if config.provider == :bedrock
         @real_stdout.puts "\e[2m    Local URL:       #{config.local_url}\e[0m" if config.provider == :local
+        @real_stdout.puts "\e[2m    OpenRouter URL:  #{config.openrouter_url}\e[0m" if config.openrouter_url
       end
 
       def handle_name_command(input)
