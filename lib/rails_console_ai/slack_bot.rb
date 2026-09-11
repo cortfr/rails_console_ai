@@ -737,6 +737,7 @@ module RailsConsoleAi
 
       lines = ["*Cost estimate:*"]
       total_cost = 0.0
+      has_reported_cost = false
 
       token_usage.each do |model, usage|
         pricing = Configuration.pricing_for(model, cache_ttl: RailsConsoleAi.configuration.resolved_cache_ttl)
@@ -746,6 +747,7 @@ module RailsConsoleAi
 
         reported_cost = usage[:cost]
         if reported_cost && reported_cost > 0
+          has_reported_cost = true
           total_cost += reported_cost
           cache_read = usage[:cache_read] || 0
           cache_write = usage[:cache_write] || 0
@@ -768,7 +770,8 @@ module RailsConsoleAi
         end
       end
 
-      lines << "*Total: $#{'%.2f' % total_cost}*"
+      label = has_reported_cost ? "Total:" : "Total: ~"
+      lines << "*#{label}$#{'%.2f' % total_cost}*"
       lines.join("\n")
     end
 
