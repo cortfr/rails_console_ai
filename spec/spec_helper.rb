@@ -1,4 +1,5 @@
 require 'webmock/rspec'
+require 'readline'
 require 'rails_console_ai'
 
 WebMock.disable_net_connect!
@@ -24,6 +25,10 @@ RAILS_CONSOLE_AI_THREAD_LOCALS = %i[
 RSpec.configure do |config|
   config.before(:each) do
     RailsConsoleAi.reset_configuration!
+    # The interactive-loop specs drive the REPL by stubbing Readline. Pin the
+    # editor so they don't depend on whether Reline is installed; the Reline
+    # path has its own coverage in spec/line_editor_spec.rb.
+    RailsConsoleAi.configuration.line_editor = :readline
     RAILS_CONSOLE_AI_THREAD_LOCALS.each { |key| Thread.current[key] = nil }
   end
 end

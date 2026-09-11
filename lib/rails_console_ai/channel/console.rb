@@ -1,5 +1,6 @@
-require 'readline'
 require 'rails_console_ai/channel/base'
+require 'rails_console_ai/line_editor'
+require 'rails_console_ai/slash_commands'
 
 module RailsConsoleAi
   module Channel
@@ -186,6 +187,16 @@ module RailsConsoleAi
         @interactive_console_capture = StringIO.new
         @real_stdout = $stdout
         $stdout = TeeIO.new(@real_stdout, @interactive_console_capture)
+        init_slash_commands
+      end
+
+      def init_slash_commands
+        @slash_commands = SlashCommands.new
+        # Point the editor at the real stdout: Reline draws its completion menu
+        # through a Ruby IO, and $stdout is a TeeIO right now — without this the
+        # menu's escape codes get written into the saved session log.
+        @editor = LineEditor.resolve(RailsConsoleAi.configuration.line_editor, output: @real_stdout)
+        @editor.complete_with { @slash_commands.completion_entries }
       end
 
       def run_interactive_loop
@@ -196,14 +207,13 @@ module RailsConsoleAi
         config = RailsConsoleAi.configuration
         @real_stdout.puts "\e[2m  Provider: #{config.provider} | Model: #{config.resolved_model}\e[0m"
         safe_info = guards.empty? ? '' : " | Safe mode: #{guards.enabled? ? 'ON' : 'OFF'} (/danger to toggle)"
-        @real_stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab or /auto to toggle)#{safe_info} | > code | /usage | /cost | /compact | /think | /name <label>\e[0m"
+        @real_stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab or /auto to toggle)#{safe_info} | > code\e[0m"
+        @real_stdout.puts "\e[2m  Type / for commands, skills and agents#{@editor.is_a?(LineEditor::Reline_) ? ' (menu appears as you type)' : ' (Tab to complete)'}\e[0m"
 
-        if Readline.respond_to?(:parse_and_bind)
-          Readline.parse_and_bind('"\e[Z": "\C-a\C-k/auto\C-m"')
-        end
+        @editor.bind_auto_toggle
 
         loop do
-          input = Readline.readline("\001\e[33m\002ai> \001\e[0m\002", false)
+          input = @editor.readline(@editor.prompt('ai> ', "\e[33m"))
           break if input.nil?
 
           input = input.strip
@@ -211,8 +221,13 @@ module RailsConsoleAi
           break if input.downcase == 'exit' || input.downcase == 'quit'
           next if input.empty?
 
-          handled = handle_slash_command(input)
-          next if handled
+          # What the user typed, kept for history/logging even when a skill
+          # command expands into a much longer prompt.
+          typed = input
+
+          outcome = handle_slash_command(input)
+          next if outcome == :handled
+          input = outcome if outcome.is_a?(String)
 
           # Direct code execution with ">" prefix
           if input.start_with?('>') && !input.start_with?('>=')
@@ -220,14 +235,13 @@ module RailsConsoleAi
             next
           end
 
-          # Add to Readline history
-          Readline::HISTORY.push(input) unless input == Readline::HISTORY.to_a.last
+          @editor.push_history(typed)
 
           @engine.maybe_auto_upgrade_thinking(input)
 
-          @engine.set_interactive_query(input)
+          @engine.set_interactive_query(typed)
           @engine.add_user_message(input)
-          @interactive_console_capture.write("ai> #{input}\n")
+          @interactive_console_capture.write("ai> #{typed}\n")
           @engine.log_interactive_turn
 
           expected_stdout = $stdout
@@ -254,6 +268,9 @@ module RailsConsoleAi
 
           @engine.log_interactive_turn
           @engine.warn_if_history_large
+          # A turn may have created a skill or agent via save_skill/save_agent —
+          # drop the memo so the next "/" reflects it.
+          @slash_commands.refresh!
         end
 
         $stdout = @real_stdout
@@ -269,6 +286,9 @@ module RailsConsoleAi
         $stderr.puts "\e[31mRailsConsoleAi Error: #{e.class}: #{e.message}\e[0m"
       end
 
+      # Returns :handled when the command did its own thing, a String when it
+      # should be sent to the model as this turn's message, or nil when the input
+      # isn't a slash command at all.
       def handle_slash_command(input)
         case input
         when '?', '/'
@@ -314,9 +334,47 @@ module RailsConsoleAi
         when /\A\/name/
           handle_name_command(input)
         else
-          return false
+          return dispatch_registry_command(input)
         end
-        true
+        :handled
+      end
+
+      # Skills and agents are addressed by a slug derived from their name:
+      # "Restart user trial" -> /restart-user-trial.
+      def dispatch_registry_command(input)
+        return nil unless input.start_with?('/')
+
+        slug, _, args = input[1..].partition(/\s+/)
+        command = @slash_commands.find(slug)
+
+        unless command
+          # Only claim the input if it actually looks like a command. A message
+          # that merely opens with a path ("/tmp/foo.log has the error") must
+          # still reach the model untouched.
+          return nil unless slug =~ /\A[a-z0-9][a-z0-9_-]*\z/
+          warn_unknown_command(slug)
+          return :handled
+        end
+
+        case command.kind
+        when :skill
+          @engine.skill_command_prompt(command.record, args)
+        when :agent
+          @engine.run_agent_command(command.record, args)
+          :handled
+        else
+          nil # a built-in, already handled by the case above
+        end
+      end
+
+      def warn_unknown_command(slug)
+        @real_stdout.puts "\e[33m  Unknown command: /#{slug}\e[0m"
+        near = @slash_commands.candidates.select { |c| c.start_with?("/#{slug[0, 3]}") }
+        if near.empty?
+          @real_stdout.puts "\e[2m  Type / to see everything available.\e[0m"
+        else
+          @real_stdout.puts "\e[2m  Did you mean: #{near.first(5).join(', ')}?\e[0m"
+        end
       end
 
       def retry_last_code
@@ -325,7 +383,7 @@ module RailsConsoleAi
 
       def handle_direct_execution(input)
         raw_code = input.sub(/\A>\s?/, '')
-        Readline::HISTORY.push(input) unless input == Readline::HISTORY.to_a.last
+        @editor.push_history(input)
         @interactive_console_capture.write("ai> #{input}\n")
         @engine.execute_direct(raw_code)
         @engine.log_interactive_turn
@@ -424,6 +482,52 @@ module RailsConsoleAi
         @real_stdout.puts "\e[2m    > code       Execute Ruby directly (skip LLM)\e[0m"
         @real_stdout.puts "\e[2m    Ctrl-C       Cancel the current operation\e[0m"
         @real_stdout.puts "\e[2m    exit/quit    Leave interactive mode\e[0m"
+        display_registry_help
+      end
+
+      # Skills and agents, listed the same way as the built-ins so "/" answers
+      # "what can I run?" in one place.
+      def display_registry_help
+        @slash_commands.refresh!
+
+        skills = @slash_commands.skills
+        agents = @slash_commands.agents
+        # Size the column to what's actually listed, and don't let one very long
+        # name push every description off the right edge.
+        width = [(skills + agents).map { |c| c.slug.length }.max.to_i + 2, 34].min
+
+        unless skills.empty?
+          @real_stdout.puts
+          @real_stdout.puts "\e[36m  Skills:\e[0m \e[2m(runs here, following the recipe)\e[0m"
+          skills.each { |c| @real_stdout.puts registry_help_row(c, width) }
+        end
+
+        unless agents.empty?
+          @real_stdout.puts
+          @real_stdout.puts "\e[36m  Agents:\e[0m \e[2m(runs in a separate context, reports back)\e[0m"
+          agents.each { |c| @real_stdout.puts registry_help_row(c, width) }
+        end
+
+        return if skills.empty? && agents.empty?
+        @real_stdout.puts
+        @real_stdout.puts "\e[2m  Pass a request after the name: /#{(skills.first || agents.first).slug} <what you want>\e[0m"
+      end
+
+      # One "/slug   description" line, clipped so a long description wraps into
+      # the next row instead of making the list unreadable.
+      def registry_help_row(command, width)
+        room = terminal_width - width - 6
+        desc = command.description.to_s
+        desc = "#{desc[0, room - 1]}\u2026" if room > 10 && desc.length > room
+        "\e[2m    /#{command.slug.ljust(width)} #{desc}\e[0m"
+      end
+
+      def terminal_width
+        require 'io/console'
+        cols = IO.console && IO.console.winsize.last.to_i
+        cols && cols > 40 ? cols : 100
+      rescue StandardError
+        100
       end
 
       def display_exit_info

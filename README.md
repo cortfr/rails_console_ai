@@ -88,6 +88,33 @@ end
 | `/system` | Show the system prompt |
 | `/name <label>` | Name the session for easy resume |
 
+#### Running skills and agents from the prompt
+
+Every skill and agent is also a slash command, under a slug built from its name —
+"Restart user trial" becomes `/restart-user-trial`. Type `/` and a menu of everything
+available appears as you type; press Enter on a bare `/` to print the full list.
+
+```
+ai> /restart-user-trial user 4821
+ai> /find-shard jess@example.com
+```
+
+The two behave differently on purpose:
+
+- **A skill runs here.** Its recipe is prepended to your request and its guard
+  bypasses are installed on the live executor, so the assistant follows the
+  procedure in the current conversation with full context.
+- **An agent runs elsewhere.** It gets its own context and tool loop, and only its
+  summary comes back into the conversation — the same isolation `delegate_task`
+  gives the model, now available to you directly. Its tokens are billed to the session.
+
+Anything after the command name is passed along as your request. A skill invoked
+bare (`/restart-user-trial`) just runs its procedure.
+
+Completion needs [Reline](https://github.com/ruby/reline), bundled with Ruby >= 2.7.
+Without it the gem falls back to Readline, where Tab completes instead of a live menu.
+Force one or the other with `c.line_editor = :reline` / `:readline` (default `:auto`).
+
 Prefix input with `>` to run Ruby directly (no LLM round-trip). The result is added to conversation context.
 
 Say "think harder" in any query to auto-upgrade to the thinking model for that session. After 5+ tool rounds, you'll also be prompted to switch.
@@ -398,6 +425,7 @@ RailsConsoleAi.configure do |config|
   config.timeout = 30                 # HTTP timeout in seconds
   config.max_tool_rounds = 200        # safety cap on tool-use loops
   config.code_search_paths = %w[app]  # directories for list_files / search_code
+  config.line_editor = :auto          # :auto, :reline (live "/" menu), :readline
 
   # Runaway-loop circuit breakers (see "Runaway sessions" below)
   config.token_nudge_threshold = 500_000    # input tokens in one tool loop → nudge model to wrap up (nil disables)

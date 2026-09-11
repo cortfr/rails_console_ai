@@ -99,7 +99,8 @@ module RailsConsoleAi
                   :bypass_guards_for_methods,
                   :user_extra_info,
                   :sub_agent_max_rounds,
-                  :sub_agent_model
+                  :sub_agent_model,
+                  :line_editor
 
     def initialize
       @provider     = :anthropic
@@ -154,6 +155,9 @@ module RailsConsoleAi
       @user_extra_info = {}
       @sub_agent_max_rounds = 15
       @sub_agent_model = nil
+      # Interactive line editor: :auto prefers Reline (live "/" completion menu)
+      # and falls back to Readline. Force one with :reline or :readline.
+      @line_editor = :auto
     end
 
     def resolve_user_extra_info(username)

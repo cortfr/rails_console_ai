@@ -1,3 +1,5 @@
+require 'rails_console_ai/slash_commands'
+
 module RailsConsoleAi
   class ConversationEngine
     attr_reader :history, :total_input_tokens, :total_output_tokens,
@@ -253,6 +255,80 @@ module RailsConsoleAi
       end
       @channel.display_status("  Retrying last code...")
       execute_direct(code)
+    end
+
+    # --- Slash-command invocation of skills and agents ---
+
+    # A skill is a recipe for *this* assistant, and its guard bypasses have to
+    # land on the live executor — so it runs as a normal turn with the recipe
+    # prepended, not in a sub-agent. Returns the user-turn text to send.
+    def skill_command_prompt(skill, request)
+      bypass_methods = Array(skill['bypass_guards_for_methods'])
+      @executor.activate_skill_bypasses(bypass_methods) unless bypass_methods.empty?
+
+      if skill['source'] == :db && skill['id']
+        RailsConsoleAi::Skill.record_use!(skill['id'])
+      end
+
+      @channel.display_status("  Activated skill: #{skill['name']}")
+
+      request = request.to_s.strip
+      task = request.empty? ? "Follow this skill now." : request
+
+      "The user invoked the \"#{skill['name']}\" skill. Follow its procedure.\n\n" \
+        "--- SKILL: #{skill['name']} ---\n#{skill['body']}\n--- END SKILL ---\n\n" \
+        "Their request: #{task}"
+    end
+
+    # An agent is a separate context by definition, so this mirrors delegate_task:
+    # run it, then fold only its summary back into the conversation.
+    def run_agent_command(agent, task)
+      require 'rails_console_ai/sub_agent'
+
+      task = task.to_s.strip
+      if task.empty?
+        @channel.display_warning("  /#{SlashCommands.slugify(agent['name'])} needs a task. Try: /#{SlashCommands.slugify(agent['name'])} <what to investigate>")
+        return
+      end
+
+      @interactive_query ||= "/#{SlashCommands.slugify(agent['name'])} #{task}"
+      log_interactive_turn(status: 'running')
+
+      if agent['source'] == :db && agent['id']
+        RailsConsoleAi::Agent.record_use!(agent['id'])
+      end
+
+      sub = SubAgent.new(
+        task: task,
+        agent_config: agent,
+        binding_context: @executor.binding_context,
+        parent_channel: @channel,
+        executor: @executor
+      )
+
+      begin
+        # Deliberately NOT wrapped in @channel.wrap_llm_call. That wrapper puts the
+        # terminal in raw mode to watch for Esc, which clears ONLCR — so anything
+        # printed inside it staircases down the screen. Everywhere else it wraps
+        # only the provider HTTP call, where nothing prints; a sub-agent run prints
+        # throughout. Ctrl-C still lands here as an Interrupt.
+        result = sub.run
+      rescue Interrupt
+        @channel.display_warning("  Cancelled.")
+        log_interactive_turn(status: 'ready')
+        return
+      end
+
+      record_sub_agent_usage(sub)
+
+      @history << {
+        role: :user,
+        content: "The user ran the \"#{agent['name']}\" agent with the task: #{task}\n\n" \
+                 "The agent reported back:\n#{result}"
+      }
+
+      @channel.display(result.to_s)
+      log_interactive_turn(status: 'ready')
     end
 
     def execute_direct(raw_code)
@@ -695,6 +771,18 @@ module RailsConsoleAi
 
     private
 
+    def record_sub_agent_usage(sub)
+      absorb_sub_agent_usage(input: sub.input_tokens, output: sub.output_tokens, model: sub.model_used)
+    end
+
+    def absorb_sub_agent_usage(usage)
+      @total_input_tokens += usage[:input] || 0
+      @total_output_tokens += usage[:output] || 0
+      return unless usage[:model]
+      @token_usage[usage[:model]][:input] += usage[:input] || 0
+      @token_usage[usage[:model]][:output] += usage[:output] || 0
+    end
+
     def safety_context
       guards = RailsConsoleAi.configuration.safety_guards
       return nil if guards.empty?
@@ -994,13 +1082,7 @@ module RailsConsoleAi
 
           # Aggregate sub-agent token usage into parent's cost tracking
           if tc[:name] == 'delegate_task' && tools.last_sub_agent_usage
-            sa = tools.last_sub_agent_usage
-            @total_input_tokens += sa[:input] || 0
-            @total_output_tokens += sa[:output] || 0
-            if sa[:model]
-              @token_usage[sa[:model]][:input] += sa[:input] || 0
-              @token_usage[sa[:model]][:output] += sa[:output] || 0
-            end
+            absorb_sub_agent_usage(tools.last_sub_agent_usage)
           end
 
           if RailsConsoleAi.configuration.debug
