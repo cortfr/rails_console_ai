@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.36.0]
+
+- Add an OpenRouter provider with access to 400+ models
+- Report exact costs when a provider returns them
+- Run any skill or agent as a slash command from the console
+- Add a live completion menu for slash commands
+- Support choosing between the Reline and Readline line editors
+- Fix cost reporting in the Slack bot
+
 ## [0.35.0]
 
 - Extend prompt caching to the full conversation history
@@ -13,11 +22,6 @@ All notable changes to this project will be documented in this file.
 - Warn when a conversation approaches the model's context window
 - Stop overriding a configured request timeout
 - Fix a failure when a turn hits the tool round limit
-- **Add OpenRouter provider** — Access 400+ models (Anthropic Claude, OpenAI GPT, Google Gemini, DeepSeek, Llama, etc.) via a unified OpenAI-compatible API with automatic prompt caching for Anthropic-family models, real-time cost tracking (`usage.cost` now populates `ChatResult#cost`), and sticky session routing for cache warmth across the multi-turn tool-use loop
-- **Refactor OpenAI provider into seams** — Extract `api_base`, `endpoint_path`, `request_headers`, `build_body`, and `build_result` methods so subclasses like `Local` and the new `OpenRouter` can override only what differs, eliminating code duplication
-- **Add exact cost reporting** — When providers report actual cost (OpenRouter's `usage.cost`), display it directly (`$0.0431` vs estimated `~$0.04`) in `/cost`, Slack `/cost`, debug output, and session rollups; fall back to family-based estimates for Anthropic/Bedrock/OpenAI when cost isn't reported
-- **Extract `Configuration.estimate_cost` helper** — Consolidate 4 duplicated cost-calculation sites into one method with cache-adjustment math
-- **Add sticky routing via `session_id`** — OpenRouter provider sends a stable session ID per engine instance so multi-turn conversations stay on the same upstream provider endpoint, keeping prompt caches warm
 
 ## [0.34.0]
 
