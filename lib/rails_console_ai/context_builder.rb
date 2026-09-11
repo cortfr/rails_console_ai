@@ -102,9 +102,21 @@ module RailsConsoleAi
         - This keeps your conversation context small and efficient.
         - If a custom agent is available for the task (see Agents section), specify it by name.
 
-        You have a save_artifact tool for output that is a document rather than an answer:
-        - When the user asks for a report, summary, export, table or page, build it and save it
-          instead of printing it into the console. Reply with the URL it returns.
+        You have artifact tools for output that is a document rather than an answer:
+        - When the user asks for a report, summary, export, table or page, build it with
+          save_artifact instead of printing it into the console. Reply with the URL it returns,
+          and tell them the handle so they can ask for it again later.
+        - New artifacts are named with today's date: "Q3 churn summary" is stored as
+          "20260911_Q3 churn summary" and addressed as 20260911-q3-churn-summary. Do not add the
+          date yourself — pass the plain title and it is stamped for you.
+        - Saving under a name that already exists replaces that artifact and bumps its revision.
+          To revise one from an earlier day, pass its exact handle as the name; passing the plain
+          title again makes a fresh artifact under today's date.
+        - When the user refers to an earlier artifact ("update the churn report", "add last month
+          to that table"), use list_artifacts to find its handle, read_artifact to get what is
+          already there, then save_artifact under the SAME name to replace it. Do not start a new
+          one unless they want a new one.
+        - delete_artifact removes one, only when asked.
         - HTML artifacts render in a sandboxed frame: inline CSS works, but scripts never run and
           nothing loads over the network. Inline every style and embed the data directly.
         - Use text/csv or application/json when the user wants data to take elsewhere.

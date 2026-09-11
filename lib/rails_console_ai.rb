@@ -57,6 +57,48 @@ module RailsConsoleAi
       @current_user = name
     end
 
+    # Scheme + host for links the gem hands out, without a trailing slash.
+    # Empty string when nothing is configured and Rails has no url options, in
+    # which case callers fall back to a relative path.
+    def base_url
+      configured = configuration.base_url.to_s.strip
+      return normalize_base_url(configured) unless configured.empty?
+
+      from_rails = rails_default_url_base
+      from_rails ? normalize_base_url(from_rails) : ''
+    end
+
+    def normalize_base_url(value)
+      value = value.to_s.strip.chomp('/')
+      return '' if value.empty?
+      # Forgiving about a host given without a scheme — "secure.apptoto.com".
+      value = "https://#{value}" unless value =~ %r{\A[a-z][a-z0-9+.-]*://}i
+      value
+    end
+
+    # Most apps already declare their canonical host for mailers or url helpers.
+    def rails_default_url_base
+      return nil unless defined?(::Rails) && ::Rails.respond_to?(:application) && ::Rails.application
+
+      opts = ::Rails.application.routes.default_url_options
+      opts = nil if opts.nil? || opts[:host].to_s.empty?
+
+      if opts.nil?
+        mailer = ::Rails.application.config.action_mailer.default_url_options rescue nil
+        opts = mailer if mailer && !mailer[:host].to_s.empty?
+      end
+      return nil unless opts && !opts[:host].to_s.empty?
+
+      protocol = opts[:protocol].to_s.sub(%r{://\z}, '')
+      protocol = 'https' if protocol.empty?
+      port = opts[:port]
+      host = opts[:host].to_s.chomp('/')
+      port_part = port && ![80, 443, '80', '443'].include?(port) ? ":#{port}" : ''
+      "#{protocol}://#{host}#{port_part}"
+    rescue StandardError
+      nil
+    end
+
     # Where the host app mounted the engine, so a tool can hand the user a URL
     # that actually resolves. Discovered from the route table rather than assumed,
     # since the mount point is the host's choice.
@@ -400,10 +442,14 @@ module RailsConsoleAi
 
       conn.create_table(table) do |t|
         t.string   :name,         limit: 255, null: false
+        # Stable handle derived from the name, so the assistant can be told
+        # "update the churn summary" in a later session and find the same row.
+        t.string   :slug,         limit: 255, null: false
         t.text     :description
         t.string   :content_type, limit: 100, null: false
         t.text     :content,      null: false
         t.integer  :byte_size,    default: 0, null: false
+        t.integer  :revision,     default: 1, null: false
         # Addressed by an unguessable token rather than a sequential id, so a
         # shared link can't be walked to the neighbouring artifact.
         t.string   :token,        limit: 64,  null: false
@@ -414,9 +460,54 @@ module RailsConsoleAi
       end
 
       conn.add_index(table, :token, unique: true)
+      conn.add_index(table, :slug, unique: true)
       conn.add_index(table, :created_at)
       conn.add_index(table, :session_id)
       $stdout.puts "\e[32mRailsConsoleAi: created #{table} table.\e[0m"
+    end
+
+    # Brings an artifacts table created before slugs existed up to date, and
+    # backfills a handle for every row already in it.
+    def upgrade_artifacts_table!(conn)
+      table = 'rails_console_ai_artifacts'
+      return [] unless conn.table_exists?(table)
+
+      added = []
+
+      unless conn.column_exists?(table, :revision)
+        conn.add_column(table, :revision, :integer, default: 1, null: false)
+        added << "#{table}.revision"
+      end
+
+      unless conn.column_exists?(table, :slug)
+        # Added nullable, backfilled, and only then made unique — an existing
+        # table has rows that need a handle before the index can be built.
+        conn.add_column(table, :slug, :string, limit: 255)
+        backfill_artifact_slugs!(conn, table)
+        conn.add_index(table, :slug, unique: true) unless conn.index_exists?(table, :slug)
+        added << "#{table}.slug"
+      end
+
+      added
+    end
+
+    def backfill_artifact_slugs!(conn, table)
+      require 'rails_console_ai/slash_commands'
+      seen = {}
+      rows = conn.select_all("SELECT id, name FROM #{table} WHERE slug IS NULL ORDER BY id")
+      rows.each do |row|
+        base = RailsConsoleAi::SlashCommands.slugify(row['name'])
+        base = "artifact-#{row['id']}" if base.empty?
+        slug = base
+        n = 1
+        # Two rows can share a name; the older one keeps the bare handle.
+        while seen.key?(slug) || conn.select_value("SELECT 1 FROM #{table} WHERE slug = #{conn.quote(slug)} LIMIT 1")
+          n += 1
+          slug = "#{base}-#{n}"
+        end
+        seen[slug] = true
+        conn.execute("UPDATE #{table} SET slug = #{conn.quote(slug)} WHERE id = #{row['id'].to_i}")
+      end
     end
 
     def migrate!
@@ -502,7 +593,9 @@ module RailsConsoleAi
       setup_memories_tables!(conn)
       setup_agents_tables!(conn)
 
-      unless conn.table_exists?('rails_console_ai_artifacts')
+      if conn.table_exists?('rails_console_ai_artifacts')
+        migrations.concat(upgrade_artifacts_table!(conn))
+      else
         setup_artifacts_table!(conn)
         migrations << 'rails_console_ai_artifacts'
       end

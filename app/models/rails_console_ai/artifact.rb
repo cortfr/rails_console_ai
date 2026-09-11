@@ -1,4 +1,5 @@
 require 'securerandom'
+require 'rails_console_ai/slash_commands'
 
 module RailsConsoleAi
   # A file the assistant produced — an HTML report, a CSV extract, a JSON dump —
@@ -31,6 +32,7 @@ module RailsConsoleAi
                optional: true
 
     validates :name, presence: true, length: { maximum: 255 }
+    validates :slug, presence: true, uniqueness: { case_sensitive: false }
     validates :content, presence: true
     validates :content_type, inclusion: {
       in: CONTENT_TYPES.keys,
@@ -39,6 +41,7 @@ module RailsConsoleAi
     validate :content_within_limit
 
     before_validation :assign_token
+    before_validation :assign_slug
     before_validation :measure_content
 
     scope :newest_first, -> { order(created_at: :desc) }
@@ -63,6 +66,68 @@ module RailsConsoleAi
 
     def self.find_by_token!(token)
       find_by!(token: token.to_s)
+    end
+
+    # How the assistant addresses an artifact across turns and sessions: the
+    # slug it was given, the name a human typed, or the token from a URL. Name
+    # is matched case-insensitively because the user will not retype it exactly.
+    def self.find_by_handle(handle)
+      handle = handle.to_s.strip
+      return nil if handle.empty?
+
+      slug = RailsConsoleAi::SlashCommands.slugify(handle)
+      find_by(slug: slug) ||
+        find_by(slug: handle) ||
+        where('LOWER(name) = ?', handle.downcase).first ||
+        find_by(token: handle) ||
+        most_recent_matching(handle)
+    end
+
+    # The handle a new artifact with this name would take, minus any suffix the
+    # uniqueness check would add.
+    def self.slug_for(name)
+      RailsConsoleAi::SlashCommands.slugify(name)
+    end
+
+    # Leading "20260911_" / "20260911-", as added to new names.
+    DATE_PREFIX = /\A\d{8}[_-]/.freeze
+
+    def self.date_prefix_for(time = Time.now)
+      "#{time.strftime('%Y%m%d')}_"
+    end
+
+    # The slug mirrors the name, date and all, so the two always correspond:
+    # "20260911_Dog on a bike" is addressed as 20260911-dog-on-a-bike.
+    def self.base_slug_for(name)
+      slug_for(name).sub(DATE_PREFIX, '')
+    end
+
+    def base_slug
+      slug.to_s.sub(DATE_PREFIX, '')
+    end
+
+    # Resolves an undated handle to the most recent artifact carrying it, so a
+    # user can say "the churn report" without knowing which day's it was.
+    # Only a convenience for reading and deleting — saving matches exactly.
+    def self.most_recent_matching(handle)
+      base = base_slug_for(handle)
+      return nil if base.empty?
+
+      candidates = where('slug = ? OR slug LIKE ?', base, "________-#{base}")
+                   .order(created_at: :desc).to_a
+      candidates.find { |a| a.base_slug == base }
+    end
+
+    # Applies the date stamp unless the caller already supplied one, or the app
+    # has turned stamping off.
+    def self.stamped_name(name, time = Time.now)
+      name = name.to_s.strip
+      # A blank name must stay blank: stamping it would smuggle an unnamed
+      # artifact past the presence validation as "20260911_".
+      return name if name.empty?
+      return name unless RailsConsoleAi.configuration.artifact_date_prefix
+      return name if name =~ DATE_PREFIX
+      "#{date_prefix_for(time)}#{name}"
     end
 
     def extension
@@ -95,6 +160,30 @@ module RailsConsoleAi
 
     def assign_token
       self.token = SecureRandom.hex(16) if token.to_s.empty?
+    end
+
+    def assign_slug
+      return unless slug.to_s.empty?
+
+      base = self.class.slug_for(name)
+      # A name with nothing sluggable in it leaves just the date stamp, which
+      # would collide with the next such name saved the same day.
+      # The separator is already gone when nothing followed it, so match the
+      # date with the separator optional.
+      if base.sub(/\A\d{8}[_-]?/, '').empty?
+        stamp = base[/\A\d{8}/]
+        base = [stamp, "artifact-#{SecureRandom.hex(4)}"].compact.join('-')
+      end
+
+      candidate = base
+      n = 1
+      # Only reached when the caller did not mean to update an existing artifact
+      # (save_artifact looks the slug up first), so the newcomer takes a suffix.
+      while self.class.where(slug: candidate).where.not(id: id).exists?
+        n += 1
+        candidate = "#{base}-#{n}"
+      end
+      self.slug = candidate
     end
 
     def measure_content

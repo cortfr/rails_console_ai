@@ -6,7 +6,7 @@ module RailsConsoleAi
       attr_reader :definitions, :last_sub_agent_usage
 
       # Tools that should never be cached (side effects or user interaction)
-      NO_CACHE = %w[ask_user save_memory delete_memory recall_memory execute_code execute_plan activate_skill save_skill delete_skill save_agent delete_agent delegate_task explore_output save_artifact].freeze
+      NO_CACHE = %w[ask_user save_memory delete_memory recall_memory execute_code execute_plan activate_skill save_skill delete_skill save_agent delete_agent delegate_task explore_output save_artifact list_artifacts read_artifact delete_artifact].freeze
 
       def initialize(executor: nil, mode: :default, channel: nil, allowed_tools: nil)
         @executor = executor
@@ -259,31 +259,39 @@ module RailsConsoleAi
             register_delegate_task
           end
 
-          register_save_artifact
+          register_artifact_tools
         end
       end
 
       ARTIFACT_TYPES = %w[text/html text/markdown text/csv application/json text/plain].freeze
 
-      def register_save_artifact
+      # How much of an artifact read_artifact returns inline before handing back
+      # an output_id instead. A full report would otherwise swamp the context.
+      ARTIFACT_READ_LIMIT = 12_000
+
+      def register_artifact_tools
         register(
           name: 'save_artifact',
           description: 'Save a generated file — an HTML report, a CSV extract, a JSON dump — so the user can open it in a browser ' \
             'instead of reading it in the console. Use this whenever the user asks for a summary, report, export or page, ' \
             'or whenever the output is a document rather than an answer. ' \
             'Returns a URL to view it. Prefer this over printing hundreds of lines of HTML or CSV into the transcript. ' \
+            'New artifacts are stamped with today\'s date automatically — pass a plain title like "Q3 churn summary", ' \
+            'not a dated one. Saving under a name that already exists REPLACES its content and bumps its revision; ' \
+            'to revise an artifact from an earlier day pass its exact handle (e.g. "20260911_Q3 churn summary") as the name, ' \
+            'and call read_artifact first if you need to keep most of what is already there. ' \
             'HTML is rendered in a sandboxed frame: inline CSS works, but scripts never run, so do not rely on JavaScript ' \
             'or on loading anything over the network — inline all styles and embed any data directly.',
           parameters: {
             'type' => 'object',
             'properties' => {
-              'name' => { 'type' => 'string', 'description' => 'Short title, e.g. "Q3 churn summary"' },
+              'name' => { 'type' => 'string', 'description' => 'Short title, e.g. "Q3 churn summary". Reusing an existing name updates that artifact.' },
               'content_type' => {
                 'type' => 'string',
                 'enum' => ARTIFACT_TYPES,
                 'description' => 'MIME type of the content'
               },
-              'content' => { 'type' => 'string', 'description' => 'The full file content' },
+              'content' => { 'type' => 'string', 'description' => 'The full file content. Replaces the previous content entirely.' },
               'description' => { 'type' => 'string', 'description' => 'Optional one-line note about what this is and how it was built' }
             },
             'required' => ['name', 'content_type', 'content']
@@ -291,6 +299,48 @@ module RailsConsoleAi
           handler: ->(args) {
             save_artifact(args['name'], args['content_type'], args['content'], args['description'])
           }
+        )
+
+        register(
+          name: 'list_artifacts',
+          description: 'List saved artifacts, newest first, with the handle each one is addressed by. ' \
+            'Call this when the user refers to an artifact from an earlier session ("update the churn report") ' \
+            'and you do not already know its handle.',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'search' => { 'type' => 'string', 'description' => 'Optional filter over name and description' }
+            },
+            'required' => []
+          },
+          handler: ->(args) { list_artifacts(args['search']) }
+        )
+
+        register(
+          name: 'read_artifact',
+          description: 'Read back the content of a saved artifact so you can revise it. ' \
+            'Accepts the handle, the name, or the token from its URL.',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'handle' => { 'type' => 'string', 'description' => 'Handle, name, or token, e.g. "q3-churn-summary"' }
+            },
+            'required' => ['handle']
+          },
+          handler: ->(args) { read_artifact(args['handle']) }
+        )
+
+        register(
+          name: 'delete_artifact',
+          description: 'Delete a saved artifact. Only when the user asks for it to be removed.',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'handle' => { 'type' => 'string', 'description' => 'Handle, name, or token' }
+            },
+            'required' => ['handle']
+          },
+          handler: ->(args) { delete_artifact(args['handle']) }
         )
       end
 
@@ -304,35 +354,142 @@ module RailsConsoleAi
         nil
       end
 
-      def save_artifact(name, content_type, content, description = nil)
+      # Nil when artifacts can't be used at all; otherwise the model class.
+      # Returns the explanation as a String so each tool can hand it straight back.
+      def artifact_store
         model = artifact_model
-        unless model
-          return 'FAILED to save artifact: artifacts need the Rails engine loaded.'
-        end
+        return [nil, 'artifacts need the Rails engine loaded.'] unless model
         unless model.available?
-          return 'FAILED to save artifact: the rails_console_ai_artifacts table does not exist. ' \
-                 'Ask the user to run `ai_db_setup` in the Rails console, then try again.'
+          return [nil, 'the rails_console_ai_artifacts table does not exist. ' \
+                       'Ask the user to run `ai_db_setup` in the Rails console, then try again.']
         end
+        [model, nil]
+      end
 
-        artifact = model.new(
-          name: name,
-          description: description,
-          content_type: content_type,
-          content: content,
-          session_id: RailsConsoleAi.current_session_id,
-          created_by: RailsConsoleAi.current_user
-        )
+      # Addressed by slug so the link itself says what it points at. Absolute
+      # when the app's base URL is known: this string is read in a terminal,
+      # pasted into Slack and opened on a phone, none of which resolve a path.
+      def artifact_url(artifact)
+        "#{RailsConsoleAi.base_url}#{RailsConsoleAi.engine_mount_path}/artifacts/#{artifact.slug}"
+      end
+
+      # Saving under an existing name is an edit, not a second copy — that is what
+      # lets the user say "update the churn report" two sessions later.
+      def save_artifact(name, content_type, content, description = nil)
+        model, problem = artifact_store
+        return "FAILED to save artifact: #{problem}" if problem
+
+        name = model.stamped_name(name)
+        existing = model.find_by(slug: model.slug_for(name))
+        artifact = existing || model.new
+        verb = existing ? 'updated' : 'saved'
+
+        artifact.name = name
+        artifact.content_type = content_type
+        artifact.content = content
+        artifact.description = description if description || artifact.new_record?
+        artifact.session_id = RailsConsoleAi.current_session_id
+        artifact.created_by ||= RailsConsoleAi.current_user
+        artifact.revision = artifact.revision.to_i + 1 if existing
 
         unless artifact.save
           return "FAILED to save artifact: #{artifact.errors.full_messages.join('; ')}"
         end
 
-        url = "#{RailsConsoleAi.engine_mount_path}/artifacts/#{artifact.token}"
-        @channel.display_status("  Saved artifact: #{artifact.name} (#{artifact.human_size}) #{url}") if @channel
-        "Artifact saved: \"#{artifact.name}\" (#{artifact.content_type}, #{artifact.human_size}). " \
-          "The user can view it at #{url} — give them that URL."
+        url = artifact_url(artifact)
+        revision_note = existing ? " revision #{artifact.revision}," : ''
+        if @channel
+          @channel.display_status("  Artifact #{verb}: #{artifact.name} (#{artifact.human_size}) #{url}")
+        end
+        "Artifact #{verb}: \"#{artifact.name}\" (handle: #{artifact.slug},#{revision_note} " \
+          "#{artifact.content_type}, #{artifact.human_size}). " \
+          "The user can view it at #{url} — give them that URL. " \
+          "Refer to it later as #{artifact.slug}."
       rescue ::ActiveRecord::ActiveRecordError => e
         "FAILED to save artifact (#{e.class}: #{e.message})."
+      end
+
+      def list_artifacts(search = nil)
+        model, problem = artifact_store
+        return "FAILED to list artifacts: #{problem}" if problem
+
+        scope = model.newest_first
+        search = search.to_s.strip
+        unless search.empty?
+          needle = "%#{search.downcase}%"
+          scope = scope.where("LOWER(name) LIKE :q OR LOWER(COALESCE(description, '')) LIKE :q", q: needle)
+        end
+
+        rows = scope.limit(50).to_a
+        if rows.empty?
+          return search.empty? ? 'No artifacts saved yet.' : "No artifacts match #{search.inspect}."
+        end
+
+        lines = rows.map { |a|
+          bits = ["#{a.slug} — \"#{a.name}\"", a.content_type, a.human_size]
+          bits << "rev #{a.revision}" if a.revision.to_i > 1
+          bits << a.updated_at.strftime('%Y-%m-%d')
+          line = bits.join(', ')
+          line += "\n    #{a.description}" if a.description.present?
+          "- #{line}"
+        }
+        "#{rows.length} artifact#{rows.length == 1 ? '' : 's'} (address one by its handle):\n#{lines.join("\n")}"
+      rescue ::ActiveRecord::ActiveRecordError => e
+        "FAILED to list artifacts (#{e.class}: #{e.message})."
+      end
+
+      def read_artifact(handle)
+        model, problem = artifact_store
+        return "FAILED to read artifact: #{problem}" if problem
+
+        artifact = model.find_by_handle(handle)
+        return artifact_not_found(model, handle) unless artifact
+
+        header = "Artifact \"#{artifact.name}\" (handle: #{artifact.slug}, #{artifact.content_type}, " \
+                 "#{artifact.human_size}, revision #{artifact.revision}):\n"
+
+        body = artifact.content.to_s
+        return header + body if body.length <= ARTIFACT_READ_LIMIT
+
+        # Same escape hatch large tool results use: keep the head, park the rest
+        # where explore_output can query it rather than flooding the context.
+        output_id = @executor && @executor.store_output(body)
+        preview = body[0, ARTIFACT_READ_LIMIT]
+        tail = if output_id
+                 "\n\n[Truncated at #{ARTIFACT_READ_LIMIT} of #{body.length} chars — " \
+                 "use explore_output with output_id=#{output_id} to query the rest, " \
+                 "or recall_output to expand it in place]"
+               else
+                 "\n\n[Truncated at #{ARTIFACT_READ_LIMIT} of #{body.length} chars]"
+               end
+        header + preview + tail
+      rescue ::ActiveRecord::ActiveRecordError => e
+        "FAILED to read artifact (#{e.class}: #{e.message})."
+      end
+
+      def delete_artifact(handle)
+        model, problem = artifact_store
+        return "FAILED to delete artifact: #{problem}" if problem
+
+        artifact = model.find_by_handle(handle)
+        return artifact_not_found(model, handle) unless artifact
+
+        name = artifact.name
+        slug = artifact.slug
+        artifact.destroy
+        @channel.display_status("  Deleted artifact: #{name}") if @channel
+        "Artifact deleted: \"#{name}\" (#{slug})."
+      rescue ::ActiveRecord::ActiveRecordError => e
+        "FAILED to delete artifact (#{e.class}: #{e.message})."
+      end
+
+      def artifact_not_found(model, handle)
+        available = model.newest_first.limit(20).pluck(:slug)
+        if available.empty?
+          "No artifact found for #{handle.inspect}. There are no saved artifacts."
+        else
+          "No artifact found for #{handle.inspect}. Available handles: #{available.join(', ')}"
+        end
       end
 
       def register_memory_recall_tools

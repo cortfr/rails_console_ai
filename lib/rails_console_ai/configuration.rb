@@ -118,7 +118,9 @@ module RailsConsoleAi
                   :user_extra_info,
                   :sub_agent_max_rounds,
                   :sub_agent_model,
-                  :line_editor
+                  :line_editor,
+                  :base_url,
+                  :artifact_date_prefix
 
     def initialize
       @provider     = :anthropic
@@ -179,6 +181,15 @@ module RailsConsoleAi
       # Interactive line editor: :auto prefers Reline (live "/" completion menu)
       # and falls back to Readline. Force one with :reline or :readline.
       @line_editor = :auto
+      # Public base URL of the host app, e.g. "https://secure.apptoto.com". Used
+      # to build links the gem hands out — an artifact URL is read in a console,
+      # pasted into Slack or opened on a phone, where a bare path is useless.
+      # Falls back to the app's default_url_options, then to a relative path.
+      @base_url = nil
+      # Stamp new artifact names with the day they were made ("20260911_Churn
+      # report"), so a list of them reads chronologically. Updates keep the name
+      # and date they were created with.
+      @artifact_date_prefix = true
     end
 
     def resolve_user_extra_info(username)

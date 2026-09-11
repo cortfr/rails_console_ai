@@ -1,11 +1,11 @@
 <div class="btn-bar">
   <%= link_to '← All artifacts', artifacts_path, class: 'btn btn-secondary' %>
-  <%= link_to 'Download', download_artifact_path(@artifact.token), class: 'btn' %>
-  <%= link_to 'Open raw', raw_artifact_path(@artifact.token), class: 'btn btn-secondary', target: '_blank', rel: 'noopener noreferrer' %>
+  <%= link_to 'Download', download_artifact_path(@artifact.slug), class: 'btn' %>
+  <%= link_to 'Open raw', raw_artifact_path(@artifact.slug), class: 'btn btn-secondary', target: '_blank', rel: 'noopener noreferrer' %>
   <%# button_to, not link_to: the engine layout loads no JavaScript, so a
       data-method link would quietly do nothing. Matches skills/agents. %>
   <span style="margin-left:auto;">
-    <%= button_to 'Delete', artifact_path(@artifact.token), method: :delete,
+    <%= button_to 'Delete', artifact_path(@artifact.slug), method: :delete,
           class: 'btn btn-danger', form: { style: 'display:inline' },
           data: { confirm: 'Delete this artifact? This cannot be undone.' } %>
   </span>
@@ -17,6 +17,11 @@
     <p class="text-muted" style="margin-bottom:16px;"><%= @artifact.description %></p>
   <% end %>
   <div class="meta-grid">
+    <div class="meta-item">
+      <label title="How the assistant addresses this artifact">Handle</label>
+      <span class="mono"><%= @artifact.slug %></span>
+    </div>
+    <div class="meta-item"><label>Revision</label><span><%= @artifact.revision %></span></div>
     <div class="meta-item"><label>Type</label><span class="mono"><%= @artifact.content_type %></span></div>
     <div class="meta-item"><label>Size</label><span><%= @artifact.human_size %></span></div>
     <div class="meta-item"><label>Created by</label><span><%= @artifact.created_by || '—' %></span></div>
@@ -31,6 +36,7 @@
       </span>
     </div>
     <div class="meta-item"><label>Created</label><span><%= @artifact.created_at.strftime('%Y-%m-%d %H:%M') %></span></div>
+    <div class="meta-item"><label>Updated</label><span><%= @artifact.updated_at.strftime('%Y-%m-%d %H:%M') %></span></div>
   </div>
 </div>
 
@@ -43,7 +49,7 @@
       as a CSP header on the raw response, which is what protects the "Open raw"
       link where no iframe attribute applies.
     %>
-    <iframe src="<%= raw_artifact_path(@artifact.token) %>"
+    <iframe src="<%= raw_artifact_path(@artifact.slug) %>"
             sandbox
             referrerpolicy="no-referrer"
             title="<%= @artifact.name %>"

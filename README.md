@@ -452,6 +452,9 @@ RailsConsoleAi.configure do |config|
   config.max_tool_rounds = 200        # safety cap on tool-use loops
   config.code_search_paths = %w[app]  # directories for list_files / search_code
   config.line_editor = :auto          # :auto, :reline (live "/" menu), :readline
+  # Public base URL, so links the assistant hands out (artifacts) are absolute.
+  # Falls back to the app's default_url_options, then to a relative path.
+  config.base_url = 'https://secure.example.com'
 
   # Runaway-loop circuit breakers (see "Runaway sessions" below)
   config.token_nudge_threshold = 500_000    # input tokens in one tool loop → nudge model to wrap up (nil disables)

@@ -48,17 +48,17 @@ RSpec.describe 'save_artifact tool', if: SQLITE3_AVAILABLE do
     expect(registry.definitions.map { |d| d[:name] }).to include('save_artifact')
   end
 
-  it 'persists the artifact' do
+  it 'persists the artifact, stamped with the current date' do
     save
     artifact = RailsConsoleAi::Artifact.last
-    expect(artifact.name).to eq('Q3 churn summary')
+    expect(artifact.name).to eq("#{Time.now.strftime('%Y%m%d')}_Q3 churn summary")
     expect(artifact.content).to eq('<h1>Churn</h1>')
   end
 
   it 'returns a URL for the user, not just a confirmation' do
     result = save
-    token = RailsConsoleAi::Artifact.last.token
-    expect(result).to include("/rails_console_ai/artifacts/#{token}")
+    slug = RailsConsoleAi::Artifact.last.slug
+    expect(result).to include("/rails_console_ai/artifacts/#{slug}")
     expect(result).to include('give them that URL')
   end
 
@@ -73,7 +73,7 @@ RSpec.describe 'save_artifact tool', if: SQLITE3_AVAILABLE do
   end
 
   it 'tells the console user what was saved' do
-    expect(channel).to receive(:display_status).with(/Saved artifact: Q3 churn summary/)
+    expect(channel).to receive(:display_status).with(/Artifact saved: \d{8}_Q3 churn summary/)
     save
   end
 
@@ -94,8 +94,10 @@ RSpec.describe 'save_artifact tool', if: SQLITE3_AVAILABLE do
       expect(RailsConsoleAi::Artifact.count).to eq(0)
     end
 
+    # Stamping a blank name would otherwise smuggle it past the presence check.
     it 'reports a missing name' do
       expect(save(name: '')).to start_with('FAILED')
+      expect(RailsConsoleAi::Artifact.count).to eq(0)
     end
   end
 

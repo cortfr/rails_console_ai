@@ -53,6 +53,11 @@ RailsConsoleAi.configure do |config|
   # Run RailsConsoleAi.setup! in the Rails console to create the table
   config.session_logging = true
 
+  # Public base URL of this app, so links the assistant hands out (artifact URLs)
+  # are absolute — a bare path is useless once pasted into Slack or opened on a
+  # phone. Falls back to the app's default_url_options, then to a relative path.
+  # config.base_url = 'https://secure.example.com'
+
   # Database connection for RailsConsoleAi tables (default: ActiveRecord::Base)
   # Set to a class that responds to .connection if tables live on a different DB
   # config.connection_class = Sharding::CentralizedModel

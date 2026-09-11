@@ -56,12 +56,12 @@ module RailsConsoleAi
                 filename: @artifact.filename
     end
 
-    # Looked up by token, not id — the URL is meant to survive being pasted into
-    # a chat, and a sequential id there would invite walking the table.
+    # Addressed by slug, so the URL says what it points at. Tokens still resolve:
+    # links handed out before slugs existed, or shared from an older version,
+    # must keep working.
     def load_artifact
-      @artifact = Artifact.find_by_token!(params[:id])
-    rescue ::ActiveRecord::RecordNotFound
-      redirect_to artifacts_path, alert: 'Artifact not found.'
+      @artifact = Artifact.find_by_handle(params[:id])
+      redirect_to artifacts_path, alert: 'Artifact not found.' unless @artifact
     end
   end
 end
