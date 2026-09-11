@@ -72,6 +72,39 @@ RSpec.describe RailsConsoleAi::Providers::OpenRouter do
       expect(result.cost).to eq(0.0023)
     end
 
+    # usage.cost is the whole point of preferring OpenRouter's reported dollars
+    # over an estimate, and it is omitted unless the request opts in.
+    it 'asks for cost in the usage block' do
+      stub_request(:post, 'https://openrouter.ai/api/v1/chat/completions')
+        .with { |req| JSON.parse(req.body).dig('usage', 'include') == true }
+        .to_return(
+          status: 200,
+          body: { choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+                  usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0007 } }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+      expect(provider.chat(messages).cost).to eq(0.0007)
+    end
+
+    # The engine reconstructs total prompt volume as input + cache_read +
+    # cache_write (Anthropic's contract). OpenRouter's prompt_tokens already
+    # includes both cache buckets, so it has to be reduced to the remainder.
+    it 'reports input_tokens as the uncached remainder' do
+      stub_request(:post, 'https://openrouter.ai/api/v1/chat/completions')
+        .to_return(
+          status: 200,
+          body: { choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+                  usage: { prompt_tokens: 9634, completion_tokens: 5,
+                           prompt_tokens_details: { cached_tokens: 9632 } } }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+      result = provider.chat(messages)
+      expect(result.input_tokens).to eq(2)
+      expect(result.input_tokens + result.cache_read_input_tokens).to eq(9634)
+    end
+
     it 'sends cache_control for Anthropic models' do
       stub_request(:post, 'https://openrouter.ai/api/v1/chat/completions')
         .with { |req|

@@ -29,6 +29,9 @@ module RailsConsoleAi
         # round re-bills the whole accumulated history at full input price.
         body[:cache_control] = cache_control if cache_supported?
         body[:session_id] = routing_session_id if routing_session_id
+        # OpenRouter only returns usage.cost — the real dollars every cost
+        # readout prefers over an estimate — when the request asks for it.
+        body[:usage] = { include: true }
         body
       end
 
@@ -57,9 +60,21 @@ module RailsConsoleAi
         usage = data['usage'] || {}
         details = usage['prompt_tokens_details'] || {}
 
-        result.cache_read_input_tokens = details['cached_tokens']
-        result.cache_write_input_tokens = details['cache_write_tokens']
+        cache_read = details['cached_tokens'].to_i
+        cache_write = details['cache_write_tokens'].to_i
+        result.cache_read_input_tokens = cache_read
+        result.cache_write_input_tokens = cache_write
         result.cost = usage['cost']
+
+        # OpenAI-shaped `prompt_tokens` is the WHOLE prompt, cached tokens
+        # included; Anthropic's `input_tokens` is the uncached remainder, and the
+        # engine is built on the Anthropic contract — it reconstructs total prompt
+        # volume as input + cache_read + cache_write for the runaway-loop budget
+        # breakers. Left as sent, a cached round counts twice and those breakers
+        # fire at half the volume they are set to.
+        if result.input_tokens
+          result.input_tokens = [result.input_tokens - cache_read - cache_write, 0].max
+        end
 
         if result.tool_calls&.any?
           result.stop_reason = :tool_use
