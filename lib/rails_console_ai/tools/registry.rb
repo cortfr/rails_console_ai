@@ -6,7 +6,7 @@ module RailsConsoleAi
       attr_reader :definitions, :last_sub_agent_usage
 
       # Tools that should never be cached (side effects or user interaction)
-      NO_CACHE = %w[ask_user save_memory delete_memory recall_memory execute_code execute_plan activate_skill save_skill delete_skill save_agent delete_agent delegate_task explore_output].freeze
+      NO_CACHE = %w[ask_user save_memory delete_memory recall_memory execute_code execute_plan activate_skill save_skill delete_skill save_agent delete_agent delegate_task explore_output save_artifact].freeze
 
       def initialize(executor: nil, mode: :default, channel: nil, allowed_tools: nil)
         @executor = executor
@@ -258,7 +258,81 @@ module RailsConsoleAi
             register_execute_plan
             register_delegate_task
           end
+
+          register_save_artifact
         end
+      end
+
+      ARTIFACT_TYPES = %w[text/html text/markdown text/csv application/json text/plain].freeze
+
+      def register_save_artifact
+        register(
+          name: 'save_artifact',
+          description: 'Save a generated file — an HTML report, a CSV extract, a JSON dump — so the user can open it in a browser ' \
+            'instead of reading it in the console. Use this whenever the user asks for a summary, report, export or page, ' \
+            'or whenever the output is a document rather than an answer. ' \
+            'Returns a URL to view it. Prefer this over printing hundreds of lines of HTML or CSV into the transcript. ' \
+            'HTML is rendered in a sandboxed frame: inline CSS works, but scripts never run, so do not rely on JavaScript ' \
+            'or on loading anything over the network — inline all styles and embed any data directly.',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'name' => { 'type' => 'string', 'description' => 'Short title, e.g. "Q3 churn summary"' },
+              'content_type' => {
+                'type' => 'string',
+                'enum' => ARTIFACT_TYPES,
+                'description' => 'MIME type of the content'
+              },
+              'content' => { 'type' => 'string', 'description' => 'The full file content' },
+              'description' => { 'type' => 'string', 'description' => 'Optional one-line note about what this is and how it was built' }
+            },
+            'required' => ['name', 'content_type', 'content']
+          },
+          handler: ->(args) {
+            save_artifact(args['name'], args['content_type'], args['content'], args['description'])
+          }
+        )
+      end
+
+      # Referencing the constant is what makes Rails autoload it. `defined?` does
+      # not: under autoloading the constant is absent until something asks for it
+      # by name, so a `defined?` guard reports "no model" in a perfectly healthy
+      # app and the tool never runs. NameError is the real "no engine here" case.
+      def artifact_model
+        RailsConsoleAi::Artifact
+      rescue NameError
+        nil
+      end
+
+      def save_artifact(name, content_type, content, description = nil)
+        model = artifact_model
+        unless model
+          return 'FAILED to save artifact: artifacts need the Rails engine loaded.'
+        end
+        unless model.available?
+          return 'FAILED to save artifact: the rails_console_ai_artifacts table does not exist. ' \
+                 'Ask the user to run `ai_db_setup` in the Rails console, then try again.'
+        end
+
+        artifact = model.new(
+          name: name,
+          description: description,
+          content_type: content_type,
+          content: content,
+          session_id: RailsConsoleAi.current_session_id,
+          created_by: RailsConsoleAi.current_user
+        )
+
+        unless artifact.save
+          return "FAILED to save artifact: #{artifact.errors.full_messages.join('; ')}"
+        end
+
+        url = "#{RailsConsoleAi.engine_mount_path}/artifacts/#{artifact.token}"
+        @channel.display_status("  Saved artifact: #{artifact.name} (#{artifact.human_size}) #{url}") if @channel
+        "Artifact saved: \"#{artifact.name}\" (#{artifact.content_type}, #{artifact.human_size}). " \
+          "The user can view it at #{url} — give them that URL."
+      rescue ::ActiveRecord::ActiveRecordError => e
+        "FAILED to save artifact (#{e.class}: #{e.message})."
       end
 
       def register_memory_recall_tools

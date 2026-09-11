@@ -744,6 +744,9 @@ module RailsConsoleAi
           log_attrs[:user_name] = @channel.mode == 'slack' ? "slack:#{@channel.user_identity}" : @channel.user_identity
         end
         @interactive_session_id = SessionLogger.log(log_attrs)
+        # Tools that persist something (save_artifact) read this to point back at
+        # the conversation that produced it, without needing a handle on the engine.
+        RailsConsoleAi.current_session_id = @interactive_session_id
       end
     end
 

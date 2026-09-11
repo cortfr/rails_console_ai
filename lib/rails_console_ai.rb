@@ -57,6 +57,47 @@ module RailsConsoleAi
       @current_user = name
     end
 
+    # Where the host app mounted the engine, so a tool can hand the user a URL
+    # that actually resolves. Discovered from the route table rather than assumed,
+    # since the mount point is the host's choice.
+    def engine_mount_path
+      return @engine_mount_path if defined?(@engine_mount_path) && @engine_mount_path
+
+      @engine_mount_path =
+        begin
+          found = nil
+          if defined?(::Rails) && ::Rails.respond_to?(:application) && ::Rails.application
+            ::Rails.application.routes.routes.each do |route|
+              app = route.app
+              # Mounted engines sit behind one or more wrappers; unwrap a bounded
+              # number of times rather than trusting the shape of any one Rails version.
+              5.times do
+                break unless app.respond_to?(:app) && !app.app.equal?(app)
+                app = app.app
+              end
+              next unless app == RailsConsoleAi::Engine
+
+              found = route.path.spec.to_s.sub(/\(\.:format\)\z/, '').chomp('/')
+              break
+            end
+          end
+          found.to_s.empty? ? '/rails_console_ai' : found
+        rescue StandardError
+          '/rails_console_ai'
+        end
+    end
+
+    # The session row the current turn belongs to, so tools that persist
+    # something (save_artifact) can point back at the conversation that produced
+    # it. Set by the engine as it logs each turn; nil outside a logged session.
+    def current_session_id
+      @current_session_id
+    end
+
+    def current_session_id=(id)
+      @current_session_id = id
+    end
+
     # Enqueue an agent run. Returns the Integer session id immediately;
     # the actual work is picked up by `rake rails_console_ai:agents`.
     #
@@ -185,6 +226,7 @@ module RailsConsoleAi
       setup_skills_tables!(conn)
       setup_memories_tables!(conn)
       setup_agents_tables!(conn)
+      setup_artifacts_table!(conn)
 
       migrate!
     rescue => e
@@ -352,6 +394,31 @@ module RailsConsoleAi
       end
     end
 
+    def setup_artifacts_table!(conn)
+      table = 'rails_console_ai_artifacts'
+      return if conn.table_exists?(table)
+
+      conn.create_table(table) do |t|
+        t.string   :name,         limit: 255, null: false
+        t.text     :description
+        t.string   :content_type, limit: 100, null: false
+        t.text     :content,      null: false
+        t.integer  :byte_size,    default: 0, null: false
+        # Addressed by an unguessable token rather than a sequential id, so a
+        # shared link can't be walked to the neighbouring artifact.
+        t.string   :token,        limit: 64,  null: false
+        t.integer  :session_id
+        t.string   :created_by,   limit: 255
+        t.datetime :created_at,   null: false
+        t.datetime :updated_at,   null: false
+      end
+
+      conn.add_index(table, :token, unique: true)
+      conn.add_index(table, :created_at)
+      conn.add_index(table, :session_id)
+      $stdout.puts "\e[32mRailsConsoleAi: created #{table} table.\e[0m"
+    end
+
     def migrate!
       conn = session_connection
       table = 'rails_console_ai_sessions'
@@ -434,6 +501,11 @@ module RailsConsoleAi
       setup_skills_tables!(conn)
       setup_memories_tables!(conn)
       setup_agents_tables!(conn)
+
+      unless conn.table_exists?('rails_console_ai_artifacts')
+        setup_artifacts_table!(conn)
+        migrations << 'rails_console_ai_artifacts'
+      end
 
       [[:skills, 'rails_console_ai_skills'], [:memories, 'rails_console_ai_memories'], [:agents, 'rails_console_ai_agents']].each do |key, name|
         post = table_columns(conn, name)

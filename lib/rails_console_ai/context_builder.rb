@@ -102,6 +102,13 @@ module RailsConsoleAi
         - This keeps your conversation context small and efficient.
         - If a custom agent is available for the task (see Agents section), specify it by name.
 
+        You have a save_artifact tool for output that is a document rather than an answer:
+        - When the user asks for a report, summary, export, table or page, build it and save it
+          instead of printing it into the console. Reply with the URL it returns.
+        - HTML artifacts render in a sandboxed frame: inline CSS works, but scripts never run and
+          nothing loads over the network. Inline every style and embed the data directly.
+        - Use text/csv or application/json when the user wants data to take elsewhere.
+
         RULES:
         - Give ONE concise answer. Do not offer multiple alternatives or variations.
         - For multi-step tasks, use execute_plan to break the work into small, clear steps.

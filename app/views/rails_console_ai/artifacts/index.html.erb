@@ -1,0 +1,53 @@
+<div class="btn-bar">
+  <form method="get" action="<%= artifacts_path %>" style="margin-left:auto;">
+    <input type="text" name="q" value="<%= @q %>" placeholder="Search artifacts…" style="padding:6px 10px; border:1px solid #ccc; border-radius:4px;">
+  </form>
+</div>
+
+<% if @artifacts.empty? %>
+  <div class="meta-card">
+    <% if @q.present? %>
+      <p class="text-muted">No artifacts match “<%= @q %>”. <%= link_to 'Show all', artifacts_path %>.</p>
+    <% else %>
+      <p class="text-muted">
+        No artifacts yet. The assistant creates them with the <code>save_artifact</code> tool —
+        ask it for a report, summary or export and it will save one here instead of printing it into the console.
+      </p>
+    <% end %>
+  </div>
+<% else %>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Description</th>
+        <th>Type</th>
+        <th>Size</th>
+        <th>Created by</th>
+        <th>Session</th>
+        <th>Created</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @artifacts.each do |a| %>
+        <tr>
+          <td><strong><%= link_to a.name, artifact_path(a.token) %></strong></td>
+          <td class="query-cell"><%= a.description %></td>
+          <td class="mono"><%= a.content_type %></td>
+          <td class="mono"><%= a.human_size %></td>
+          <td><%= a.created_by || '—' %></td>
+          <td>
+            <% if a.session_id %>
+              <%= link_to "##{a.session_id}", session_path(a.session_id) %>
+            <% else %>
+              —
+            <% end %>
+          </td>
+          <td><%= a.created_at.strftime('%Y-%m-%d %H:%M') %></td>
+          <td><%= link_to 'Download', download_artifact_path(a.token), class: 'btn btn-secondary' %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% end %>
