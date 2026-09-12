@@ -281,7 +281,13 @@ module RailsConsoleAi
             'to revise an artifact from an earlier day pass its exact handle (e.g. "20260911_Q3 churn summary") as the name, ' \
             'and call read_artifact first if you need to keep most of what is already there. ' \
             'HTML is rendered in a sandboxed frame: inline CSS works, but scripts never run, so do not rely on JavaScript ' \
-            'or on loading anything over the network — inline all styles and embed any data directly.',
+            'or on loading anything over the network — inline all styles and embed any data directly. ' \
+            'IMPORTANT: content must be the complete literal text, never a placeholder to fill in later. ' \
+            'If the content already exists as a value in the console — a file you read, a string you built — do NOT ' \
+            'retype it here. Your response has an output-token limit and a large file will be cut off mid-argument, ' \
+            'discarding the call. Use execute_code instead and save it directly from Ruby: ' \
+            'RailsConsoleAi.save_artifact(name: "Q3 churn summary", content: the_string). Same naming and revision ' \
+            'rules, and it returns the URL.',
           parameters: {
             'type' => 'object',
             'properties' => {
@@ -291,7 +297,7 @@ module RailsConsoleAi
                 'enum' => ARTIFACT_TYPES,
                 'description' => 'MIME type of the content'
               },
-              'content' => { 'type' => 'string', 'description' => 'The full file content. Replaces the previous content entirely.' },
+              'content' => { 'type' => 'string', 'description' => 'The full, literal file content — not a placeholder. Replaces the previous content entirely. For content that already exists as a console value, use RailsConsoleAi.save_artifact from execute_code instead.' },
               'description' => { 'type' => 'string', 'description' => 'Optional one-line note about what this is and how it was built' }
             },
             'required' => ['name', 'content_type', 'content']
@@ -373,26 +379,19 @@ module RailsConsoleAi
         "#{RailsConsoleAi.base_url}#{RailsConsoleAi.engine_mount_path}/artifacts/#{artifact.slug}"
       end
 
-      # Saving under an existing name is an edit, not a second copy — that is what
-      # lets the user say "update the churn report" two sessions later.
+      # The write itself lives on the model, shared with RailsConsoleAi.save_artifact
+      # so a console-side save and a tool-side save land identically.
       def save_artifact(name, content_type, content, description = nil)
         model, problem = artifact_store
         return "FAILED to save artifact: #{problem}" if problem
 
-        name = model.stamped_name(name)
-        existing = model.find_by(slug: model.slug_for(name))
-        artifact = existing || model.new
+        existing = model.find_by(slug: model.slug_for(model.stamped_name(name)))
         verb = existing ? 'updated' : 'saved'
 
-        artifact.name = name
-        artifact.content_type = content_type
-        artifact.content = content
-        artifact.description = description if description || artifact.new_record?
-        artifact.session_id = RailsConsoleAi.current_session_id
-        artifact.created_by ||= RailsConsoleAi.current_user
-        artifact.revision = artifact.revision.to_i + 1 if existing
+        artifact = model.store(name: name, content_type: content_type,
+                               content: content, description: description)
 
-        unless artifact.save
+        if artifact.errors.any? || artifact.new_record?
           return "FAILED to save artifact: #{artifact.errors.full_messages.join('; ')}"
         end
 

@@ -130,6 +130,39 @@ module RailsConsoleAi
       "#{date_prefix_for(time)}#{name}"
     end
 
+    # The one place an artifact is written. Both callers reach it: the
+    # save_artifact tool, which carries content the model typed out, and
+    # RailsConsoleAi.save_artifact, which carries a string the console already
+    # holds. Saving under a name that already exists is an edit, not a second
+    # copy — that is what lets a user say "update the churn report" two sessions
+    # later. Returns the (possibly unsaved) record; callers report its errors.
+    def self.store(name:, content:, content_type:, description: nil)
+      stamped = stamped_name(name)
+      existing = find_by(slug: slug_for(stamped))
+      artifact = existing || new
+
+      artifact.name = stamped
+      artifact.content_type = content_type
+      artifact.content = content
+      artifact.description = description if description || artifact.new_record?
+      artifact.session_id = RailsConsoleAi.current_session_id
+      artifact.created_by ||= RailsConsoleAi.current_user
+      artifact.revision = artifact.revision.to_i + 1 if existing
+
+      artifact.save
+      artifact
+    end
+
+    # Only consulted when a caller omits the type. Deliberately narrow: the value
+    # becomes a Content-Type header, so anything it isn't confident about lands on
+    # text/plain rather than being guessed into something the browser will run.
+    def self.infer_content_type(content)
+      sample = content.to_s.lstrip[0, 512].to_s
+      return 'text/html' if sample.match?(/\A<(!doctype html|html|\?xml|!--)/i) || sample.match?(/\A\s*<[a-z]+[\s>]/i)
+      return 'application/json' if sample.match?(/\A[\[{]/)
+      'text/plain'
+    end
+
     def extension
       CONTENT_TYPES.dig(content_type, :ext) || 'txt'
     end

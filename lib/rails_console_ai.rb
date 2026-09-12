@@ -140,6 +140,58 @@ module RailsConsoleAi
       @current_session_id = id
     end
 
+    # Save an artifact from Ruby, for content the console already holds.
+    #
+    #   html = S3.read_file("report.html")
+    #   RailsConsoleAi.save_artifact(name: "Mathnasium migration", content: html)
+    #
+    # This exists because the save_artifact TOOL can only carry content the model
+    # types out into its response, and a response has a hard output-token cap. A
+    # 40KB file does not fit under it: the call is cut off mid-argument, discarded,
+    # and retried identically forever. Going through Ruby, the bytes never enter
+    # the model's response at all — and what lands in the artifact is the string
+    # itself, byte for byte, not the model's recollection of it.
+    #
+    # Returns the URL. Saving under a name that already exists replaces that
+    # artifact and bumps its revision, exactly as the tool does.
+    def save_artifact(name:, content:, content_type: nil, description: nil)
+      model = artifact_model
+      raise 'Artifacts need the Rails engine loaded.' unless model
+      unless model.available?
+        raise "The rails_console_ai_artifacts table does not exist. Run `ai_db_setup` first."
+      end
+
+      content_type ||= model.infer_content_type(content)
+      # Called from inside execute_code, this INSERT would otherwise be stopped by
+      # the database_writes guard — which is the whole point of safe mode, except
+      # that the target is the gem's own artifacts table. The save_artifact tool
+      # writes to it unguarded already, being a tool rather than eval'd code; this
+      # is the same write reached a different way, so it gets the same exemption.
+      # Scoped to the one save, nothing the caller passes runs inside it.
+      artifact = configuration.safety_guards.without_guards do
+        model.store(name: name, content: content,
+                    content_type: content_type, description: description)
+      end
+      if artifact.errors.any?
+        raise ArgumentError, "Could not save artifact: #{artifact.errors.full_messages.join('; ')}"
+      end
+
+      "#{base_url}#{engine_mount_path}/artifacts/#{artifact.slug}"
+    end
+
+    # Fully qualified on purpose. A bare `Artifact` here reads as
+    # RailsConsoleAi::Artifact to Ruby, but the enclosing scope is the singleton
+    # class — an anonymous module — so once Rails' autoloader is the one
+    # resolving it, const_missing has no namespace to derive from and goes
+    # looking for a top-level Artifact that does not exist. Referencing the full
+    # path is also what triggers the autoload in the first place; `defined?`
+    # would report "no engine" in a perfectly healthy app.
+    def artifact_model
+      RailsConsoleAi::Artifact
+    rescue NameError
+      nil
+    end
+
     # Enqueue an agent run. Returns the Integer session id immediately;
     # the actual work is picked up by `rake rails_console_ai:agents`.
     #

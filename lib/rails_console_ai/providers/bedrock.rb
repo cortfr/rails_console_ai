@@ -65,7 +65,7 @@ module RailsConsoleAi
         debug_bedrock_response(response)
 
         tool_calls = extract_tool_calls(response)
-        stop = response.stop_reason == 'tool_use' ? :tool_use : :end_turn
+        stop = normalize_stop_reason(response.stop_reason, %w[tool_use], %w[max_tokens])
 
         usage = response.usage
         ChatResult.new(

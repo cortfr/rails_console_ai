@@ -117,6 +117,15 @@ module RailsConsoleAi
           already there, then save_artifact under the SAME name to replace it. Do not start a new
           one unless they want a new one.
         - delete_artifact removes one, only when asked.
+        - When the content already exists as a value in the console — a file you read from S3,
+          a string you built in code — do NOT retype it into save_artifact. Your response has an
+          output-token limit, and a large file will be cut off mid-argument and the call thrown
+          away. Save it from Ruby instead, inside execute_code:
+            html = S3.read_file("report.html")
+            RailsConsoleAi.save_artifact(name: "Mathnasium migration", content: html)
+          That is also the only way to store something verbatim: anything you retype is your
+          recollection of the bytes, not the bytes. Use save_artifact for content you are
+          composing yourself.
         - HTML artifacts render in a sandboxed frame: inline CSS works, but scripts never run and
           nothing loads over the network. Inline every style and embed the data directly.
         - Use text/csv or application/json when the user wants data to take elsewhere.

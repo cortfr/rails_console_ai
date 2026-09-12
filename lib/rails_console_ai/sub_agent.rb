@@ -87,6 +87,15 @@ module RailsConsoleAi
         @cost += result.cost || 0
 
         break if channel.cancelled?
+
+        # Cut off at the output cap: the tool call it was writing is incomplete
+        # and gets discarded, so the sub-agent would otherwise return whatever
+        # half-sentence preceded it as if that were its finding.
+        if result.truncated?
+          channel.display_warning("  Sub-agent response hit the output-token cap — its result is incomplete.")
+          break
+        end
+
         break unless result.tool_use?
 
         # Display the LLM's reasoning text before executing its tool calls

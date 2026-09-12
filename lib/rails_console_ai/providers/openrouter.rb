@@ -76,7 +76,11 @@ module RailsConsoleAi
           result.input_tokens = [result.input_tokens - cache_read - cache_write, 0].max
         end
 
-        if result.tool_calls&.any?
+        # Some OpenRouter upstreams return tool calls with a finish_reason of
+        # "stop"; trust the calls over the label. Not when the response was cut
+        # off at the output cap, though — those arguments are half-written, and
+        # promoting them to :tool_use hands the engine a truncated call to run.
+        if result.tool_calls&.any? && !result.truncated?
           result.stop_reason = :tool_use
         end
 

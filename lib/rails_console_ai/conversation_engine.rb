@@ -13,6 +13,7 @@ module RailsConsoleAi
     REPEAT_ERROR_WARN_THRESHOLD = 3      # same error signature (any args) → inject warning
     REPEAT_ERROR_BREAK_THRESHOLD = 5     # same error signature (any args) → force wrap-up
     CONTEXT_WARN_FRACTION = 0.7          # share of the model's context window → suggest /compact
+    MAX_TRUNCATION_RETRIES = 1           # responses cut off at the output cap → nudge, then stop
 
     def initialize(binding_context:, channel:, slack_thread_ts: nil, slack_channel_name: nil)
       @binding_context = binding_context
@@ -989,6 +990,7 @@ module RailsConsoleAi
 
       exhausted = false
       wrap_up_reason = nil
+      truncation_nudges = 0
       tool_call_counts = Hash.new(0)
       error_sig_counts = Hash.new(0)
       warned_error_sigs = Set.new
@@ -1046,6 +1048,34 @@ module RailsConsoleAi
 
         if RailsConsoleAi.configuration.debug
           debug_post_call(round, result, @total_input_tokens + total_input, @total_output_tokens + total_output)
+        end
+
+        # A response cut off at the output cap has nothing usable in it: the tool
+        # call it was in the middle of writing arrives with half its arguments, so
+        # it is discarded, and only the sentence the model wrote before starting
+        # the call survives. Left unhandled that looks exactly like a finished
+        # turn, and the model retries the same oversized call every time it is
+        # asked again — the identical truncation, forever, at full output cost.
+        # Say so, once, with the way out; the second one ends the turn.
+        if result.truncated?
+          cap = RailsConsoleAi.configuration.resolved_max_tokens
+          @channel.display_warning("  Response hit the #{format_tokens(cap)} output-token cap mid-generation — the incomplete tool call was discarded.")
+          if truncation_nudges >= MAX_TRUNCATION_RETRIES
+            @channel.display_error("  Truncated again. Stopping — see the guidance above, or raise c.max_tokens.")
+            break
+          end
+
+          truncation_nudges += 1
+          add_nudge.call(
+            "Your last response was cut off at the #{cap}-token output limit, so the tool call you were " \
+            "writing was discarded and never ran. Retrying it unchanged will be cut off at exactly the same " \
+            "point. You must make the next response SMALLER. If you were passing a large block of content as " \
+            "a tool argument — the content of an artifact, a file, a long report — do not inline it: run " \
+            "execute_code and have the Ruby build the string and save it directly, e.g. " \
+            "`RailsConsoleAi.save_artifact(name: \"...\", content: some_string)`, which never sends those " \
+            "bytes through your response at all. Otherwise, split the work across several smaller tool calls."
+          )
+          next
         end
 
         break unless result.tool_use?
@@ -1212,6 +1242,9 @@ module RailsConsoleAi
         total_output += result.output_tokens || 0
         total_cache_read += result.cache_read_input_tokens || 0
         total_cache_write += result.cache_write_input_tokens || 0
+        if result.truncated?
+          @channel.display_warning("  The final answer was cut off at the #{format_tokens(RailsConsoleAi.configuration.resolved_max_tokens)} output-token cap — what follows is incomplete.")
+        end
       end
 
       last_llm_stats = result ? format_llm_stats(result) : nil

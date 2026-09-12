@@ -41,7 +41,7 @@ module RailsConsoleAi
           end
         end
 
-        stop = finish_reason == 'tool_calls' ? :tool_use : :end_turn
+        stop = normalize_stop_reason(finish_reason, %w[tool_calls], %w[length])
 
         ChatResult.new(
           text: message['content'] || '',

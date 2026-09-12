@@ -132,6 +132,7 @@ Say "think harder" in any query to auto-upgrade to the thinking model for that s
 - **History compaction** — `/compact` summarizes long conversations to reduce cost and latency
 - **Output trimming** — older execution outputs are automatically replaced with references; the LLM can recall them on demand via `recall_output`, and you can `/expand <id>` to see them
 - **Debug mode** — `/debug` shows context breakdown, token counts, and per-call cost estimates before and after each LLM call
+- **Artifacts** — reports, exports and pages are saved and served at `/rails_console_ai/artifacts` instead of scrolling past in the console
 - **Sub-agents** — delegate multi-step investigations to a separate LLM context that returns only a concise summary, keeping the main conversation lean
 - **Safe mode** — configurable guards that block side effects (DB writes, HTTP mutations, email delivery) during AI code execution
 
@@ -306,6 +307,29 @@ Skills and global `bypass_guards_for_methods` coexist — use config-level bypas
 - **`/danger`** in interactive mode toggles all guards off/on for the session
 - **`d`** at the `Execute? [y/N/danger]` prompt disables guards for that single execution
 - When a guard blocks an operation, the user is prompted: `Re-run with safe mode disabled? [y/N]`
+
+## Artifacts
+
+When the answer is a document rather than a sentence — a report, an export, a page — the
+assistant calls `save_artifact` and hands back a URL instead of printing it into the console.
+Artifacts are listed at `/rails_console_ai/artifacts`, named with the day they were made
+(`20260911_Q3 churn summary`, addressed as `20260911-q3-churn-summary`), and saving under an
+existing name replaces it and bumps its revision.
+
+**Saving from Ruby.** Anything the assistant writes into `save_artifact` has to fit inside its
+response, and a response has a hard output-token cap — a 40KB file does not fit. Rather than
+being cut off mid-argument, content the console already holds should go straight in:
+
+```ruby
+html = S3.read_file("mathnasium_calendar_move_plan.html")
+RailsConsoleAi.save_artifact(name: "Mathnasium migration", content: html)
+# => "https://secure.example.com/rails_console_ai/artifacts/20260911-mathnasium-migration"
+```
+
+The bytes never pass through the model, so this is also the only way to store something
+*verbatim* — anything retyped by the assistant is its recollection of the file, not the file.
+`content_type:` is inferred when omitted, and the naming and revision rules are the same as the
+tool's. The assistant knows to reach for this itself when content is already in a variable.
 
 ## LLM Providers
 

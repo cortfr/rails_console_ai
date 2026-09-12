@@ -29,6 +29,20 @@ module RailsConsoleAi
 
       private
 
+      # Every provider reports "I stopped because I ran out of room" under its own
+      # name, and the obvious mapping — anything that isn't a tool call is a
+      # finished turn — is wrong in a way that costs the whole turn: a response cut
+      # off mid-tool-call arrives with its arguments half-written, the engine sees
+      # :end_turn, discards the partial call and prints whatever preamble the model
+      # managed first. That reads as the model deciding to answer in one sentence.
+      # Naming truncation lets the engine say so and let the model recover.
+      def normalize_stop_reason(raw, tool_values, truncation_values)
+        raw = raw.to_s
+        return :tool_use if tool_values.include?(raw)
+        return :max_tokens if truncation_values.include?(raw)
+        :end_turn
+      end
+
       # Read and connect timeouts are separate budgets. Establishing the TCP/TLS
       # connection either happens in a couple of seconds or is not going to, while
       # generation legitimately takes minutes with adaptive thinking and a large
@@ -158,6 +172,12 @@ module RailsConsoleAi
 
       def tool_use?
         stop_reason == :tool_use && tool_calls && !tool_calls.empty?
+      end
+
+      # The response hit the output cap mid-generation. Whatever it was writing —
+      # text, or the arguments of a tool call — is incomplete and cannot be used.
+      def truncated?
+        stop_reason == :max_tokens
       end
     end
 

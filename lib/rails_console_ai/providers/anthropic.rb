@@ -74,7 +74,7 @@ module RailsConsoleAi
         usage = data['usage'] || {}
 
         tool_calls = extract_tool_calls(data)
-        stop = data['stop_reason'] == 'tool_use' ? :tool_use : :end_turn
+        stop = normalize_stop_reason(data['stop_reason'], %w[tool_use], %w[max_tokens])
 
         ChatResult.new(
           text: extract_text(data),
