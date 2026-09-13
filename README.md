@@ -184,7 +184,7 @@ The markdown body becomes additional system prompt instructions for the sub-agen
 4. It runs the investigation (up to `max_rounds` tool calls)
 5. The main conversation receives only: `"Sub-agent result: User 56653 is on shard 5."`
 
-Sub-agents have access to read-only memory tools (`recall_memory`, `recall_memories`), code execution (`execute_code`), and all schema/code introspection tools. They cannot ask the user questions, write memories, or spawn further sub-agents.
+Sub-agents have access to read-only memory tools (`recall_memory`, `recall_memories`), code execution (`execute_code`), and all schema/code introspection tools. Their system prompt carries the same memory index and pinned memories as the main conversation, so they check memories before investigating. They cannot ask the user questions, write memories, activate skills, or spawn further sub-agents.
 
 ### Configuration
 

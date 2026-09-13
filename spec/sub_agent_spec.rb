@@ -319,6 +319,53 @@ RSpec.describe RailsConsoleAi::SubAgent do
       expect(prompt).not_to include('Prefer ActiveRecord query interface')
       expect(prompt).to include('Database / ActiveRecord access is DISABLED')
     end
+
+    describe 'memories' do
+      before do
+        require 'rails_console_ai/tools/memory_tools'
+        RailsConsoleAi::Tools::MemoryTools.new(storage).save_memory(
+          name: 'Sharding Pattern', description: 'Use Shard.current', tags: ['sharding'], target: :file
+        )
+      end
+
+      it 'lists the memory index and tells the sub-agent to check it first' do
+        prompt = prompt_for('name' => 'Investigator', 'body' => 'do a thing')
+        expect(prompt).to include('## Memories')
+        expect(prompt).to include('- Sharding Pattern [sharding]')
+        expect(prompt).to include('Check the Memories section below BEFORE investigating')
+      end
+
+      it 'still lists the index when base_instructions are skipped' do
+        prompt = prompt_for('name' => 'x', 'skip_base_instructions' => true, 'body' => 'do a thing')
+        expect(prompt).to include('- Sharding Pattern [sharding]')
+      end
+
+      it 'omits the index when the agent definition excludes recall_memories' do
+        prompt = prompt_for('name' => 'x', 'tools' => ['execute_code'], 'body' => 'do a thing')
+        expect(prompt).not_to include('## Memories')
+      end
+
+      it 'omits the index for the output-explorer, which has no memory tools' do
+        prompt = prompt_for(RailsConsoleAi::Tools::Registry::EXPLORE_OUTPUT_AGENT_CONFIG)
+        expect(prompt).not_to include('## Memories')
+      end
+
+      it 'omits the index when memories are disabled' do
+        RailsConsoleAi.configure { |c| c.memories_enabled = false }
+        prompt = prompt_for('name' => 'Investigator', 'body' => 'do a thing')
+        expect(prompt).not_to include('## Memories')
+      ensure
+        RailsConsoleAi.configure { |c| c.memories_enabled = true }
+      end
+    end
+
+    it 'never lists skills — sub-agents have no activate_skill tool' do
+      require 'rails_console_ai/skill_loader'
+      storage.write('skills/approve-changes.md', "---\nname: Approve changes\ndescription: How to approve\n---\n\nSteps here.\n")
+      prompt = prompt_for('name' => 'Investigator', 'body' => 'do a thing')
+      expect(prompt).not_to include('## Skills')
+      expect(prompt).not_to include('Approve changes')
+    end
   end
 end
 

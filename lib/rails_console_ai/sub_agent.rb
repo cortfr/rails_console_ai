@@ -211,6 +211,7 @@ module RailsConsoleAi
       parts << base_instructions unless @agent_config['skip_base_instructions']
       parts << guide_context
       parts << pinned_memory_context
+      parts << memory_context if memory_recall_available?
       parts << @agent_config['body'] if @agent_config['body'] && !@agent_config['body'].strip.empty?
       parts.compact.join("\n\n")
     end
@@ -226,6 +227,9 @@ module RailsConsoleAi
         - Use tools to look up schema/model details rather than guessing.
         - Prefer ActiveRecord query interface over raw SQL.
         - Use describe_model to understand models before querying them.
+        - Check the Memories section below BEFORE investigating. If a memory looks relevant,
+          call recall_memory (by name) or recall_memories (by keyword) to read it, and apply it.
+          Memories record how this app actually works; do not rediscover what one already says.
         - NEVER fabricate URLs, IDs, or data. Always look things up using model methods.
         - When you find methods on a model (e.g. via .methods.grep), USE them rather than
           constructing values manually.
@@ -242,6 +246,21 @@ module RailsConsoleAi
     rescue => e
       RailsConsoleAi.logger.debug("SubAgent: guide context failed: #{e.message}")
       nil
+    end
+
+    # Same memory index the main agent sees, so the sub-agent knows what it can
+    # recall instead of finding out only if it happens to call recall_memories.
+    def memory_context
+      require 'rails_console_ai/context_builder'
+      ContextBuilder.new(RailsConsoleAi.configuration).memory_context
+    end
+
+    # An agent definition can restrict tools; the output-explorer does, to
+    # execute_code alone. Listing memories it cannot recall would only invite
+    # calls to a tool it does not have.
+    def memory_recall_available?
+      allowed = @agent_config['tools']
+      allowed.nil? || Array(allowed).include?('recall_memories')
     end
 
     def pinned_memory_context

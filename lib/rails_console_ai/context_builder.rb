@@ -48,6 +48,26 @@ module RailsConsoleAi
       lines.join("\n")
     end
 
+    # The index of memory names the model can recall, with the instruction to
+    # look before answering. Public because SubAgent builds its own prompt and
+    # shares this section, so a sub-agent knows the same memories exist.
+    def memory_context
+      return nil unless @config.memories_enabled
+
+      require 'rails_console_ai/tools/memory_tools'
+      summaries = Tools::MemoryTools.new.memory_summaries
+      return nil if summaries.nil? || summaries.empty?
+
+      lines = ["## Memories"]
+      lines.concat(summaries)
+      lines << ""
+      lines << "Call recall_memory (by name) or recall_memories (by keyword) to get details before answering. Do NOT guess from the name alone."
+      lines.join("\n")
+    rescue => e
+      RailsConsoleAi.logger.debug("RailsConsoleAi: memory context failed: #{e.message}")
+      nil
+    end
+
     private
 
     def smart_system_instructions
@@ -223,23 +243,5 @@ module RailsConsoleAi
       RailsConsoleAi.logger.debug("RailsConsoleAi: pinned memory context failed: #{e.message}")
       nil
     end
-
-    def memory_context
-      return nil unless @config.memories_enabled
-
-      require 'rails_console_ai/tools/memory_tools'
-      summaries = Tools::MemoryTools.new.memory_summaries
-      return nil if summaries.nil? || summaries.empty?
-
-      lines = ["## Memories"]
-      lines.concat(summaries)
-      lines << ""
-      lines << "Call recall_memory (by name) or recall_memories (by keyword) to get details before answering. Do NOT guess from the name alone."
-      lines.join("\n")
-    rescue => e
-      RailsConsoleAi.logger.debug("RailsConsoleAi: memory context failed: #{e.message}")
-      nil
-    end
-
   end
 end
