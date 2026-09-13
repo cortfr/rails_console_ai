@@ -2,6 +2,11 @@
   <%= link_to '← All artifacts', artifacts_path, class: 'btn btn-secondary' %>
   <%= link_to 'Download', download_artifact_path(@artifact.slug), class: 'btn' %>
   <%= link_to 'Open raw', raw_artifact_path(@artifact.slug), class: 'btn btn-secondary', target: '_blank', rel: 'noopener noreferrer' %>
+  <%# Copies the artifact's source, exactly as stored. Fetches the raw URL on
+      click rather than embedding a second copy of the content in this page. %>
+  <button type="button" class="btn btn-secondary" id="copy-artifact"
+          data-url="<%= raw_artifact_path(@artifact.slug) %>"
+          title="Copy the artifact's content to the clipboard">Copy</button>
   <%# button_to, not link_to: the engine layout loads no JavaScript, so a
       data-method link would quietly do nothing. Matches skills/agents. %>
   <span style="margin-left:auto;">
@@ -62,4 +67,53 @@
   <div class="terminal">
     <pre><%= @artifact.content %></pre>
   </div>
+<% end %>
+
+<%# The only JavaScript in the admin UI. nonce: true picks up the host app's CSP
+    nonce when it has one, and is a no-op otherwise. %>
+<%= javascript_tag nonce: true do %>
+  (function () {
+    var button = document.getElementById('copy-artifact');
+    if (!button) return;
+    var label = button.textContent;
+
+    function flash(text) {
+      button.textContent = text;
+      setTimeout(function () { button.textContent = label; }, 2000);
+    }
+
+    // navigator.clipboard needs a secure context (https or localhost). Over
+    // plain http elsewhere, fall back to the old textarea + execCommand route.
+    function writeClipboard(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(text);
+      }
+      return new Promise(function (resolve, reject) {
+        var area = document.createElement('textarea');
+        area.value = text;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.top = '-1000px';
+        document.body.appendChild(area);
+        area.select();
+        var ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+        document.body.removeChild(area);
+        ok ? resolve() : reject(new Error('execCommand copy failed'));
+      });
+    }
+
+    button.addEventListener('click', function () {
+      button.disabled = true;
+      fetch(button.getAttribute('data-url'), { credentials: 'same-origin' })
+        .then(function (response) {
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+          return response.text();
+        })
+        .then(writeClipboard)
+        .then(function () { flash('Copied'); })
+        .catch(function () { flash('Copy failed'); })
+        .then(function () { button.disabled = false; });
+    });
+  })();
 <% end %>
