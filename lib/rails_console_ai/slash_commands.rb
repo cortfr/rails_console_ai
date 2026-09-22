@@ -28,6 +28,7 @@ module RailsConsoleAi
       'model'   => 'Show provider, model, and pricing info',
       'think'   => 'Switch to thinking model',
       'unthink' => 'Switch back to default model',
+      'cheap'   => 'Switch to the cheaper, faster model',
       'compact' => 'Summarize conversation to reduce context',
       'usage'   => 'Show session token totals',
       'cost'    => 'Show cost estimate by model',

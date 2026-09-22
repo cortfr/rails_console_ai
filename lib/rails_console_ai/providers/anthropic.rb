@@ -55,6 +55,8 @@ module RailsConsoleAi
         }
         temp = config.resolved_temperature
         body[:temperature] = temp unless temp.nil?
+        effort = config.resolved_effort
+        body[:output_config] = { effort: effort } if effort
         if system_prompt
           body[:system] = [
             { 'type' => 'text', 'text' => system_prompt, 'cache_control' => cache_control }

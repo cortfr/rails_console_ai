@@ -597,38 +597,56 @@ module RailsConsoleAi
       upgrade_to_thinking_model
     end
 
-    def upgrade_to_thinking_model
-      config = RailsConsoleAi.configuration
-      current = effective_model
-      thinking = config.resolved_thinking_model
+    # Three tiers a session can run on. :default and :thinking usually share a
+    # model and differ in effort, so a switch is tracked by tier, not by model ID.
+    MODEL_TIERS = %i[default thinking cheap].freeze
 
-      if current == thinking
-        $stdout.puts "\e[36m  Already using thinking model (#{current}).\e[0m"
-      else
-        @model_override = thinking
-        @provider = nil
-        $stdout.puts "\e[36m  Switched to thinking model: #{thinking}\e[0m"
-      end
-      effective_model
+    def upgrade_to_thinking_model
+      switch_model_tier(:thinking)
     end
 
     def downgrade_from_thinking_model
-      config = RailsConsoleAi.configuration
-      default = config.resolved_model
-      current = effective_model
+      switch_model_tier(:default)
+    end
 
-      if current == default && @model_override.nil?
-        $stdout.puts "\e[36m  Already using default model (#{current}).\e[0m"
+    def switch_to_cheap_model
+      switch_model_tier(:cheap)
+    end
+
+    def switch_model_tier(tier)
+      raise ArgumentError, "Unknown model tier: #{tier.inspect}" unless MODEL_TIERS.include?(tier)
+
+      if tier == model_tier
+        $stdout.puts "\e[36m  Already using #{tier} model (#{effective_model_label}).\e[0m"
       else
-        @model_override = nil
+        @model_tier = tier
         @provider = nil
-        $stdout.puts "\e[36m  Switched back to default model: #{default}\e[0m"
+        $stdout.puts "\e[36m  Switched to #{tier} model: #{effective_model_label}\e[0m"
       end
       effective_model
     end
 
+    def model_tier
+      @model_tier || :default
+    end
+
     def effective_model
-      @model_override || RailsConsoleAi.configuration.resolved_model
+      config = RailsConsoleAi.configuration
+      case model_tier
+      when :thinking then config.resolved_thinking_model
+      when :cheap    then config.resolved_cheap_model
+      else config.resolved_model
+      end
+    end
+
+    def effective_effort
+      tier_config.resolved_effort
+    end
+
+    # "claude-opus-5-5 (high effort)", or the bare model when no effort is sent.
+    def effective_model_label
+      effort = effective_effort
+      effort ? "#{effective_model} (#{effort} effort)" : effective_model
     end
 
     def compact_history
@@ -858,16 +876,22 @@ module RailsConsoleAi
 
     def provider
       @provider ||= begin
-        p = if @model_override
-          config = RailsConsoleAi.configuration.dup
-          config.model = @model_override
-          Providers.build(config)
-        else
-          Providers.build
-        end
+        p = model_tier == :default ? Providers.build : Providers.build(tier_config)
         p.routing_session_id = @routing_session_id if p.respond_to?(:routing_session_id=)
         p
       end
+    end
+
+    # The configuration for the current tier. Off the default tier it is a copy,
+    # so a switch never leaks into the global singleton or other sessions.
+    def tier_config
+      config = RailsConsoleAi.configuration
+      return config if model_tier == :default
+
+      config = config.dup
+      config.model = effective_model
+      config.effort = model_tier == :thinking ? config.thinking_effort : nil
+      config
     end
 
     def context_builder

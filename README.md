@@ -81,7 +81,9 @@ end
 | `/compact` | Compress history into a summary (saves tokens) |
 | `/usage` | Show token stats |
 | `/cost` | Show per-model cost breakdown |
-| `/think` | Upgrade to thinking model (Opus) for the rest of the session |
+| `/think` | Switch to the thinking tier (Opus 5.5 at high effort) for the rest of the session |
+| `/unthink` | Switch back to the default tier |
+| `/cheap` | Switch to the cheap tier (Sonnet 5) for faster, cheaper routine lookups |
 | `/debug` | Toggle debug summaries (context stats, cost per call) |
 | `/expand <id>` | Show full omitted output |
 | `/context` | Show conversation history as sent to the LLM |
@@ -123,7 +125,7 @@ Say "think harder" in any query to auto-upgrade to the thinking model for that s
 
 - **Tool use** — AI introspects your schema, models, files (Ruby, ERB, HTML, JS, CSS, YAML, etc), and code to write accurate queries
 - **Multi-step plans** — complex tasks are broken into steps, executed sequentially with `step1`/`step2` references
-- **Two-tier models** — defaults to Sonnet for speed/cost; `/think` upgrades to Opus when you need it
+- **Three model tiers** — defaults to Opus 5.5 at medium effort; `/think` raises it to high effort, `/cheap` drops to Sonnet 5
 - **Cost tracking** — `/cost` shows per-model token usage and estimated spend
 - **Skills** — predefined procedures with guard bypasses that the AI activates on demand
 - **Memories** — AI saves what it learns about your app across sessions
@@ -333,7 +335,15 @@ tool's. The assistant knows to reach for this itself when content is already in 
 
 ## LLM Providers
 
-RailsConsoleAi supports five LLM providers. Each uses a two-tier model system: a default model for speed/cost, and a thinking model activated via `/think` or by saying "think harder".
+RailsConsoleAi supports five LLM providers. Each session runs on one of three tiers:
+
+| Tier | Switch with | Model setting | Effort setting | Claude default |
+|---|---|---|---|---|
+| default | `/unthink` | `config.model` | `config.effort` | Opus 5.5, `medium` |
+| thinking | `/think`, or say "think harder" | `config.thinking_model` | `config.thinking_effort` | Opus 5.5, `high` |
+| cheap | `/cheap` | `config.cheap_model` | none sent | Sonnet 5 |
+
+Effort is sent as Anthropic's `output_config.effort` (`low`, `medium`, `high`, `xhigh`, `max`) and only to Claude models that accept it. It is omitted for Haiku 4.5 and non-Claude models. Set `config.effort = nil` to leave the model's own default in place.
 
 ### Anthropic (default)
 
@@ -344,7 +354,7 @@ RailsConsoleAi.configure do |config|
 end
 ```
 
-Default model: `claude-sonnet-5`. Thinking model: `claude-opus-5`. Prompt caching is enabled automatically.
+Default and thinking model: `claude-opus-5-5`. Cheap model: `claude-sonnet-5`. Prompt caching is enabled automatically.
 
 ### OpenAI
 
@@ -365,13 +375,13 @@ Access 400+ models (Claude, GPT, Gemini, DeepSeek, Llama, etc.) via OpenRouter w
 RailsConsoleAi.configure do |config|
   config.provider = :openrouter
   config.api_key = 'sk-or-...'  # or set OPENROUTER_API_KEY env var
-  # config.model = 'anthropic/claude-sonnet-5'  # default
+  # config.model = 'anthropic/claude-opus-5.5'  # default
   # config.openrouter_site_url = 'https://yoursite.com'  # attribution
   # config.openrouter_app_name = 'MyApp'                # shown on openrouter.ai
 end
 ```
 
-Default model: `anthropic/claude-sonnet-5`. Thinking model: `anthropic/claude-opus-5`.
+Default and thinking model: `anthropic/claude-opus-5.5`. Cheap model: `anthropic/claude-sonnet-5`. Effort is sent as OpenRouter's `verbosity` parameter.
 
 **Features:**
 - **Exact cost reporting**: The gem reports the actual USD cost from OpenRouter (`$0.0431` vs estimated `~$0.04`)
@@ -393,8 +403,9 @@ gem 'aws-sdk-bedrockruntime'
 RailsConsoleAi.configure do |config|
   config.provider = :bedrock
   config.bedrock_region = 'us-east-1'
-  # config.model = 'us.anthropic.claude-sonnet-5'        # default
-  # config.thinking_model = 'us.anthropic.claude-opus-5'   # default
+  # config.model = 'us.anthropic.claude-opus-5-5'           # default
+  # config.thinking_model = 'us.anthropic.claude-opus-5-5'  # default
+  # config.cheap_model = 'us.anthropic.claude-sonnet-5'     # default
 end
 ```
 
@@ -655,12 +666,12 @@ RailsConsoleAi.abort_agent(id)
 ```ruby
 RailsConsoleAi.run_agent(
   "Trace why nightly billing is double-charging some accounts",
-  use_thinking_model: true,        # run on the thinking-tier model (e.g. Opus)
+  use_thinking_model: true,        # run on the thinking tier (Opus 5.5 at high effort)
   max_wall_clock_seconds: 1800     # hard kill after 30 minutes; pass nil for no cap
 )
 ```
 
-- `use_thinking_model:` (default `false`) — switches the run to `config.thinking_model` (or the provider default thinking model) for the duration of the agent. Useful for harder, multi-step problems.
+- `use_thinking_model:` (default `false`) — switches the run to the thinking tier (`config.thinking_model` at `config.thinking_effort`) for the duration of the agent. Useful for harder, multi-step problems.
 - `max_wall_clock_seconds:` (default `600`) — hard ceiling on wall-clock time. If the run exceeds the cap, the worker thread is killed and the session is marked `status='failed'` with `error_message: "exceeded max_wall_clock_seconds (Ns)"`. Pass `nil` to opt out of any cap.
 
 These (along with any future per-run options) are stored in a JSON `options` column on the session row, so they survive the handoff to the background runner.

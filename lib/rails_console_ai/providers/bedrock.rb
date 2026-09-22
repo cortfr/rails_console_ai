@@ -49,6 +49,9 @@ module RailsConsoleAi
           messages: mark_conversation_breakpoint(format_messages(messages)),
           inference_config: inference
         }
+        # Converse has no effort field; Anthropic request fields ride along here.
+        effort = config.resolved_effort
+        params[:additional_model_request_fields] = { output_config: { effort: effort } } if effort
         if system_prompt
           sys_blocks = [{ text: system_prompt }]
           sys_blocks << cache_point if cache_supported?

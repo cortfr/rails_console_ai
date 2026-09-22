@@ -652,14 +652,11 @@ module RailsConsoleAi
       when 'model'
         summary = bang_model(engine)
         post_message(channel: channel_id, thread_ts: thread_ts, text: summary)
-      when 'think'
-        model = engine.upgrade_to_thinking_model
+      when 'think', 'unthink', 'cheap'
+        tier = { 'think' => :thinking, 'unthink' => :default, 'cheap' => :cheap }[cmd]
+        engine.switch_model_tier(tier)
         post_message(channel: channel_id, thread_ts: thread_ts,
-          text: "Switched to thinking model: `#{model}`")
-      when 'unthink'
-        model = engine.downgrade_from_thinking_model
-        post_message(channel: channel_id, thread_ts: thread_ts,
-          text: "Switched to default model: `#{model}`")
+          text: "Switched to #{tier} model: `#{engine.effective_model_label}`")
       when 'context'
         summary = bang_context(engine)
         post_message(channel: channel_id, thread_ts: thread_ts, text: summary)
@@ -678,7 +675,7 @@ module RailsConsoleAi
           end
         end
       else
-        commands = %w[name usage cost model compact think unthink context retry].map { |c| "`!#{c}`" }
+        commands = %w[name usage cost model compact think unthink cheap context retry].map { |c| "`!#{c}`" }
         post_message(channel: channel_id, thread_ts: thread_ts,
           text: "Unknown command `!#{cmd}`. Available: #{commands.join(', ')}")
       end
@@ -705,13 +702,18 @@ module RailsConsoleAi
     def bang_model(engine = nil)
       config = RailsConsoleAi.configuration
       model = engine ? engine.effective_model : config.resolved_model
-      thinking = config.resolved_thinking_model
       pricing = Configuration.pricing_for(model)
+      with_effort = lambda do |m, e|
+        e = Configuration.effort_for(m, e)
+        e ? "`#{m}` (#{e} effort)" : "`#{m}`"
+      end
 
       lines = ["*Model info:*"]
       lines << "  Provider: `#{config.provider}`"
-      lines << "  Model: `#{model}`"
-      lines << "  Thinking model: `#{thinking}`"
+      lines << (engine ? "  Model: `#{engine.effective_model_label}` [#{engine.model_tier}]" : "  Model: `#{model}`")
+      lines << "  Default model: #{with_effort.(config.resolved_model, config.effort)}"
+      lines << "  Thinking model: #{with_effort.(config.resolved_thinking_model, config.thinking_effort)}"
+      lines << "  Cheap model: `#{config.resolved_cheap_model}`"
       lines << "  Max tokens: #{config.resolved_max_tokens}"
       if pricing
         lines << "  Pricing: $#{pricing[:input] * 1_000_000}/M in, $#{pricing[:output] * 1_000_000}/M out"

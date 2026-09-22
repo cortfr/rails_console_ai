@@ -32,6 +32,10 @@ module RailsConsoleAi
         # OpenRouter only returns usage.cost — the real dollars every cost
         # readout prefers over an estimate — when the request asks for it.
         body[:usage] = { include: true }
+        # OpenRouter maps `verbosity` to Anthropic's output_config.effort; its
+        # `reasoning.effort` sets a thinking-token budget instead.
+        effort = config.resolved_effort
+        body[:verbosity] = effort if effort
         body
       end
 

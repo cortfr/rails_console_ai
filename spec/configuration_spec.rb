@@ -86,12 +86,12 @@ RSpec.describe RailsConsoleAi::Configuration do
 
     it 'returns default model for anthropic' do
       config.provider = :anthropic
-      expect(config.resolved_model).to eq('claude-sonnet-5')
+      expect(config.resolved_model).to eq('claude-opus-5-5')
     end
 
     it 'returns default model for bedrock' do
       config.provider = :bedrock
-      expect(config.resolved_model).to eq('us.anthropic.claude-sonnet-5')
+      expect(config.resolved_model).to eq('us.anthropic.claude-opus-5-5')
     end
 
     it 'returns default model for openai' do
@@ -108,12 +108,27 @@ RSpec.describe RailsConsoleAi::Configuration do
   describe '#resolved_thinking_model' do
     it 'returns default thinking model for anthropic' do
       config.provider = :anthropic
-      expect(config.resolved_thinking_model).to eq('claude-opus-5')
+      expect(config.resolved_thinking_model).to eq('claude-opus-5-5')
     end
 
     it 'returns default thinking model for bedrock' do
       config.provider = :bedrock
-      expect(config.resolved_thinking_model).to eq('us.anthropic.claude-opus-5')
+      expect(config.resolved_thinking_model).to eq('us.anthropic.claude-opus-5-5')
+    end
+  end
+
+  describe '#resolved_cheap_model' do
+    it 'returns sonnet 5 for each Claude provider' do
+      { anthropic: 'claude-sonnet-5', bedrock: 'us.anthropic.claude-sonnet-5',
+        openrouter: 'anthropic/claude-sonnet-5' }.each do |provider, model|
+        config.provider = provider
+        expect(config.resolved_cheap_model).to eq(model)
+      end
+    end
+
+    it 'returns explicit cheap_model when set' do
+      config.cheap_model = 'claude-haiku-4-5'
+      expect(config.resolved_cheap_model).to eq('claude-haiku-4-5')
     end
   end
 
@@ -157,6 +172,17 @@ RSpec.describe RailsConsoleAi::Configuration do
       pricing = described_class.pricing_for('claude-opus-4-6')
       expect(pricing[:input]).to eq(5.0 / 1_000_000)
       expect(pricing[:output]).to eq(25.0 / 1_000_000)
+    end
+
+    it 'prices opus 5.5 at $4/$20 with $0.20 cache reads, not as opus 5' do
+      %w[claude-opus-5-5 us.anthropic.claude-opus-5-5 global.anthropic.claude-opus-5-5].each do |model|
+        pricing = described_class.pricing_for(model)
+        expect(pricing[:input]).to eq(4.0 / 1_000_000)
+        expect(pricing[:output]).to eq(20.0 / 1_000_000)
+        expect(pricing[:cache_read]).to be_within(1e-12).of(0.20 / 1_000_000)
+        expect(pricing[:cache_write]).to be_within(1e-12).of(5.0 / 1_000_000)
+      end
+      expect(described_class.pricing_for('us.anthropic.claude-opus-5')[:input]).to eq(5.0 / 1_000_000)
     end
 
     it 'returns nil for unknown models' do
@@ -204,6 +230,8 @@ RSpec.describe RailsConsoleAi::Configuration do
         us.anthropic.claude-opus-4-8
         claude-opus-5
         us.anthropic.claude-opus-5
+        claude-opus-5-5
+        us.anthropic.claude-opus-5-5
         claude-fable-5
       ].each do |model|
         config.model = model

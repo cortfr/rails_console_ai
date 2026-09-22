@@ -8,25 +8,30 @@ module RailsConsoleAi
     # (us.anthropic.claude-sonnet-5, global.anthropic.claude-opus-4-6-v1).
     #
     # input/output are $ per MTok (converted to per-token in .pricing_for).
-    # Cache pricing is derived: read = 0.1x input, write = 1.25x input.
+    # Cache pricing is derived: read = 0.1x input, write = 1.25x input, unless a
+    # family sets cache_read ($ per MTok) explicitly (opus-5-5 reads at 0.05x).
     # temperature: false marks families that reject the `temperature` parameter
     # (removed on opus-4-7+, sonnet-5, and fable-5).
+    # effort: false marks families that reject `output_config.effort` (haiku-4-5).
     # max_tokens is the OUTPUT cap we request; context is the total window.
     MODEL_FAMILIES = {
       'claude-fable-5'    => { input: 10.0, output: 50.0, max_tokens: 16_000, context: 1_000_000, temperature: false },
+      'claude-opus-5-5'   => { input: 4.0,  output: 20.0, cache_read: 0.20, max_tokens: 16_000, context: 1_000_000, temperature: false },
       'claude-opus-5'     => { input: 5.0,  output: 25.0, max_tokens: 16_000, context: 1_000_000, temperature: false },
       'claude-opus-4-8'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, context: 1_000_000, temperature: false },
       'claude-opus-4-7'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, context: 1_000_000, temperature: false },
       'claude-opus-4-6'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, context: 1_000_000, temperature: true },
       'claude-sonnet-5'   => { input: 2.0,  output: 10.0, max_tokens: 16_000, context: 1_000_000, temperature: false },
       'claude-sonnet-4-6' => { input: 3.0,  output: 15.0, max_tokens: 16_000, context: 1_000_000, temperature: true },
-      'claude-haiku-4-5'  => { input: 1.0,  output: 5.0,  max_tokens: 16_000, context: 200_000,   temperature: true },
+      'claude-haiku-4-5'  => { input: 1.0,  output: 5.0,  max_tokens: 16_000, context: 200_000,   temperature: true, effort: false },
     }.freeze
 
     # Assumed context window for models with no family entry — local models and
     # anything newer than this table. Deliberately small: under-guessing warns a
     # little early, over-guessing means no warning before the request is rejected.
     DEFAULT_CONTEXT_WINDOW = 200_000
+
+    EFFORT_LEVELS = %w[low medium high xhigh max].freeze
 
     # Family keys sorted longest-first so a more specific family always wins
     # if keys ever overlap (e.g. a future 'claude-sonnet-5-5' entry would match
@@ -41,6 +46,14 @@ module RailsConsoleAi
       key && MODEL_FAMILIES[key]
     end
 
+    # The effort a model would be sent, or nil when it takes none: unknown models
+    # (OpenAI, local) and families marked effort: false.
+    def self.effort_for(model_id, effort)
+      return nil if effort.nil? || effort.to_s.empty?
+      family = model_family(model_id)
+      family && family[:effort] != false ? effort.to_s : nil
+    end
+
     # Per-token pricing for a model ID, matched by family. Returns
     # { input:, output:, cache_read:, cache_write: } or nil for unknown models.
     # Cache reads bill at 0.1x the base input rate; cache writes at 1.25x for the
@@ -52,7 +65,7 @@ module RailsConsoleAi
       {
         input: input,
         output: family[:output] / 1_000_000,
-        cache_read: input * 0.1,
+        cache_read: family[:cache_read] ? family[:cache_read] / 1_000_000 : input * 0.1,
         cache_write: input * (cache_ttl.to_s == '1h' ? 2.0 : 1.25),
       }
     end
@@ -98,7 +111,8 @@ module RailsConsoleAi
       }
     ].freeze
 
-    attr_accessor :provider, :api_key, :model, :thinking_model, :max_tokens,
+    attr_accessor :provider, :api_key, :model, :thinking_model, :cheap_model, :max_tokens,
+                  :effort, :thinking_effort,
                   :auto_execute, :temperature,
                   :timeout, :open_timeout, :max_retries, :debug, :max_tool_rounds,
                   :error_hints,
@@ -127,6 +141,12 @@ module RailsConsoleAi
       @api_key      = nil
       @model        = nil
       @thinking_model = nil
+      @cheap_model  = nil
+      # The default and thinking tiers run the same model by default and differ
+      # only in how hard it thinks. Sent as output_config.effort, and only to
+      # model families that accept it. The cheap tier sends no effort.
+      @effort          = 'medium'
+      @thinking_effort = 'high'
       @max_tokens   = nil
       @auto_execute = false
       @temperature  = 0.2
@@ -290,6 +310,25 @@ module RailsConsoleAi
 
       case @provider
       when :anthropic
+        'claude-opus-5-5'
+      when :openai
+        'gpt-5.3-codex'
+      when :openrouter
+        'anthropic/claude-opus-5.5'
+      when :local
+        @local_model
+      when :bedrock
+        'us.anthropic.claude-opus-5-5'
+      end
+    end
+
+    # The model /cheap switches to: faster and cheaper than the default, for
+    # routine lookups where the default's depth isn't needed.
+    def resolved_cheap_model
+      return @cheap_model if @cheap_model && !@cheap_model.empty?
+
+      case @provider
+      when :anthropic
         'claude-sonnet-5'
       when :openai
         'gpt-5.3-codex'
@@ -319,6 +358,11 @@ module RailsConsoleAi
       @temperature
     end
 
+    # Returns the effort to send for the configured model, or nil to omit it.
+    def resolved_effort
+      self.class.effort_for(resolved_model, @effort)
+    end
+
     # Returns '1h' when the 1-hour prompt cache is requested, else nil (the
     # 5-minute default). Providers that offer only one cache duration ignore it.
     def resolved_cache_ttl
@@ -331,15 +375,15 @@ module RailsConsoleAi
 
       case @provider
       when :anthropic
-        'claude-opus-5'
+        'claude-opus-5-5'
       when :openai
         'gpt-5.3-codex'
       when :openrouter
-        'anthropic/claude-opus-5'
+        'anthropic/claude-opus-5.5'
       when :local
         @local_model
       when :bedrock
-        'us.anthropic.claude-opus-5'
+        'us.anthropic.claude-opus-5-5'
       end
     end
 
@@ -356,6 +400,11 @@ module RailsConsoleAi
     def validate!
       unless PROVIDERS.include?(@provider)
         raise ConfigurationError, "Unknown provider: #{@provider}. Valid: #{PROVIDERS.join(', ')}"
+      end
+
+      { effort: @effort, thinking_effort: @thinking_effort }.each do |name, value|
+        next if value.nil? || EFFORT_LEVELS.include?(value.to_s)
+        raise ConfigurationError, "Invalid #{name}: #{value.inspect}. Valid: #{EFFORT_LEVELS.join(', ')}"
       end
 
       if @provider == :local

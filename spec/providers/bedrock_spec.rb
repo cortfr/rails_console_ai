@@ -56,6 +56,25 @@ RSpec.describe RailsConsoleAi::Providers::Bedrock do
     end
   end
 
+  describe 'effort' do
+    let(:messages) { [{ role: :user, content: 'Hello' }] }
+    let(:response) { build_response([text_block('hi')]) }
+
+    it 'sends it in additional_model_request_fields' do
+      config.model = 'us.anthropic.claude-opus-5-5'
+      expect(mock_client).to receive(:converse)
+        .with(hash_including(additional_model_request_fields: { output_config: { effort: 'medium' } }))
+        .and_return(response)
+      provider.chat(messages)
+    end
+
+    it 'omits it for a model that takes no effort' do
+      expect(mock_client).to receive(:converse)
+        .with(hash_excluding(:additional_model_request_fields)).and_return(response)
+      provider.chat(messages)
+    end
+  end
+
   describe '#chat' do
     let(:messages) { [{ role: :user, content: 'Hello' }] }
 

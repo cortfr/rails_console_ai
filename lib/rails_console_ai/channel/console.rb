@@ -321,6 +321,8 @@ module RailsConsoleAi
           @engine.upgrade_to_thinking_model
         when '/unthink'
           @engine.downgrade_from_thinking_model
+        when '/cheap'
+          @engine.switch_to_cheap_model
         when /\A\/expand/
           expand_id = input.sub('/expand', '').strip.to_i
           full_output = expand_output(expand_id)
@@ -425,13 +427,14 @@ module RailsConsoleAi
       def display_model_info
         config = RailsConsoleAi.configuration
         model = @engine.effective_model
-        thinking = config.resolved_thinking_model
         pricing = Configuration.pricing_for(model)
 
         @real_stdout.puts "\e[36m  Model info:\e[0m"
         @real_stdout.puts "\e[2m    Provider:        #{config.provider}\e[0m"
-        @real_stdout.puts "\e[2m    Model:           #{model}\e[0m"
-        @real_stdout.puts "\e[2m    Thinking model:  #{thinking}\e[0m"
+        @real_stdout.puts "\e[2m    Model:           #{@engine.effective_model_label} [#{@engine.model_tier}]\e[0m"
+        @real_stdout.puts "\e[2m    Default model:   #{model_with_effort(config.resolved_model, config.effort)}\e[0m"
+        @real_stdout.puts "\e[2m    Thinking model:  #{model_with_effort(config.resolved_thinking_model, config.thinking_effort)}\e[0m"
+        @real_stdout.puts "\e[2m    Cheap model:     #{config.resolved_cheap_model}\e[0m"
         @real_stdout.puts "\e[2m    Max tokens:      #{config.resolved_max_tokens}\e[0m"
         if pricing
           @real_stdout.puts "\e[2m    Pricing:         $#{pricing[:input] * 1_000_000}/M in, $#{pricing[:output] * 1_000_000}/M out\e[0m"
@@ -442,6 +445,11 @@ module RailsConsoleAi
         @real_stdout.puts "\e[2m    Bedrock region:  #{config.bedrock_region}\e[0m" if config.provider == :bedrock
         @real_stdout.puts "\e[2m    Local URL:       #{config.local_url}\e[0m" if config.provider == :local
         @real_stdout.puts "\e[2m    OpenRouter URL:  #{config.openrouter_url}\e[0m" if config.openrouter_url
+      end
+
+      def model_with_effort(model, effort)
+        effort = Configuration.effort_for(model, effort)
+        effort ? "#{model} (#{effort} effort)" : model
       end
 
       def handle_name_command(input)
@@ -471,6 +479,7 @@ module RailsConsoleAi
         @real_stdout.puts "\e[2m    /model       Show provider, model, and pricing info\e[0m"
         @real_stdout.puts "\e[2m    /think       Switch to thinking model\e[0m"
         @real_stdout.puts "\e[2m    /unthink     Switch back to default model\e[0m"
+        @real_stdout.puts "\e[2m    /cheap       Switch to the cheaper, faster model\e[0m"
         @real_stdout.puts "\e[2m    /compact     Summarize conversation to reduce context\e[0m"
         @real_stdout.puts "\e[2m    /usage       Show session token totals\e[0m"
         @real_stdout.puts "\e[2m    /cost        Show cost estimate by model\e[0m"
