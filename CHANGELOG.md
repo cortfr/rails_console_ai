@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.37.0]
+
+- Add artifacts for saving and viewing output in the browser
+- Name artifacts and revise them in place
+- Add a Copy button to the artifact viewer
+- Surface responses that were cut off at the token limit
+- Give sub-agents access to the memory index
+- Support Claude Opus 5.5 as the default model
+- Add a cheaper Sonnet model tier
+
 ## [0.36.0]
 
 - Add an OpenRouter provider with access to 400+ models
