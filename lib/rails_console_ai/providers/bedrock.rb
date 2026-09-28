@@ -81,7 +81,7 @@ module RailsConsoleAi
           stop_reason: stop
         )
       rescue aws_error_class => e
-        raise ProviderError, "AWS Bedrock error: #{e.message}"
+        raise ProviderError, "AWS Bedrock error (#{e.class}): #{e.message}"
       end
 
       def client
