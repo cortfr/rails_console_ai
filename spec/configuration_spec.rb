@@ -185,6 +185,16 @@ RSpec.describe RailsConsoleAi::Configuration do
       expect(described_class.pricing_for('us.anthropic.claude-opus-5')[:input]).to eq(5.0 / 1_000_000)
     end
 
+    it 'matches sonnet 5.5 to its own family, not sonnet 5' do
+      %w[claude-sonnet-5-5 global.anthropic.claude-sonnet-5-5 anthropic/claude-sonnet-5.5].each do |model|
+        expect(described_class.model_family(model)).to equal(described_class::MODEL_FAMILIES['claude-sonnet-5-5'])
+        pricing = described_class.pricing_for(model)
+        expect(pricing[:input]).to eq(2.0 / 1_000_000)
+        expect(pricing[:output]).to eq(10.0 / 1_000_000)
+        expect(pricing[:cache_read]).to be_within(1e-12).of(0.20 / 1_000_000)
+      end
+    end
+
     it 'returns nil for unknown models' do
       expect(described_class.pricing_for('qwen2.5:7b')).to be_nil
     end
@@ -226,6 +236,8 @@ RSpec.describe RailsConsoleAi::Configuration do
       %w[
         claude-sonnet-5
         us.anthropic.claude-sonnet-5
+        claude-sonnet-5-5
+        global.anthropic.claude-sonnet-5-5
         claude-opus-4-7
         us.anthropic.claude-opus-4-8
         claude-opus-5

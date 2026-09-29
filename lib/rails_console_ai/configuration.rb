@@ -11,7 +11,7 @@ module RailsConsoleAi
     # Cache pricing is derived: read = 0.1x input, write = 1.25x input, unless a
     # family sets cache_read ($ per MTok) explicitly (opus-5-5 reads at 0.05x).
     # temperature: false marks families that reject the `temperature` parameter
-    # (removed on opus-4-7+, sonnet-5, and fable-5).
+    # (removed on opus-4-7+, sonnet-5+, and fable-5).
     # effort: false marks families that reject `output_config.effort` (haiku-4-5).
     # max_tokens is the OUTPUT cap we request; context is the total window.
     MODEL_FAMILIES = {
@@ -21,6 +21,7 @@ module RailsConsoleAi
       'claude-opus-4-8'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, context: 1_000_000, temperature: false },
       'claude-opus-4-7'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, context: 1_000_000, temperature: false },
       'claude-opus-4-6'   => { input: 5.0,  output: 25.0, max_tokens: 16_000, context: 1_000_000, temperature: true },
+      'claude-sonnet-5-5' => { input: 2.0,  output: 10.0, max_tokens: 16_000, context: 1_000_000, temperature: false },
       'claude-sonnet-5'   => { input: 2.0,  output: 10.0, max_tokens: 16_000, context: 1_000_000, temperature: false },
       'claude-sonnet-4-6' => { input: 3.0,  output: 15.0, max_tokens: 16_000, context: 1_000_000, temperature: true },
       'claude-haiku-4-5'  => { input: 1.0,  output: 5.0,  max_tokens: 16_000, context: 200_000,   temperature: true, effort: false },
@@ -34,8 +35,7 @@ module RailsConsoleAi
     EFFORT_LEVELS = %w[low medium high xhigh max].freeze
 
     # Family keys sorted longest-first so a more specific family always wins
-    # if keys ever overlap (e.g. a future 'claude-sonnet-5-5' entry would match
-    # before 'claude-sonnet-5').
+    # when keys overlap (e.g. 'claude-sonnet-5-5' matches before 'claude-sonnet-5').
     MODEL_FAMILY_KEYS = MODEL_FAMILIES.keys.sort_by { |k| -k.length }.freeze
 
     # Returns the family attributes for a model ID, or nil for unknown models.
@@ -351,7 +351,7 @@ module RailsConsoleAi
     end
 
     # Returns nil for model families that reject the `temperature` parameter
-    # (opus-4-7+, sonnet-5, fable-5) so providers omit the field from the request.
+    # (opus-4-7+, sonnet-5+, fable-5) so providers omit the field from the request.
     def resolved_temperature
       family = self.class.model_family(resolved_model)
       return nil if family && family[:temperature] == false

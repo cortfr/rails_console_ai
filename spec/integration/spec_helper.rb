@@ -1,9 +1,13 @@
 # Integration tests hit a real LLM API. They are:
-# - Opt-in: require ANTHROPIC_API_KEY env var
+# - Opt-in: require ANTHROPIC_API_KEY (or INTEGRATION_PROVIDER=bedrock)
 # - Expensive: each test makes real API calls
 # - Non-deterministic: LLM responses vary
 #
 # Run with:  ANTHROPIC_API_KEY=sk-... bundle exec rspec spec/integration/
+# Bedrock:   INTEGRATION_PROVIDER=bedrock INTEGRATION_MODEL=global.anthropic.claude-sonnet-5-5 \
+#              bundle exec rake integration
+#            (AWS credentials come from the usual SDK chain; region from AWS_REGION, default us-east-1)
+# Model:     INTEGRATION_MODEL overrides the default (claude-sonnet-4-6, or its Bedrock profile)
 # Skip:      bundle exec rspec --exclude-pattern 'spec/integration/**/*'
 #            (or just run: bundle exec rspec spec/ --exclude-pattern 'spec/integration/**/*')
 #
@@ -29,6 +33,29 @@ require 'rails_console_ai/storage/file_storage'
 require 'tmpdir'
 
 module IntegrationHelpers
+  PROVIDER = ENV.fetch('INTEGRATION_PROVIDER', 'anthropic').to_sym
+  MODEL = ENV['INTEGRATION_MODEL'] ||
+          (PROVIDER == :bedrock ? 'us.anthropic.claude-sonnet-4-6' : 'claude-sonnet-4-6')
+
+  # Skips the example unless the selected provider has credentials. Bedrock
+  # credentials are resolved by the AWS SDK, so choosing it is the opt-in.
+  def skip_unless_llm_configured
+    return if PROVIDER == :bedrock
+    skip 'ANTHROPIC_API_KEY not set — run with ANTHROPIC_API_KEY=sk-... to enable' unless ENV['ANTHROPIC_API_KEY']
+  end
+
+  # Points the gem at the provider and model chosen for this run.
+  def configure_llm(c)
+    c.provider = PROVIDER
+    c.model = MODEL
+    if PROVIDER == :bedrock
+      c.bedrock_region = ENV.fetch('AWS_REGION', 'us-east-1')
+    else
+      c.api_key = ENV['ANTHROPIC_API_KEY']
+    end
+    c.temperature = 0.0
+  end
+
   # A channel that captures all output for assertions
   class CaptureChannel < RailsConsoleAi::Channel::Base
     attr_reader :messages, :tool_calls, :statuses
@@ -63,10 +90,7 @@ module IntegrationHelpers
   # Tool handlers use real code execution (in a sandboxed binding).
   def build_engine(storage:, channel: nil)
     RailsConsoleAi.configure do |c|
-      c.provider = :anthropic
-      c.api_key = ENV['ANTHROPIC_API_KEY']
-      c.model = 'claude-sonnet-4-6'
-      c.temperature = 0.0
+      configure_llm(c)
       c.max_tool_rounds = 20
       c.storage_adapter = storage
       c.memories_enabled = true

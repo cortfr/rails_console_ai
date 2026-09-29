@@ -4,7 +4,7 @@ RSpec.describe 'Sub-agent integration' do
   include IntegrationHelpers
 
   before(:each) do
-    skip 'ANTHROPIC_API_KEY not set — run with ANTHROPIC_API_KEY=sk-... to enable' unless ENV['ANTHROPIC_API_KEY']
+    skip_unless_llm_configured
     RailsConsoleAi.reset_configuration!
   end
 
@@ -50,10 +50,7 @@ RSpec.describe 'Sub-agent integration' do
       executor = RailsConsoleAi::Executor.new(binding_context, channel: channel)
 
       RailsConsoleAi.configure do |c|
-        c.provider = :anthropic
-        c.api_key = ENV['ANTHROPIC_API_KEY']
-        c.model = 'claude-sonnet-4-6'
-        c.temperature = 0.0
+        configure_llm(c)
         c.storage_adapter = storage
         c.sub_agent_max_rounds = 5
       end
@@ -83,10 +80,7 @@ RSpec.describe 'Sub-agent integration' do
       executor = RailsConsoleAi::Executor.new(binding_context, channel: channel)
 
       RailsConsoleAi.configure do |c|
-        c.provider = :anthropic
-        c.api_key = ENV['ANTHROPIC_API_KEY']
-        c.model = 'claude-sonnet-4-6'
-        c.temperature = 0.0
+        configure_llm(c)
         c.storage_adapter = storage
         c.sub_agent_max_rounds = 5
       end
@@ -127,10 +121,7 @@ RSpec.describe 'Sub-agent integration' do
       executor = RailsConsoleAi::Executor.new(binding_context, channel: channel)
 
       RailsConsoleAi.configure do |c|
-        c.provider = :anthropic
-        c.api_key = ENV['ANTHROPIC_API_KEY']
-        c.model = 'claude-sonnet-4-6'
-        c.temperature = 0.0
+        configure_llm(c)
         c.storage_adapter = storage
         c.sub_agent_max_rounds = 3
       end
@@ -161,10 +152,7 @@ RSpec.describe 'Sub-agent integration' do
       executor = RailsConsoleAi::Executor.new(binding_context, channel: channel)
 
       RailsConsoleAi.configure do |c|
-        c.provider = :anthropic
-        c.api_key = ENV['ANTHROPIC_API_KEY']
-        c.model = 'claude-sonnet-4-6'
-        c.temperature = 0.0
+        configure_llm(c)
         c.storage_adapter = storage
         c.sub_agent_max_rounds = 5
       end
@@ -219,10 +207,7 @@ RSpec.describe 'Sub-agent integration' do
       executor = RailsConsoleAi::Executor.new(binding_context, channel: channel)
 
       RailsConsoleAi.configure do |c|
-        c.provider = :anthropic
-        c.api_key = ENV['ANTHROPIC_API_KEY']
-        c.model = 'claude-sonnet-4-6'
-        c.temperature = 0.0
+        configure_llm(c)
         c.storage_adapter = storage
         c.sub_agent_max_rounds = 3
       end

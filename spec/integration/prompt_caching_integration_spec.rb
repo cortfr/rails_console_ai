@@ -12,7 +12,7 @@ RSpec.describe 'prompt caching (real API)' do
   include IntegrationHelpers
 
   before(:each) do
-    skip 'ANTHROPIC_API_KEY not set — run with ANTHROPIC_API_KEY=sk-... to enable' unless ENV['ANTHROPIC_API_KEY']
+    skip_unless_llm_configured
     RailsConsoleAi.reset_configuration!
   end
 
@@ -35,8 +35,12 @@ RSpec.describe 'prompt caching (real API)' do
     first = provider.chat_with_tools(messages, tools: tools, system_prompt: system_prompt)
     second = provider.chat_with_tools(messages, tools: tools, system_prompt: system_prompt)
 
-    expect(first.cache_write_input_tokens.to_i).to be > 0,
-      "nothing was written to cache — prefix is probably below the model's cacheable minimum " \
+    # A run within the cache TTL of an earlier one finds the prefix already
+    # cached, so the first request reads instead of writing. Either proves the
+    # prefix is cacheable.
+    cached_first = first.cache_write_input_tokens.to_i + first.cache_read_input_tokens.to_i
+    expect(cached_first).to be > 0,
+      "first request neither wrote nor read cache — prefix is probably below the model's cacheable minimum " \
       "(system #{system_prompt.length} chars). usage: #{first.to_h}"
     expect(second.cache_read_input_tokens.to_i).to be > 0,
       "second identical request did not read from cache. usage: #{second.to_h}"

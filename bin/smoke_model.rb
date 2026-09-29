@@ -9,7 +9,7 @@
 #   bin/smoke_model.rb --model claude-sonnet-4-6 --checks plain,tool
 #   bin/smoke_model.rb --provider anthropic --model claude-opus-4-7
 #
-# Provider is inferred when omitted: claude-* → anthropic, us.anthropic.* → bedrock.
+# Provider is inferred when omitted: claude-* → anthropic, us./global.anthropic.* → bedrock.
 
 require 'optparse'
 
@@ -86,7 +86,7 @@ end
 
 def infer_provider(model)
   case model
-  when /\A(us|eu|apac)\.anthropic\./ then 'bedrock'
+  when /\A(us|eu|apac|global)\.anthropic\./ then 'bedrock'
   when /\Aanthropic\//               then 'openrouter'
   when /\Aopenai\//                  then 'openrouter'
   when %r{\A[^/]+/}                  then 'openrouter'  # any provider/model format
