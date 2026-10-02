@@ -132,6 +132,16 @@ module RailsConsoleAi
       end
     end
 
+    # Creates the session row before the first turn runs, so its id can be
+    # handed out (the Slack bot links to it) while that turn is still going.
+    # Returns nil when session logging is off.
+    def ensure_session_record(query)
+      init_interactive unless @interactive_start
+      @interactive_query ||= query
+      log_interactive_turn(status: 'running') unless @interactive_session_id
+      @interactive_session_id
+    end
+
     def init_guide
       storage = RailsConsoleAi.storage
       existing_guide = begin

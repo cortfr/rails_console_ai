@@ -36,6 +36,12 @@
         <span><%= @session.slack_channel_name %></span>
       </div>
     <% end %>
+    <% if @session.try(:slack_thread_ts).present? %>
+      <div class="meta-item">
+        <label>Slack Thread</label>
+        <span class="mono"><%= @session.slack_thread_ts %></span>
+      </div>
+    <% end %>
     <div class="meta-item">
       <label>Provider / Model</label>
       <span><%= @session.provider %> / <%= @session.model %></span>

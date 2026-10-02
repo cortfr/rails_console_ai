@@ -71,7 +71,7 @@ module RailsConsoleAi
         stripped = strip_ansi(text).strip
         return if stripped.empty?
 
-        if stripped =~ /\AThinking\.\.\.|\AAttempting to fix|\ACancelled|\A_session:/
+        if stripped =~ /\AThinking\.\.\.|\AAttempting to fix|\ACancelled|\A_Session\b/
           post(stripped)
         else
           @output_log.write("#{stripped}\n")

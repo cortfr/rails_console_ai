@@ -91,6 +91,22 @@ RSpec.describe RailsConsoleAi::ConversationEngine, 'session status tracking' do
     end
   end
 
+  describe 'creating the row up front (Slack links to it before the turn runs)' do
+    it 'creates a running row and returns its id' do
+      expect(engine.ensure_session_record('what happened?')).to eq(42)
+      expect(events).to eq([[:create, 'running']])
+    end
+
+    it 'keeps using that row once the turn starts' do
+      install_provider(FakeAnswerNowProvider.new(events))
+      engine.ensure_session_record('what happened?')
+      engine.process_message('what happened?')
+
+      expect(events.count { |e| e.first == :create }).to eq(1)
+      expect(events.last).to eq([:update, 'ready'])
+    end
+  end
+
   describe 'provider failure' do
     it 'marks the session failed after retries are exhausted' do
       provider = double('provider')

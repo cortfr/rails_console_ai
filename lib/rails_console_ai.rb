@@ -129,6 +129,11 @@ module RailsConsoleAi
         end
     end
 
+    # Where a logged session can be read back. Relative when no host is known.
+    def session_url(id)
+      "#{base_url}#{engine_mount_path}/sessions/#{id}"
+    end
+
     # The session row the current turn belongs to, so tools that persist
     # something (save_artifact) can point back at the conversation that produced
     # it. Set by the engine as it logs each turn; nil outside a logged session.

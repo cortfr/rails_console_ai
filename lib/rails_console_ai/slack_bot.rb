@@ -453,7 +453,7 @@ module RailsConsoleAi
         Thread.current.report_on_exception = false
         Thread.current[:log_prefix] = "[#{channel_id}/#{thread_ts}]#{channel_log_tag(channel_id)} @#{user_name}"
         begin
-          channel.display_status("_session: #{channel_id}/#{thread_ts}_")
+          channel.display_status("_#{session_reference(engine, text, channel_id, thread_ts)}_")
           if restored
             puts "Restored session for thread #{thread_ts} (#{engine.history.length} messages)"
             channel.display_status("_(session restored — continuing from previous conversation)_")
@@ -466,6 +466,32 @@ module RailsConsoleAi
           ActiveRecord::Base.clear_active_connections! if defined?(ActiveRecord::Base)
         end
       end
+    end
+
+    # A link to the session's page, so whoever is in the thread can find the
+    # transcript later. Falls back to the channel/thread pair the logs are
+    # tagged with when there is no row to link to, or no host to link with.
+    def session_reference(engine, text, channel_id, thread_ts)
+      session_id = engine.ensure_session_record(text)
+      unless session_id
+        return session_reference_fallback(channel_id, thread_ts, "no session row (session_logging off, or the sessions table not found)")
+      end
+
+      url = RailsConsoleAi.session_url(session_id)
+      unless url.start_with?('http')
+        return session_reference_fallback(channel_id, thread_ts, "no host for #{url} (set config.base_url)")
+      end
+
+      "Session ##{session_id}: <#{url}|view transcript>"
+    rescue => e
+      session_reference_fallback(channel_id, thread_ts, "#{e.class}: #{e.message}")
+    end
+
+    # Said on stdout, where the bot's own log goes, so a missing link is explained.
+    # The session thread already prefixes the line with the channel and thread.
+    def session_reference_fallback(channel_id, thread_ts, reason)
+      puts "no session link: #{reason}"
+      "Session: #{channel_id}/#{thread_ts}"
     end
 
     def restore_from_db(engine, thread_ts)

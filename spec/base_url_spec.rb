@@ -84,3 +84,16 @@ RSpec.describe 'RailsConsoleAi.base_url' do
     end
   end
 end
+
+RSpec.describe 'RailsConsoleAi.session_url' do
+  before { allow(RailsConsoleAi).to receive(:engine_mount_path).and_return('/rails_console_ai') }
+
+  it 'points at the session page under the engine mount' do
+    RailsConsoleAi.configure { |c| c.base_url = 'https://apptoto.com' }
+    expect(RailsConsoleAi.session_url(1819)).to eq('https://apptoto.com/rails_console_ai/sessions/1819')
+  end
+
+  it 'is relative when no host is known' do
+    expect(RailsConsoleAi.session_url(1819)).to eq('/rails_console_ai/sessions/1819')
+  end
+end
