@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.39.0]
+
+- Keep safety guards active in threads and fibers spawned by model code
+- Detect database writes hidden behind comments, CTEs or multiple statements
+- Fix write blocking for bulk inserts and select methods on Rails 7.1+
+- Preserve model thinking across tool calls
+- Add a skills option to run_agent for background runs
+- Show tool calls in logged background run sessions
+- Fix model code seeing internal variables in background runs and Slack
+
 ## [0.38.0]
 
 - Support the Claude Sonnet 5.5 model family
