@@ -56,6 +56,22 @@ RSpec.describe RailsConsoleAi do
         expect(RailsConsoleAi.run_agent('how many users?', name: 'smoke', user_name: 'cli')).to eq(123)
       end
 
+      it 'stores skills in the run options' do
+        expect(RailsConsoleAi::SessionLogger).to receive(:log).with(
+          hash_including(options: hash_including('skills' => ['Send Slack message']))
+        ).and_return(1)
+
+        RailsConsoleAi.run_agent('hi', skills: 'Send Slack message')
+      end
+
+      it 'leaves skills out of the options when none are given' do
+        expect(RailsConsoleAi::SessionLogger).to receive(:log).with(
+          hash_including(options: hash_excluding('skills'))
+        ).and_return(1)
+
+        RailsConsoleAi.run_agent('hi')
+      end
+
       it 'raises when SessionLogger returns nil (table missing / logging disabled)' do
         allow(RailsConsoleAi::SessionLogger).to receive(:log).and_return(nil)
         expect { RailsConsoleAi.run_agent('hi') }.to raise_error(/Failed to enqueue/)

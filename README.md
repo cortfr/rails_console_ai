@@ -662,17 +662,19 @@ RailsConsoleAi.abort_agent(id)
 
 ### Per-run options
 
-`run_agent` accepts two extra keyword arguments to tune individual runs:
+`run_agent` accepts extra keyword arguments to tune individual runs:
 
 ```ruby
 RailsConsoleAi.run_agent(
   "Trace why nightly billing is double-charging some accounts",
   use_thinking_model: true,        # run on the thinking tier (Opus 5.5 at high effort)
-  max_wall_clock_seconds: 1800     # hard kill after 30 minutes; pass nil for no cap
+  max_wall_clock_seconds: 1800,    # hard kill after 30 minutes; pass nil for no cap
+  skills: ['Send Slack message to team member or channel']  # activate before the first turn
 )
 ```
 
 - `use_thinking_model:` (default `false`) — switches the run to the thinking tier (`config.thinking_model` at `config.thinking_effort`) for the duration of the agent. Useful for harder, multi-step problems.
+- `skills:` (default none) — skill names (or one name) to activate before the agent's first turn, exactly as if it had called `activate_skill`: each skill's recipe is put in front of the query and its `bypass_guards_for_methods` are switched on. Use it for scheduled runs that need a skill's side effects, so the run doesn't depend on the model choosing the skill. Only approved DB skills and file skills qualify; an unknown or unapproved name fails the run (`status='failed'`) before the agent starts.
 - `max_wall_clock_seconds:` (default `600`) — hard ceiling on wall-clock time. If the run exceeds the cap, the worker thread is killed and the session is marked `status='failed'` with `error_message: "exceeded max_wall_clock_seconds (Ns)"`. Pass `nil` to opt out of any cap.
 
 These (along with any future per-run options) are stored in a JSON `options` column on the session row, so they survive the handoff to the background runner.

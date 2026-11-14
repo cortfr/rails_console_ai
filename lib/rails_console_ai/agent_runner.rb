@@ -93,6 +93,7 @@ module RailsConsoleAi
       opts = parse_options(session)
       banner_extras = []
       banner_extras << 'thinking' if opts['use_thinking_model']
+      banner_extras << "skills=#{Array(opts['skills']).join('|')}" unless Array(opts['skills']).empty?
       if (cap = opts['max_wall_clock_seconds'])
         banner_extras << "cap=#{cap}s"
       end
@@ -128,9 +129,17 @@ module RailsConsoleAi
       sandbox_binding = Object.new.instance_eval { binding }
       engine = ConversationEngine.new(binding_context: sandbox_binding, channel: channel)
       engine.upgrade_to_thinking_model if opts['use_thinking_model']
+      skills = Array(opts['skills'])
+      # Resolved outside one_shot (which swallows errors) so an unknown or
+      # unapproved skill fails the run instead of running without its bypasses.
+      skill_records = skills.empty? ? nil : engine.activate_skills!(skills)
 
       exec_result = run_with_deadline(opts['max_wall_clock_seconds']) do
-        engine.one_shot(session.query, existing_session_id: session.id)
+        if skill_records
+          engine.one_shot(session.query, existing_session_id: session.id, skills: skill_records)
+        else
+          engine.one_shot(session.query, existing_session_id: session.id)
+        end
       end
       result_text = compose_result(channel.captured_output, exec_result)
 

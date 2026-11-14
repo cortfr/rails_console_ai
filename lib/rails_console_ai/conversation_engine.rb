@@ -1,6 +1,8 @@
 require 'rails_console_ai/slash_commands'
 
 module RailsConsoleAi
+  class SkillUnavailableError < StandardError; end
+
   class ConversationEngine
     attr_reader :history, :total_input_tokens, :total_output_tokens,
                 :total_cache_read_tokens, :total_cache_write_tokens,
@@ -47,18 +49,20 @@ module RailsConsoleAi
 
     # --- Public API for channels ---
 
-    def one_shot(query, existing_session_id: nil)
+    # skills: records from #activate_skills! — their recipes are prepended to
+    # the turn. The logged `query` stays the caller's original text.
+    def one_shot(query, existing_session_id: nil, skills: nil)
       start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       console_capture = StringIO.new
       exec_result = with_console_capture(console_capture) do
-        conversation = [{ role: :user, content: user_turn(query) }]
+        turn = skills && !skills.empty? ? preactivated_skills_prompt(skills, query) : query
+        conversation = [{ role: :user, content: user_turn(turn) }]
         exec_result, code, executed = one_shot_round(conversation)
 
         if executed && @executor.last_error && !@executor.last_safety_error
           error_msg = "Code execution failed with error: #{@executor.last_error}"
           error_msg = error_msg[0..1000] + '...' if error_msg.length > 1000
           error_msg += "\n\n#{@executor.last_error_hint}" if @executor.last_error_hint
-          conversation << { role: :assistant, content: @_last_result_text }
           conversation << { role: :user, content: error_msg }
 
           @channel.display_status("  Ran into an issue, trying a different approach...")
@@ -280,6 +284,48 @@ module RailsConsoleAi
     # land on the live executor — so it runs as a normal turn with the recipe
     # prepended, not in a sub-agent. Returns the user-turn text to send.
     def skill_command_prompt(skill, request)
+      activate_skill_record(skill)
+
+      request = request.to_s.strip
+      task = request.empty? ? "Follow this skill now." : request
+
+      "The user invoked the \"#{skill['name']}\" skill. Follow its procedure.\n\n" \
+        "#{skill_recipe_block(skill)}\n\n" \
+        "Their request: #{task}"
+    end
+
+    # Resolves and activates skills named up front (RailsConsoleAi.run_agent
+    # skills:), before the first turn, so a scheduled run doesn't depend on the
+    # model choosing to call activate_skill. Raises SkillUnavailableError —
+    # rather than running without the bypasses — when a name is unknown or the
+    # skill isn't approved. Returns the skill records for #one_shot.
+    def activate_skills!(names)
+      require 'rails_console_ai/skill_loader'
+      loader = RailsConsoleAi::SkillLoader.new
+      skills = Array(names).map do |name|
+        skill = loader.find_skill(name)
+        next skill if skill
+        proposed = loader.find_any_skill(name)
+        if proposed && proposed['source'] == :db && proposed['status'] != 'approved'
+          raise SkillUnavailableError, "Skill \"#{name}\" is awaiting approval at /rails_console_ai/skills"
+        end
+        raise SkillUnavailableError, "Skill not found: \"#{name}\""
+      end
+      skills.each { |skill| activate_skill_record(skill) }
+      skills
+    end
+
+    def preactivated_skills_prompt(skills, request)
+      names = skills.map { |s| "\"#{s['name']}\"" }.join(', ')
+      recipes = skills.map { |s| skill_recipe_block(s) }.join("\n\n")
+      "#{skills.size == 1 ? 'This skill is' : 'These skills are'} already activated for this run, " \
+        "with #{skills.size == 1 ? 'its' : 'their'} guard bypasses on: #{names}. " \
+        "Follow #{skills.size == 1 ? 'its procedure' : 'their procedures'}.\n\n" \
+        "#{recipes}\n\n" \
+        "The request: #{request.to_s.strip}"
+    end
+
+    def activate_skill_record(skill)
       bypass_methods = Array(skill['bypass_guards_for_methods'])
       @executor.activate_skill_bypasses(bypass_methods) unless bypass_methods.empty?
 
@@ -288,13 +334,10 @@ module RailsConsoleAi
       end
 
       @channel.display_status("  Activated skill: #{skill['name']}")
+    end
 
-      request = request.to_s.strip
-      task = request.empty? ? "Follow this skill now." : request
-
-      "The user invoked the \"#{skill['name']}\" skill. Follow its procedure.\n\n" \
-        "--- SKILL: #{skill['name']} ---\n#{skill['body']}\n--- END SKILL ---\n\n" \
-        "Their request: #{task}"
+    def skill_recipe_block(skill)
+      "--- SKILL: #{skill['name']} ---\n#{skill['body']}\n--- END SKILL ---"
     end
 
     # An agent is a separate context by definition, so this mirrors delegate_task:
@@ -866,8 +909,17 @@ module RailsConsoleAi
       end
     end
 
+    # Appends the round's tool calls/results and final answer to `conversation`,
+    # so the logged session shows what the agent actually did (activate_skill,
+    # execute_code, ...) and a retry round sees the full context.
     def one_shot_round(conversation)
-      result, _ = send_query(nil, conversation: conversation)
+      result, tool_messages, last_llm_stats = send_query(nil, conversation: conversation)
+      conversation.concat(tool_messages) if tool_messages && !tool_messages.empty?
+      unless result.text.to_s.strip.empty?
+        entry = { role: :assistant, content: result.text }
+        entry[:llm_stats] = last_llm_stats if last_llm_stats
+        conversation << entry
+      end
       track_usage(result)
       code = @executor.display_response(result.text)
       display_usage(result)

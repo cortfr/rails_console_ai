@@ -202,14 +202,20 @@ module RailsConsoleAi
     #
     # use_thinking_model:     run on the configured thinking-tier model
     # max_wall_clock_seconds: hard kill the run after N seconds (nil = no cap)
+    # skills:                 skill names to activate before the first turn
+    #                         (recipe + guard bypasses); the run fails if any
+    #                         is unknown or unapproved
     def run_agent(query, name: nil, user_name: nil,
                   use_thinking_model: false,
-                  max_wall_clock_seconds: 600)
+                  max_wall_clock_seconds: 600,
+                  skills: nil)
       require 'rails_console_ai/session_logger'
       options = {
         'use_thinking_model'     => !!use_thinking_model,
         'max_wall_clock_seconds' => max_wall_clock_seconds
       }
+      skill_names = Array(skills).map(&:to_s).reject(&:empty?)
+      options['skills'] = skill_names unless skill_names.empty?
       id = SessionLogger.log(
         query: query,
         conversation: [],

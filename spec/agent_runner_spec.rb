@@ -86,6 +86,34 @@ RSpec.describe RailsConsoleAi::AgentRunner do
       runner.send(:run_one, session)
     end
 
+    context 'with skills in the run options' do
+      let(:session) do
+        double('Session', id: 11, query: 'how many users?', user_name: 'cli',
+               options: { 'skills' => ['Send Slack message'] })
+      end
+      let(:skill) { { 'name' => 'Send Slack message', 'body' => 'recipe' } }
+
+      it 'activates the skills before the run and hands the records to one_shot' do
+        expect(engine).to receive(:activate_skills!).with(['Send Slack message']).ordered.and_return([skill])
+        expect(engine).to receive(:one_shot)
+          .with('how many users?', existing_session_id: 11, skills: [skill]).ordered.and_return(nil)
+        allow(RailsConsoleAi::SessionLogger).to receive(:update)
+
+        runner.send(:run_one, session)
+      end
+
+      it 'fails the run, without running the agent, when a skill is unavailable' do
+        allow(engine).to receive(:activate_skills!)
+          .and_raise(RailsConsoleAi::SkillUnavailableError, 'Skill not found: "Send Slack message"')
+        expect(engine).not_to receive(:one_shot)
+        expect(RailsConsoleAi::SessionLogger).to receive(:update).with(11,
+          hash_including(status: 'failed', error_message: /SkillUnavailableError: Skill not found/)
+        )
+
+        runner.send(:run_one, session)
+      end
+    end
+
     it 'marks the row failed with an error_message when one_shot raises' do
       allow(engine).to receive(:one_shot).and_raise(RuntimeError, 'boom')
       allow(RailsConsoleAi.logger).to receive(:error)
