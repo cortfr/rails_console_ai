@@ -1,4 +1,5 @@
 require 'rails_console_ai/guard_state'
+require 'rails_console_ai/sql_writes'
 
 module RailsConsoleAi
   # Raised by safety guards to block dangerous operations.
@@ -224,11 +225,8 @@ module RailsConsoleAi
   # Works on all Rails versions (5+) and all database adapters.
   # Prepends a write-intercepting module once, controlled by a thread-local flag.
   module BuiltinGuards
-    # Blocks INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, TRUNCATE
+    # Blocks statements that write — see SqlWrites for what counts as one.
     module WriteBlocker
-      WRITE_PATTERN = /\A\s*(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE)\b/i
-      TABLE_PATTERN = /\b(?:INTO|FROM|UPDATE|TABLE|TRUNCATE)\s+[`"]?(\w+)[`"]?/i
-
       private
 
       # Hard sandbox: when active, block ALL database access (reads and writes), not just
@@ -247,18 +245,32 @@ module RailsConsoleAi
       end
 
       def rails_console_ai_check_write!(sql)
-        return unless GuardState[:block_writes] && sql.match?(WRITE_PATTERN)
+        return unless GuardState[:block_writes]
+
+        writes = SqlWrites.find(sql, mysql: rails_console_ai_mysql?)
+        return if writes.empty?
         return if GuardState[:bypass_guards]
 
-        table = sql.match(TABLE_PATTERN)&.captures&.first
+        # Every write in the statement has to be allowed, not just the first:
+        # `WITH d AS (DELETE FROM a ...) INSERT INTO b ...` touches both.
         guards = RailsConsoleAi.configuration.safety_guards
-        return if table && guards.allowed?(:database_writes, table)
+        blocked = writes.find do |write|
+          !(write.table && [write.table, write.qualified_table].uniq.any? { |key| guards.allowed?(:database_writes, key) })
+        end
+        return unless blocked
 
         raise RailsConsoleAi::SafetyError.new(
-          "Database write blocked: #{sql.strip.split(/\s+/).first(3).join(' ')}...",
+          "Database write blocked: #{blocked.summary}...",
           guard: :database_writes,
-          blocked_key: table
+          blocked_key: blocked.table
         )
+      end
+
+      # MySQL reads comments, string escapes and double quotes differently from
+      # every other database, which changes where a statement's code starts and
+      # stops.
+      def rails_console_ai_mysql?
+        respond_to?(:adapter_name) && adapter_name.to_s.match?(/mysql|trilogy|maria/i)
       end
 
       public
