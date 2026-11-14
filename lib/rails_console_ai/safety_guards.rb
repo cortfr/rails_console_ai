@@ -1,3 +1,5 @@
+require 'rails_console_ai/guard_state'
+
 module RailsConsoleAi
   # Raised by safety guards to block dangerous operations.
   # Host apps should raise this error in their custom guards.
@@ -5,21 +7,21 @@ module RailsConsoleAi
   class SafetyError < StandardError
     attr_reader :guard, :blocked_key
 
-    # Thread-local tracking so the executor can detect safety errors
-    # even when swallowed by a rescue inside eval'd code.
+    # Tracked so the executor can detect safety errors even when swallowed by a
+    # rescue inside eval'd code — including code running in a thread it spawned.
     def self.last_raised
-      Thread.current[:rails_console_ai_last_safety_error]
+      GuardState[:last_safety_error]
     end
 
     def self.clear!
-      Thread.current[:rails_console_ai_last_safety_error] = nil
+      GuardState[:last_safety_error] = nil
     end
 
     def initialize(message, guard: nil, blocked_key: nil)
       super(message)
       @guard = guard
       @blocked_key = blocked_key
-      Thread.current[:rails_console_ai_last_safety_error] = self
+      GuardState.record_error(self)
     end
   end
 
@@ -41,31 +43,26 @@ module RailsConsoleAi
     end
 
     def enabled?
-      @enabled && !Thread.current[:rails_console_ai_guards_disabled]
+      @enabled && !GuardState[:guards_disabled]
     end
 
     def enable!
-      Thread.current[:rails_console_ai_guards_disabled] = nil
+      GuardState[:guards_disabled] = nil
     end
 
     def disable!
-      Thread.current[:rails_console_ai_guards_disabled] = true
+      GuardState[:guards_disabled] = true
     end
 
     # Hard sandbox: block ALL database access (reads and writes) for the duration of the
     # block. Used to fence in sub-agents that must never touch the DB (e.g. the
-    # output-explorer, which only examines an in-memory string). Scoped via thread-local,
-    # so it covers synchronous work in the calling thread and is restored afterward —
-    # nestable, and independent of enable!/disable! and the registered guard set.
-    def with_database_blocked
+    # output-explorer, which only examines an in-memory string). Scoped to the block
+    # (see GuardState), so it covers the calling thread and anything it spawns, and is
+    # restored afterward — nestable, and independent of enable!/disable! and the
+    # registered guard set.
+    def with_database_blocked(&block)
       BuiltinGuards.ensure_write_blocker_installed!
-      prev = Thread.current[:rails_console_ai_block_all_db]
-      Thread.current[:rails_console_ai_block_all_db] = true
-      begin
-        yield
-      ensure
-        Thread.current[:rails_console_ai_block_all_db] = prev
-      end
+      GuardState.with(block_all_db: true, &block)
     end
 
     def empty?
@@ -83,9 +80,10 @@ module RailsConsoleAi
       @allowlist[guard_name] << key unless @allowlist[guard_name].include?(key)
     end
 
-    # Add a thread-local allowlist entry (runtime "allow for this session").
+    # Add a runtime allowlist entry ("allow for this session"), held by the
+    # session's thread.
     def allow(guard_name, key)
-      thread_list = Thread.current[:rails_console_ai_allowlist] ||= {}
+      thread_list = session_allowlist
       guard_name = guard_name.to_sym
       thread_list[guard_name] ||= []
       thread_list[guard_name] << key unless thread_list[guard_name].include?(key)
@@ -103,14 +101,14 @@ module RailsConsoleAi
       }
       # Check global (config-time) allowlist
       return true if match.call(@allowlist[guard_name])
-      # Check thread-local (runtime session) allowlist
-      thread_list = Thread.current[:rails_console_ai_allowlist]
+      # Check the runtime (session) allowlist
+      thread_list = GuardState[:allowlist]
       return true if thread_list && match.call(thread_list[guard_name])
       false
     end
 
     def allowlist
-      thread_list = Thread.current[:rails_console_ai_allowlist]
+      thread_list = GuardState[:allowlist]
       return @allowlist unless thread_list
       merged = @allowlist.dup
       thread_list.each { |k, v| merged[k] = (merged[k] || []) + v }
@@ -127,17 +125,18 @@ module RailsConsoleAi
       bypass_set = resolve_bypass_methods(channel_mode)
       Array(additional_bypass_methods).each { |m| bypass_set << m }
 
-      prev_active = Thread.current[:rails_console_ai_session_active]
-      prev_bypass = Thread.current[:rails_console_ai_bypass_methods]
-      Thread.current[:rails_console_ai_session_active] = true
-      Thread.current[:rails_console_ai_bypass_methods] = bypass_set
-      begin
+      # The allowlist and the error sink are carried in the scope so threads the
+      # guarded code spawns consult the session's allowlist and report blocked
+      # operations back to the session's thread.
+      GuardState.with(
+        session_active: true,
+        bypass_methods: bypass_set,
+        allowlist: session_allowlist,
+        error_sink: GuardState.base
+      ) do
         @guards.values.reduce(block) { |inner, guard|
           -> { guard.call(&inner) }
         }.call
-      ensure
-        Thread.current[:rails_console_ai_session_active] = prev_active
-        Thread.current[:rails_console_ai_bypass_methods] = prev_bypass
       end
     end
 
@@ -163,7 +162,7 @@ module RailsConsoleAi
 
       bypass_mod = Module.new do
         define_method(method_sym) do |*args, &blk|
-          if Thread.current[:rails_console_ai_bypass_methods]&.include?(spec)
+          if GuardState[:bypass_methods]&.include?(spec)
             RailsConsoleAi.configuration.safety_guards.without_guards { super(*args, &blk) }
           else
             super(*args, &blk)
@@ -180,6 +179,13 @@ module RailsConsoleAi
     end
 
     private
+
+    # The runtime allowlist in effect: the enclosing guarded execution's when
+    # there is one (so a spawned thread adds to the session's list, not its own),
+    # otherwise the calling thread's.
+    def session_allowlist
+      GuardState[:allowlist] || (GuardState[:allowlist] = {})
+    end
 
     def resolve_bypass_methods(channel_mode)
       config = RailsConsoleAi.configuration
@@ -207,14 +213,10 @@ module RailsConsoleAi
     public
 
     # Bypass all safety guards for the duration of the block.
-    # Thread-safe: uses a thread-local flag that is restored after the block,
-    # even if the block raises an exception.
-    def without_guards
-      prev = Thread.current[:rails_console_ai_bypass_guards]
-      Thread.current[:rails_console_ai_bypass_guards] = true
-      yield
-    ensure
-      Thread.current[:rails_console_ai_bypass_guards] = prev
+    # Thread-safe: scoped to the calling thread and anything it spawns inside
+    # the block (see GuardState), and restored after the block even if it raises.
+    def without_guards(&block)
+      GuardState.with(bypass_guards: true, &block)
     end
   end
 
@@ -234,7 +236,7 @@ module RailsConsoleAi
       # output-explorer, which only examines an in-memory string). Deliberately does NOT
       # honor the bypass flag — it is a true wall, not a safe-mode toggle.
       def rails_console_ai_check_db_blocked!(_sql)
-        return unless Thread.current[:rails_console_ai_block_all_db]
+        return unless GuardState[:block_all_db]
 
         raise RailsConsoleAi::SafetyError.new(
           "Database access is disabled here. The captured data is in the `output` " \
@@ -245,8 +247,8 @@ module RailsConsoleAi
       end
 
       def rails_console_ai_check_write!(sql)
-        return if Thread.current[:rails_console_ai_bypass_guards]
-        return unless Thread.current[:rails_console_ai_block_writes] && sql.match?(WRITE_PATTERN)
+        return unless GuardState[:block_writes] && sql.match?(WRITE_PATTERN)
+        return if GuardState[:bypass_guards]
 
         table = sql.match(TABLE_PATTERN)&.captures&.first
         guards = RailsConsoleAi.configuration.safety_guards
@@ -295,12 +297,7 @@ module RailsConsoleAi
     def self.database_writes
       ->(& block) {
         ensure_write_blocker_installed!
-        Thread.current[:rails_console_ai_block_writes] = true
-        begin
-          block.call
-        ensure
-          Thread.current[:rails_console_ai_block_writes] = false
-        end
+        GuardState.with(block_writes: true, &block)
       }
     end
 
@@ -321,8 +318,8 @@ module RailsConsoleAi
       SAFE_METHODS = %w[GET HEAD OPTIONS TRACE].freeze
 
       def request(req, *args, &block)
-        if Thread.current[:rails_console_ai_block_http] && !SAFE_METHODS.include?(req.method)
-          return super if Thread.current[:rails_console_ai_bypass_guards]
+        if GuardState[:block_http] && !SAFE_METHODS.include?(req.method)
+          return super if GuardState[:bypass_guards]
 
           host = @address.to_s
           guards = RailsConsoleAi.configuration.safety_guards
@@ -341,18 +338,13 @@ module RailsConsoleAi
     def self.http_mutations
       ->(&block) {
         ensure_http_blocker_installed!
-        Thread.current[:rails_console_ai_block_http] = true
-        begin
-          block.call
-        ensure
-          Thread.current[:rails_console_ai_block_http] = false
-        end
+        GuardState.with(block_http: true, &block)
       }
     end
 
     def self.mailers
       ->(&block) {
-        return block.call if Thread.current[:rails_console_ai_bypass_guards]
+        return block.call if GuardState[:bypass_guards]
 
         old_value = ActionMailer::Base.perform_deliveries
         ActionMailer::Base.perform_deliveries = false
@@ -388,8 +380,8 @@ module RailsConsoleAi
     end
 
     def self.check_in_process_request!(http_method, path)
-      return unless Thread.current[:rails_console_ai_block_in_process_requests]
-      return if Thread.current[:rails_console_ai_bypass_guards]
+      return unless GuardState[:block_in_process_requests]
+      return if GuardState[:bypass_guards]
 
       key = path.to_s
       guards = RailsConsoleAi.configuration.safety_guards
@@ -409,13 +401,7 @@ module RailsConsoleAi
     def self.in_process_requests
       ->(&block) {
         ensure_in_process_blocker_installed!
-        prev = Thread.current[:rails_console_ai_block_in_process_requests]
-        Thread.current[:rails_console_ai_block_in_process_requests] = true
-        begin
-          block.call
-        ensure
-          Thread.current[:rails_console_ai_block_in_process_requests] = prev
-        end
+        GuardState.with(block_in_process_requests: true, &block)
       }
     end
 

@@ -101,14 +101,14 @@ RSpec.describe 'RailsConsoleAi.save_artifact', if: SQLITE3_AVAILABLE do
   # from the output-token cap is blocked in the default configuration.
   it 'writes through the database_writes guard, as the save_artifact tool does' do
     RailsConsoleAi::BuiltinGuards.ensure_write_blocker_installed!
-    Thread.current[:rails_console_ai_block_writes] = true
+    RailsConsoleAi::GuardState[:block_writes] = true
     begin
       expect {
         RailsConsoleAi.save_artifact(name: 'Migration plan', content: '<h1>hi</h1>')
       }.not_to raise_error
       expect(model.count).to eq(1)
     ensure
-      Thread.current[:rails_console_ai_block_writes] = false
+      RailsConsoleAi::GuardState[:block_writes] = false
     end
   end
 

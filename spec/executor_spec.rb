@@ -6,7 +6,7 @@ RSpec.describe RailsConsoleAi::Executor do
   subject(:executor) { described_class.new(test_binding) }
 
   after do
-    Thread.current[:rails_console_ai_guards_disabled] = nil
+    RailsConsoleAi::GuardState[:guards_disabled] = nil
   end
 
   describe '#extract_code' do

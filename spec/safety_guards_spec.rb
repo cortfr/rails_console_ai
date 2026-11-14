@@ -21,8 +21,8 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
 
   after do
     # Clean up thread-locals that disable!/enable!/allow now use
-    Thread.current[:rails_console_ai_guards_disabled] = nil
-    Thread.current[:rails_console_ai_allowlist] = nil
+    RailsConsoleAi::GuardState[:guards_disabled] = nil
+    RailsConsoleAi::GuardState[:allowlist] = nil
   end
 
   describe '#add' do
@@ -60,17 +60,17 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
 
   describe '#with_database_blocked' do
     before { allow(RailsConsoleAi::BuiltinGuards).to receive(:ensure_write_blocker_installed!) }
-    after  { Thread.current[:rails_console_ai_block_all_db] = nil }
+    after  { RailsConsoleAi::GuardState[:block_all_db] = nil }
 
     it 'sets the block-all-db flag during the block' do
       flag_during = nil
-      guards.with_database_blocked { flag_during = Thread.current[:rails_console_ai_block_all_db] }
+      guards.with_database_blocked { flag_during = RailsConsoleAi::GuardState[:block_all_db] }
       expect(flag_during).to be true
     end
 
     it 'restores the flag after the block' do
       guards.with_database_blocked { }
-      expect(Thread.current[:rails_console_ai_block_all_db]).to be_nil
+      expect(RailsConsoleAi::GuardState[:block_all_db]).to be_nil
     end
 
     it 'restores the flag even when the block raises' do
@@ -78,7 +78,7 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
         guards.with_database_blocked { raise "boom" }
       rescue
       end
-      expect(Thread.current[:rails_console_ai_block_all_db]).to be_nil
+      expect(RailsConsoleAi::GuardState[:block_all_db]).to be_nil
     end
 
     it 'returns the block result' do
@@ -86,9 +86,9 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
     end
 
     it 'restores the prior flag value when nested' do
-      Thread.current[:rails_console_ai_block_all_db] = true
+      RailsConsoleAi::GuardState[:block_all_db] = true
       guards.with_database_blocked { }
-      expect(Thread.current[:rails_console_ai_block_all_db]).to be true
+      expect(RailsConsoleAi::GuardState[:block_all_db]).to be true
     end
   end
 
@@ -155,14 +155,14 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
     let(:post_req) { Struct.new(:method, :path).new('POST', '/foo') }
 
     before do
-      Thread.current[:rails_console_ai_block_writes] = true
-      Thread.current[:rails_console_ai_block_http]   = true
+      RailsConsoleAi::GuardState[:block_writes] = true
+      RailsConsoleAi::GuardState[:block_http]   = true
     end
 
     after do
-      Thread.current[:rails_console_ai_block_writes]   = false
-      Thread.current[:rails_console_ai_block_http]     = false
-      Thread.current[:rails_console_ai_bypass_guards]  = nil
+      RailsConsoleAi::GuardState[:block_writes]   = false
+      RailsConsoleAi::GuardState[:block_http]     = false
+      RailsConsoleAi::GuardState[:bypass_guards]  = nil
     end
 
     it 'allows writes inside the block even when guards are enabled' do
@@ -180,7 +180,7 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
 
     it 're-enables blocking after the block' do
       guards.without_guards { }
-      expect(Thread.current[:rails_console_ai_bypass_guards]).to be_nil
+      expect(RailsConsoleAi::GuardState[:bypass_guards]).to be_nil
       expect { write_adapter.execute("INSERT INTO users (name) VALUES ('test')") }
         .to raise_error(RailsConsoleAi::SafetyError)
     end
@@ -190,7 +190,7 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
         guards.without_guards { raise "boom" }
       rescue
       end
-      expect(Thread.current[:rails_console_ai_bypass_guards]).to be_nil
+      expect(RailsConsoleAi::GuardState[:bypass_guards]).to be_nil
       expect { write_adapter.execute("INSERT INTO users (name) VALUES ('test')") }
         .to raise_error(RailsConsoleAi::SafetyError)
     end
@@ -198,11 +198,11 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
     it 'nesting: inner without_guards works, outer context restored after' do
       guards.without_guards do
         guards.without_guards do
-          expect(Thread.current[:rails_console_ai_bypass_guards]).to be true
+          expect(RailsConsoleAi::GuardState[:bypass_guards]).to be true
         end
-        expect(Thread.current[:rails_console_ai_bypass_guards]).to be true
+        expect(RailsConsoleAi::GuardState[:bypass_guards]).to be true
       end
-      expect(Thread.current[:rails_console_ai_bypass_guards]).to be_nil
+      expect(RailsConsoleAi::GuardState[:bypass_guards]).to be_nil
     end
   end
 
@@ -285,14 +285,14 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
     it 'sets session_active flag during execution' do
       guards.add(:test) { |&b| b.call }
       flag_during = nil
-      guards.wrap { flag_during = Thread.current[:rails_console_ai_session_active] }
+      guards.wrap { flag_during = RailsConsoleAi::GuardState[:session_active] }
       expect(flag_during).to be true
     end
 
     it 'clears session_active flag after execution' do
       guards.add(:test) { |&b| b.call }
       guards.wrap { }
-      expect(Thread.current[:rails_console_ai_session_active]).to be_nil
+      expect(RailsConsoleAi::GuardState[:session_active]).to be_nil
     end
 
     it 'clears session_active flag after execution even on exception' do
@@ -301,7 +301,7 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
         guards.wrap { raise "boom" }
       rescue
       end
-      expect(Thread.current[:rails_console_ai_session_active]).to be_nil
+      expect(RailsConsoleAi::GuardState[:session_active]).to be_nil
     end
 
     context 'install_skills_once!' do
@@ -323,7 +323,7 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
 
       after do
         RailsConsoleAi.configuration.bypass_guards_for_methods = []
-        Thread.current[:rails_console_ai_bypass_methods] = nil
+        RailsConsoleAi::GuardState[:bypass_methods] = nil
       end
 
       it 'skills are not installed before first wrap call' do
@@ -346,7 +346,7 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
 
       it 'shim is a no-op when bypass_methods is nil (outside wrap)' do
         guards.wrap { } # install shims
-        Thread.current[:rails_console_ai_bypass_methods] = nil
+        RailsConsoleAi::GuardState[:bypass_methods] = nil
         instance = target_class.new
         expect(instance.guarded_method).to eq(:original)
       end
@@ -379,13 +379,13 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
       end
 
       after do
-        Thread.current[:rails_console_ai_bypass_methods] = nil
+        RailsConsoleAi::GuardState[:bypass_methods] = nil
       end
 
       it 'merges additional bypass methods into the bypass set' do
         bypass_set = nil
         guards.wrap(additional_bypass_methods: Set.new(['FakeSkillClass#skill_method'])) do
-          bypass_set = Thread.current[:rails_console_ai_bypass_methods]
+          bypass_set = RailsConsoleAi::GuardState[:bypass_methods]
         end
         expect(bypass_set).to include('FakeSkillClass#skill_method')
       end
@@ -450,7 +450,7 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
       before { target_class }
 
       after do
-        Thread.current[:rails_console_ai_bypass_methods] = nil
+        RailsConsoleAi::GuardState[:bypass_methods] = nil
       end
 
       it 'installs bypass on the singleton class for dot-notation specs' do
@@ -494,7 +494,7 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
 
       after do
         RailsConsoleAi.configuration.channels = {}
-        Thread.current[:rails_console_ai_bypass_methods] = nil
+        RailsConsoleAi::GuardState[:bypass_methods] = nil
       end
 
       it 'installs shims from all channel configs' do
@@ -535,14 +535,14 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
       it 'sets bypass_methods thread-local with correct set for channel' do
         bypass_set = nil
         guards.wrap(channel_mode: 'slack') do
-          bypass_set = Thread.current[:rails_console_ai_bypass_methods]
+          bypass_set = RailsConsoleAi::GuardState[:bypass_methods]
         end
         expect(bypass_set).to include('FakeChannelClass#channel_method')
       end
 
       it 'clears bypass_methods thread-local after execution' do
         guards.wrap(channel_mode: 'slack') { }
-        expect(Thread.current[:rails_console_ai_bypass_methods]).to be_nil
+        expect(RailsConsoleAi::GuardState[:bypass_methods]).to be_nil
       end
     end
   end
@@ -555,7 +555,7 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
       expect(guard).to respond_to(:call)
     end
 
-    it 'sets and clears the thread-local flag' do
+    it 'sets the flag for the block and restores it after' do
       guard = described_class.database_writes
       flag_during = nil
 
@@ -563,11 +563,11 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
       allow(described_class).to receive(:ensure_write_blocker_installed!)
 
       guard.call do
-        flag_during = Thread.current[:rails_console_ai_block_writes]
+        flag_during = RailsConsoleAi::GuardState[:block_writes]
       end
 
       expect(flag_during).to eq(true)
-      expect(Thread.current[:rails_console_ai_block_writes]).to eq(false)
+      expect(RailsConsoleAi::GuardState[:block_writes]).to be_nil
     end
 
     it 'clears the flag even on exception' do
@@ -579,7 +579,7 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
       rescue
       end
 
-      expect(Thread.current[:rails_console_ai_block_writes]).to eq(false)
+      expect(RailsConsoleAi::GuardState[:block_writes]).to be_nil
     end
   end
 
@@ -651,8 +651,8 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
     let(:adapter) { blocked_class.new }
 
     context 'when block_writes flag is set' do
-      before { Thread.current[:rails_console_ai_block_writes] = true }
-      after  { Thread.current[:rails_console_ai_block_writes] = false }
+      before { RailsConsoleAi::GuardState[:block_writes] = true }
+      after  { RailsConsoleAi::GuardState[:block_writes] = false }
 
       it 'blocks INSERT statements' do
         expect { adapter.execute("INSERT INTO users (name) VALUES ('test')") }
@@ -730,7 +730,7 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
     end
 
     context 'when block_writes flag is not set' do
-      before { Thread.current[:rails_console_ai_block_writes] = false }
+      before { RailsConsoleAi::GuardState[:block_writes] = false }
 
       it 'allows all statements' do
         expect(adapter.execute("INSERT INTO users (name) VALUES ('test')"))
@@ -742,10 +742,10 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
 
     context 'when bypass_guards flag is set' do
       before do
-        Thread.current[:rails_console_ai_block_writes]  = true
-        Thread.current[:rails_console_ai_bypass_guards] = true
+        RailsConsoleAi::GuardState[:block_writes]  = true
+        RailsConsoleAi::GuardState[:bypass_guards] = true
       end
-      after { Thread.current[:rails_console_ai_bypass_guards] = nil }
+      after { RailsConsoleAi::GuardState[:bypass_guards] = nil }
 
       it 'allows writes even when block_writes is true' do
         expect(adapter.execute("INSERT INTO users (name) VALUES ('test')"))
@@ -754,8 +754,8 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
     end
 
     context 'when block_all_db flag is set (hard sandbox)' do
-      before { Thread.current[:rails_console_ai_block_all_db] = true }
-      after  { Thread.current[:rails_console_ai_block_all_db] = false }
+      before { RailsConsoleAi::GuardState[:block_all_db] = true }
+      after  { RailsConsoleAi::GuardState[:block_all_db] = false }
 
       it 'blocks SELECT statements (reads, not just writes)' do
         expect { adapter.execute("SELECT * FROM users") }
@@ -783,18 +783,18 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
       end
 
       it 'is NOT bypassable by the bypass_guards flag (true sandbox)' do
-        Thread.current[:rails_console_ai_bypass_guards] = true
+        RailsConsoleAi::GuardState[:bypass_guards] = true
         begin
           expect { adapter.execute("SELECT * FROM users") }
             .to raise_error(RailsConsoleAi::SafetyError, /Database access is disabled/)
         ensure
-          Thread.current[:rails_console_ai_bypass_guards] = nil
+          RailsConsoleAi::GuardState[:bypass_guards] = nil
         end
       end
     end
 
     context 'when block_all_db flag is not set' do
-      before { Thread.current[:rails_console_ai_block_all_db] = false }
+      before { RailsConsoleAi::GuardState[:block_all_db] = false }
 
       it 'allows reads' do
         expect(adapter.execute("SELECT * FROM users")).to eq("SELECT * FROM users")
@@ -808,18 +808,18 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
       expect(guard).to respond_to(:call)
     end
 
-    it 'sets and clears the thread-local flag' do
+    it 'sets the flag for the block and restores it after' do
       guard = described_class.http_mutations
       flag_during = nil
 
       allow(described_class).to receive(:ensure_http_blocker_installed!)
 
       guard.call do
-        flag_during = Thread.current[:rails_console_ai_block_http]
+        flag_during = RailsConsoleAi::GuardState[:block_http]
       end
 
       expect(flag_during).to eq(true)
-      expect(Thread.current[:rails_console_ai_block_http]).to eq(false)
+      expect(RailsConsoleAi::GuardState[:block_http]).to be_nil
     end
 
     it 'clears the flag even on exception' do
@@ -831,7 +831,7 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
       rescue
       end
 
-      expect(Thread.current[:rails_console_ai_block_http]).to eq(false)
+      expect(RailsConsoleAi::GuardState[:block_http]).to be_nil
     end
   end
 
@@ -868,8 +868,8 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
     let(:delete_req) { Struct.new(:method, :path).new('DELETE', '/users/1') }
 
     context 'when block_http flag is set' do
-      before { Thread.current[:rails_console_ai_block_http] = true }
-      after  { Thread.current[:rails_console_ai_block_http] = false }
+      before { RailsConsoleAi::GuardState[:block_http] = true }
+      after  { RailsConsoleAi::GuardState[:block_http] = false }
 
       it 'allows GET requests' do
         expect(http.request(get_req)).to eq('GET /users')
@@ -926,7 +926,7 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
     end
 
     context 'when block_http flag is not set' do
-      before { Thread.current[:rails_console_ai_block_http] = false }
+      before { RailsConsoleAi::GuardState[:block_http] = false }
 
       it 'allows all requests' do
         expect(http.request(post_req)).to eq('POST /users')
@@ -936,10 +936,10 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
 
     context 'when bypass_guards flag is set' do
       before do
-        Thread.current[:rails_console_ai_block_http]     = true
-        Thread.current[:rails_console_ai_bypass_guards]  = true
+        RailsConsoleAi::GuardState[:block_http]     = true
+        RailsConsoleAi::GuardState[:bypass_guards]  = true
       end
-      after { Thread.current[:rails_console_ai_bypass_guards] = nil }
+      after { RailsConsoleAi::GuardState[:bypass_guards] = nil }
 
       it 'allows HTTP mutations even when block_http is true' do
         expect(http.request(post_req)).to eq('POST /users')
@@ -953,18 +953,18 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
       expect(described_class.in_process_requests).to respond_to(:call)
     end
 
-    it 'sets and clears the thread-local flag' do
+    it 'sets the flag for the block and restores it after' do
       guard = described_class.in_process_requests
       flag_during = nil
 
       allow(described_class).to receive(:ensure_in_process_blocker_installed!)
 
       guard.call do
-        flag_during = Thread.current[:rails_console_ai_block_in_process_requests]
+        flag_during = RailsConsoleAi::GuardState[:block_in_process_requests]
       end
 
       expect(flag_during).to eq(true)
-      expect(Thread.current[:rails_console_ai_block_in_process_requests]).to be_nil
+      expect(RailsConsoleAi::GuardState[:block_in_process_requests]).to be_nil
     end
 
     it 'clears the flag even on exception' do
@@ -976,18 +976,18 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
       rescue
       end
 
-      expect(Thread.current[:rails_console_ai_block_in_process_requests]).to be_nil
+      expect(RailsConsoleAi::GuardState[:block_in_process_requests]).to be_nil
     end
 
     it 'restores a prior flag value when nested' do
       guard = described_class.in_process_requests
       allow(described_class).to receive(:ensure_in_process_blocker_installed!)
 
-      Thread.current[:rails_console_ai_block_in_process_requests] = true
+      RailsConsoleAi::GuardState[:block_in_process_requests] = true
       guard.call { }
-      expect(Thread.current[:rails_console_ai_block_in_process_requests]).to be true
+      expect(RailsConsoleAi::GuardState[:block_in_process_requests]).to be true
     ensure
-      Thread.current[:rails_console_ai_block_in_process_requests] = nil
+      RailsConsoleAi::GuardState[:block_in_process_requests] = nil
     end
   end
 
@@ -1009,8 +1009,8 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
     let(:session) { blocked_class.new }
 
     context 'when block_in_process_requests flag is set' do
-      before { Thread.current[:rails_console_ai_block_in_process_requests] = true }
-      after  { Thread.current[:rails_console_ai_block_in_process_requests] = nil }
+      before { RailsConsoleAi::GuardState[:block_in_process_requests] = true }
+      after  { RailsConsoleAi::GuardState[:block_in_process_requests] = nil }
 
       it 'blocks GET requests (not just mutations)' do
         expect { session.process(:get, '/r/abc123') }
@@ -1037,22 +1037,22 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
         RailsConsoleAi.configuration.safety_guards.allow(:in_process_requests, '/health')
         expect(session.process(:get, '/health')).to eq('GET /health')
       ensure
-        Thread.current[:rails_console_ai_allowlist] = nil
+        RailsConsoleAi::GuardState[:allowlist] = nil
       end
 
       it 'allows requests matching allowlisted regexp' do
         RailsConsoleAi.configuration.safety_guards.allow(:in_process_requests, %r{\A/health})
         expect(session.process(:get, '/health/full')).to eq('GET /health/full')
       ensure
-        Thread.current[:rails_console_ai_allowlist] = nil
+        RailsConsoleAi::GuardState[:allowlist] = nil
       end
 
       it 'is bypassed by the bypass_guards flag' do
-        Thread.current[:rails_console_ai_bypass_guards] = true
+        RailsConsoleAi::GuardState[:bypass_guards] = true
         begin
           expect(session.process(:get, '/r/abc123')).to eq('GET /r/abc123')
         ensure
-          Thread.current[:rails_console_ai_bypass_guards] = nil
+          RailsConsoleAi::GuardState[:bypass_guards] = nil
         end
       end
     end
@@ -1083,8 +1083,8 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
     let(:env) { { 'REQUEST_METHOD' => 'GET', 'PATH_INFO' => '/r/abc123' } }
 
     context 'when block_in_process_requests flag is set' do
-      before { Thread.current[:rails_console_ai_block_in_process_requests] = true }
-      after  { Thread.current[:rails_console_ai_block_in_process_requests] = nil }
+      before { RailsConsoleAi::GuardState[:block_in_process_requests] = true }
+      after  { RailsConsoleAi::GuardState[:block_in_process_requests] = nil }
 
       it 'blocks direct Rack dispatch' do
         expect { app.call(env) }
@@ -1092,11 +1092,11 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
       end
 
       it 'is bypassed by the bypass_guards flag' do
-        Thread.current[:rails_console_ai_bypass_guards] = true
+        RailsConsoleAi::GuardState[:bypass_guards] = true
         begin
           expect(app.call(env)).to eq([200, {}, ['ok']])
         ensure
-          Thread.current[:rails_console_ai_bypass_guards] = nil
+          RailsConsoleAi::GuardState[:bypass_guards] = nil
         end
       end
 
