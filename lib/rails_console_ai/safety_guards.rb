@@ -313,12 +313,44 @@ module RailsConsoleAi
       }
     end
 
+    # Rails 7.1 moved the work beneath the public methods WriteBlocker wraps.
+    # select_all, find_by_sql and insert_all/upsert_all now go straight to
+    # internal_exec_query, and from Rails 8 everything funnels into raw_execute,
+    # so a bulk insert, or a write passed to a select method, never reached the
+    # check — and neither did the reads the hard sandbox is meant to stop.
+    LOW_LEVEL_ENTRY_POINTS = %i[internal_exec_query raw_execute].freeze
+
+    # Built per adapter class, wrapping only the entry points that class has and
+    # keeping their visibility: defining one where Rails doesn't would make
+    # respond_to? lie to anything that feature-tests the adapter.
+    def self.low_level_write_blocker(adapter_class)
+      Module.new do
+        LOW_LEVEL_ENTRY_POINTS.each do |name|
+          visibility =
+            if adapter_class.private_method_defined?(name) then :private
+            elsif adapter_class.protected_method_defined?(name) then :protected
+            elsif adapter_class.public_method_defined?(name) then :public
+            end
+          next unless visibility
+
+          define_method(name) do |sql, *args, **kwargs, &block|
+            rails_console_ai_check_db_blocked!(sql)
+            rails_console_ai_check_write!(sql)
+            super(sql, *args, **kwargs, &block)
+          end
+          send(visibility, name)
+        end
+      end
+    end
+
     def self.ensure_write_blocker_installed!
       return if @write_blocker_installed
 
-      connection = ActiveRecord::Base.connection
-      unless connection.class.ancestors.include?(WriteBlocker)
-        connection.class.prepend(WriteBlocker)
+      adapter_class = ActiveRecord::Base.connection.class
+      unless adapter_class.ancestors.include?(WriteBlocker)
+        # Prepended first so WriteBlocker's own (private) checks sit above it.
+        adapter_class.prepend(low_level_write_blocker(adapter_class))
+        adapter_class.prepend(WriteBlocker)
       end
       @write_blocker_installed = true
     end
