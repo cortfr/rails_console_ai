@@ -40,6 +40,22 @@ RSpec.describe RailsConsoleAi do
       stub_const('RailsConsoleAi::Session', mock_session_class)
     end
 
+    describe '.sandbox_binding' do
+      it 'exposes no local variables, even when called where locals exist' do
+        secret = 'runner internals'
+        b = RailsConsoleAi.sandbox_binding
+        expect(b.local_variables).to be_empty
+        expect { b.eval('secret') }.to raise_error(NameError)
+        expect(secret).to eq('runner internals')
+      end
+
+      it 'returns a separate binding each time' do
+        a = RailsConsoleAi.sandbox_binding
+        a.local_variable_set(:x, 1)
+        expect(RailsConsoleAi.sandbox_binding.local_variables).to be_empty
+      end
+    end
+
     describe '.run_agent' do
       it 'enqueues a Session row with status=queued, mode=agent_api and returns the id' do
         expect(RailsConsoleAi::SessionLogger).to receive(:log).with(

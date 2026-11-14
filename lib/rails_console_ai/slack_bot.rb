@@ -430,7 +430,7 @@ module RailsConsoleAi
         user_name: user_name
       )
 
-      sandbox_binding = Object.new.instance_eval { binding }
+      sandbox_binding = RailsConsoleAi.sandbox_binding
       engine = ConversationEngine.new(
         binding_context: sandbox_binding,
         channel: channel,
@@ -589,7 +589,7 @@ module RailsConsoleAi
         user_name: user_name
       )
 
-      sandbox_binding = Object.new.instance_eval { binding }
+      sandbox_binding = RailsConsoleAi.sandbox_binding
       engine = ConversationEngine.new(
         binding_context: sandbox_binding,
         channel: channel,
@@ -1025,7 +1025,7 @@ module RailsConsoleAi
 
       channel = Channel::Slack.new(slack_bot: self, channel_id: "boot", thread_ts: "boot")
       engine = ConversationEngine.new(
-        binding_context: Object.new.instance_eval { binding },
+        binding_context: RailsConsoleAi.sandbox_binding,
         channel: channel
       )
       puts "\nFull system prompt for Slack sessions:"

@@ -197,6 +197,15 @@ module RailsConsoleAi
       nil
     end
 
+    # A fresh, empty binding for code run by a non-console channel (background
+    # agents, Slack). It has to be built here, in a method with no locals: a
+    # `binding` taken inside a block captures the enclosing method's locals, so
+    # building it inline would hand the caller's internals (session, engine,
+    # channel, ...) to the model's code.
+    def sandbox_binding
+      Object.new.instance_eval { binding }
+    end
+
     # Enqueue an agent run. Returns the Integer session id immediately;
     # the actual work is picked up by `rake rails_console_ai:agents`.
     #

@@ -76,6 +76,19 @@ RSpec.describe RailsConsoleAi::AgentRunner do
       runner.send(:run_one, session)
     end
 
+    it "doesn't expose run_one's locals (session, engine, channel, ...) to the agent's code" do
+      given = nil
+      allow(RailsConsoleAi::ConversationEngine).to receive(:new) do |binding_context:, channel:|
+        given = binding_context
+        engine
+      end
+      allow(engine).to receive(:one_shot).and_return(nil)
+      allow(RailsConsoleAi::SessionLogger).to receive(:update)
+
+      runner.send(:run_one, session)
+      expect(given.local_variables).to be_empty
+    end
+
     it 'omits the Result line when one_shot returns nil (no code executed)' do
       allow(engine).to receive(:one_shot).and_return(nil)
       expect(RailsConsoleAi::SessionLogger).to receive(:update).with(11,

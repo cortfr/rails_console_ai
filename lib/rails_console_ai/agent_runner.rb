@@ -126,8 +126,7 @@ module RailsConsoleAi
       opts ||= parse_options(session)
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       channel = Channel::Api.new(user_name: session.user_name)
-      sandbox_binding = Object.new.instance_eval { binding }
-      engine = ConversationEngine.new(binding_context: sandbox_binding, channel: channel)
+      engine = ConversationEngine.new(binding_context: RailsConsoleAi.sandbox_binding, channel: channel)
       engine.upgrade_to_thinking_model if opts['use_thinking_model']
       skills = Array(opts['skills'])
       # Resolved outside one_shot (which swallows errors) so an unknown or
