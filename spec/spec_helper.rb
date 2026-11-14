@@ -1,6 +1,7 @@
 require 'webmock/rspec'
 require 'readline'
 require 'rails_console_ai'
+require 'rails_console_ai/guard_state'
 
 WebMock.disable_net_connect!
 
