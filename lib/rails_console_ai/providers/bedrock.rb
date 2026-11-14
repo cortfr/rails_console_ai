@@ -1,3 +1,5 @@
+require 'base64'
+
 module RailsConsoleAi
   module Providers
     class Bedrock < Base
@@ -10,6 +12,9 @@ module RailsConsoleAi
       end
 
       def format_assistant_message(result)
+        # A turn with thinking goes back exactly as it arrived (see ChatResult).
+        return { role: 'assistant', content: result.content_blocks } if result.content_blocks
+
         content = []
         content << { text: result.text } if result.text && !result.text.empty?
         (result.tool_calls || []).each do |tc|
@@ -78,7 +83,8 @@ module RailsConsoleAi
           cache_read_input_tokens: usage.respond_to?(:cache_read_input_tokens) ? usage.cache_read_input_tokens : nil,
           cache_write_input_tokens: usage.respond_to?(:cache_write_input_tokens) ? usage.cache_write_input_tokens : nil,
           tool_calls: tool_calls,
-          stop_reason: stop
+          stop_reason: stop,
+          content_blocks: replay_blocks(response)
         )
       rescue aws_error_class => e
         raise ProviderError, "AWS Bedrock error (#{e.class}): #{e.message}"
@@ -128,6 +134,7 @@ module RailsConsoleAi
                     else
                       [{ text: msg[:content].to_s }]
                     end
+          content.map! { |block| decode_redacted_reasoning(block) }
           # Bedrock rejects empty or whitespace-only text blocks in content arrays
           content.reject! { |block| block.is_a?(Hash) && block.key?(:text) && !block.key?(:tool_use) && !block.key?(:tool_result) && block[:text].to_s.strip.empty? }
           # Bedrock also rejects messages with completely empty content arrays
@@ -186,6 +193,47 @@ module RailsConsoleAi
 
         formatted.last[:content] << cache_point
         formatted
+      end
+
+      # The turn's blocks in their original order as Converse request hashes, or
+      # nil when none of them is reasoning (Converse's name for thinking).
+      def replay_blocks(response)
+        content = response.output&.message&.content
+        return nil unless content.is_a?(Array)
+
+        blocks = content.map { |c| replay_block(c) }.compact
+        blocks.any? { |b| b.key?(:reasoning_content) } ? blocks : nil
+      end
+
+      def replay_block(block)
+        if block.respond_to?(:tool_use) && (tool_use = block.tool_use)
+          { tool_use: { tool_use_id: tool_use.tool_use_id, name: tool_use.name, input: tool_use.input || {} } }
+        elsif block.respond_to?(:text) && block.text
+          { text: block.text } unless block.text.empty?
+        elsif block.respond_to?(:reasoning_content) && (reasoning = block.reasoning_content)
+          replay_reasoning(reasoning)
+        end
+      end
+
+      # Redacted reasoning is opaque bytes. The conversation is stored as JSON,
+      # which cannot hold them, so it is kept base64-encoded and decoded again
+      # on the way out (#decode_redacted_reasoning).
+      def replay_reasoning(reasoning)
+        if reasoning.respond_to?(:reasoning_text) && (text = reasoning.reasoning_text)
+          body = { text: text.text.to_s }
+          body[:signature] = text.signature if text.signature
+          { reasoning_content: { reasoning_text: body } }
+        elsif reasoning.respond_to?(:redacted_content) && reasoning.redacted_content
+          { reasoning_content: { redacted_content_base64: Base64.strict_encode64(reasoning.redacted_content) } }
+        end
+      end
+
+      def decode_redacted_reasoning(block)
+        encoded = block.is_a?(Hash) && block[:reasoning_content].is_a?(Hash) &&
+                  block[:reasoning_content][:redacted_content_base64]
+        return block unless encoded
+
+        { reasoning_content: { redacted_content: Base64.strict_decode64(encoded) } }
       end
 
       def extract_text(response)

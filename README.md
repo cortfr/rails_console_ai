@@ -132,7 +132,8 @@ Say "think harder" in any query to auto-upgrade to the thinking model for that s
 - **App guide** — `ai_init` generates a guide injected into every system prompt
 - **Sessions** — name, list, and resume interactive conversations (`ai_db_setup` to enable)
 - **History compaction** — `/compact` summarizes long conversations to reduce cost and latency
-- **Output trimming** — older execution outputs are automatically replaced with references; the LLM can recall them on demand via `recall_output`, and you can `/expand <id>` to see them
+- **Output trimming** — large execution outputs are previewed, then replaced with references once the turn that produced them is over; the LLM can recall them on demand via `recall_output`, and you can `/expand <id>` to see them
+- **Thinking replay** — on models that think between tool calls, each round's thinking is sent back unchanged, so the model keeps its reasoning through a tool loop instead of starting over every round
 - **Debug mode** — `/debug` shows context breakdown, token counts, and per-call cost estimates before and after each LLM call
 - **Artifacts** — reports, exports and pages are saved and served at `/rails_console_ai/artifacts` instead of scrolling past in the console
 - **Sub-agents** — delegate multi-step investigations to a separate LLM context that returns only a concise summary, keeping the main conversation lean

@@ -164,8 +164,15 @@ module RailsConsoleAi
 
     class ProviderError < StandardError; end
 
+    # content_blocks is the assistant turn exactly as the model returned it, in
+    # the provider's own request shape, and is only set when the turn contains
+    # thinking. A thinking block is signed against everything that came before
+    # it, so a turn that has one must be sent back block for block: rebuilding it
+    # from `text` and `tool_calls` drops the thinking, and the model then starts
+    # every round of a tool loop without the reasoning that led to the last one.
     ChatResult = Struct.new(:text, :input_tokens, :output_tokens, :tool_calls, :stop_reason,
-                            :cache_read_input_tokens, :cache_write_input_tokens, :cost, keyword_init: true) do
+                            :cache_read_input_tokens, :cache_write_input_tokens, :cost,
+                            :content_blocks, keyword_init: true) do
       def total_tokens
         (input_tokens || 0) + (output_tokens || 0)
       end

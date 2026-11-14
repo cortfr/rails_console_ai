@@ -188,7 +188,7 @@ module RailsConsoleAi
         if @executor
           register(
             name: 'recall_output',
-            description: 'Expand a previously omitted/truncated output back into this conversation\'s context, where it will persist for the rest of the session. Prefer `explore_output` if you only need a specific answer about the output — that keeps this conversation lean. Use `recall_output` only when you need the full content alongside other context here. Use the output id shown in the "[Output omitted]" or "[Output truncated]" placeholder.',
+            description: 'Return a previously omitted/truncated output in full. It is added to this conversation and stays in context for the rest of the session. Prefer `explore_output` if you only need a specific answer about the output — that keeps this conversation lean. Use `recall_output` only when you need the full content alongside other context here. Use the output id shown in the "[Output omitted]" or "[Output truncated]" placeholder.',
             parameters: {
               'type' => 'object',
               'properties' => {
@@ -204,7 +204,7 @@ module RailsConsoleAi
 
           register(
             name: 'recall_outputs',
-            description: 'Expand multiple previously omitted outputs back into this conversation. Prefer `explore_output` per-id for focused queries. Use the output ids shown in "[Output omitted]" or "[Output truncated]" placeholders.',
+            description: 'Return multiple previously omitted outputs in full; they are added to this conversation and stay in context. Prefer `explore_output` per-id for focused queries. Use the output ids shown in "[Output omitted]" or "[Output truncated]" placeholders.',
             parameters: {
               'type' => 'object',
               'properties' => {
@@ -212,7 +212,12 @@ module RailsConsoleAi
               },
               'required' => ['ids']
             },
-            handler: ->(args) { "recall_outputs handled by conversation engine" }
+            handler: ->(args) {
+              Array(args['ids']).map { |id|
+                output = @executor.recall_output(id.to_i)
+                output ? "--- output #{id} ---\n#{output}" : "No output found with id #{id}"
+              }.join("\n\n")
+            }
           )
 
           if @mode != :sub_agent
@@ -457,7 +462,7 @@ module RailsConsoleAi
         tail = if output_id
                  "\n\n[Truncated at #{ARTIFACT_READ_LIMIT} of #{body.length} chars — " \
                  "use explore_output with output_id=#{output_id} to query the rest, " \
-                 "or recall_output to expand it in place]"
+                 "or recall_output to read it in full]"
                else
                  "\n\n[Truncated at #{ARTIFACT_READ_LIMIT} of #{body.length} chars]"
                end

@@ -41,7 +41,8 @@ module RailsConsoleAi
       @last_interactive_executed = false
       @compact_warned = false
       @prior_duration_ms = 0
-      @expanded_output_ids = Set.new
+      @prefix_fingerprint = nil
+      @thinking_replay_off = false
     end
 
     # --- Public API for channels ---
@@ -213,6 +214,10 @@ module RailsConsoleAi
 
     def restore_session(session)
       @history = JSON.parse(session.conversation, symbolize_names: true)
+      # A restored session has lost its stored tool outputs, so messages that
+      # were being sent as "[Output omitted]" go out with their content again.
+      # That rewrites the conversation the thinking blocks were signed against.
+      strip_thinking!(@history)
       @interactive_session_id = session.id
       @interactive_query = session.query
       @session_name = session.name
@@ -358,7 +363,7 @@ module RailsConsoleAi
       output_id = @executor.store_output(result_str)
       if result_str.length > LARGE_OUTPUT_THRESHOLD
         preview = result_str[0, LARGE_OUTPUT_PREVIEW_CHARS]
-        context_msg += "\n#{preview}\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{result_str.length} chars — use explore_output with output_id=#{output_id} for focused queries, or recall_output to expand in place]"
+        context_msg += "\n#{preview}\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{result_str.length} chars — use explore_output with output_id=#{output_id} for focused queries, or recall_output to read it in full]"
       elsif !output_parts.empty?
         context_msg += "\n#{result_str}"
       end
@@ -458,7 +463,7 @@ module RailsConsoleAi
             context_msg = "Code was executed (safety override). "
             if result_str.length > LARGE_OUTPUT_THRESHOLD
               context_msg += result_str[0, LARGE_OUTPUT_PREVIEW_CHARS]
-              context_msg += "\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{result_str.length} chars — use explore_output with output_id=#{output_id} for focused queries, or recall_output to expand in place]"
+              context_msg += "\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{result_str.length} chars — use explore_output with output_id=#{output_id} for focused queries, or recall_output to read it in full]"
             else
               context_msg += result_str
             end
@@ -487,7 +492,7 @@ module RailsConsoleAi
           context_msg = "Code was executed. "
           if result_str.length > LARGE_OUTPUT_THRESHOLD
             context_msg += result_str[0, LARGE_OUTPUT_PREVIEW_CHARS]
-            context_msg += "\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{result_str.length} chars — use explore_output with output_id=#{output_id} for focused queries, or recall_output to expand in place]"
+            context_msg += "\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{result_str.length} chars — use explore_output with output_id=#{output_id} for focused queries, or recall_output to read it in full]"
           else
             context_msg += result_str
           end
@@ -686,7 +691,7 @@ module RailsConsoleAi
         Do NOT include any preamble — just output the summary directly.
       PROMPT
 
-      history_text = @history.map { |m| "#{m[:role]}: #{m[:content]}" }.join("\n\n")
+      history_text = @history.map { |m| "#{m[:role]}: #{without_thinking(m[:content])}" }.join("\n\n")
       messages = [{ role: :user, content: "Summarize this conversation history:\n\n#{history_text}" }]
 
       begin
@@ -977,12 +982,11 @@ module RailsConsoleAi
       RailsConsoleAi.configuration.validate!
 
       messages = if conversation
-                   conversation.dup
+                   collapse_large_outputs!(conversation)
+                   trim_large_outputs(conversation)
                  else
                    [{ role: :user, content: query }]
                  end
-
-      messages = trim_large_outputs(messages) if conversation
 
       send_query_with_tools(messages)
     end
@@ -1022,6 +1026,18 @@ module RailsConsoleAi
         msg
       end
 
+      # Thinking blocks are signed against the system prompt and the tool set as
+      # well as the messages before them. Both are meant to be fixed for a
+      # session, but safe mode can be toggled and a skill or agent saved mid-way,
+      # and a block replayed after either is rejected. Only the session's own
+      # conversation is tracked — a call that brings its own prompt or tools is a
+      # separate conversation.
+      if system_prompt.nil? && tools_override.nil?
+        fingerprint = [active_system_prompt, tools.definitions].hash
+        strip_thinking!(messages) if @prefix_fingerprint && @prefix_fingerprint != fingerprint
+        @prefix_fingerprint = fingerprint
+      end
+
       exhausted = false
       wrap_up_reason = nil
       truncation_nudges = 0
@@ -1053,9 +1069,9 @@ module RailsConsoleAi
           end
         end
 
-        # Trim large tool outputs between rounds to prevent context explosion.
-        # The LLM can still retrieve omitted outputs via recall_output.
-        messages = trim_large_outputs(messages) if round > 0
+        # Nothing already sent is rewritten between rounds. Large outputs keep the
+        # preview the model first saw until the turn is over — see
+        # #collapse_large_outputs!.
 
         if round > 0
           req_tokens = estimate_request_tokens(messages)
@@ -1071,7 +1087,9 @@ module RailsConsoleAi
             provider.chat_with_tools(messages, tools: tools, system_prompt: active_system_prompt)
           end
         rescue Providers::ProviderError => e
-          raise
+          raise unless thinking_rejected?(e) && drop_thinking_replay!(messages)
+          @channel.display_warning("  The provider rejected the replayed thinking — continuing this session without it.")
+          retry
         end
         total_input += result.input_tokens || 0
         total_output += result.output_tokens || 0
@@ -1117,6 +1135,7 @@ module RailsConsoleAi
         last_thinking = (result.text && !result.text.strip.empty?) ? result.text.strip : nil
 
         assistant_msg = provider.format_assistant_message(result)
+        strip_thinking!([assistant_msg]) if @thinking_replay_off
         assistant_msg[:llm_stats] = format_llm_stats(result)
         messages << assistant_msg
         new_messages << assistant_msg
@@ -1124,27 +1143,6 @@ module RailsConsoleAi
         last_tool_names = result.tool_calls.map { |tc| tc[:name] }
         result.tool_calls.each do |tc|
           break if @channel.cancelled?
-
-          # Intercept recall_output/recall_outputs: expand in place instead of adding large messages
-          if tc[:name] == 'recall_output' || tc[:name] == 'recall_outputs'
-            ids = if tc[:name] == 'recall_outputs'
-                    Array(tc[:arguments]['ids']).map(&:to_i)
-                  else
-                    [tc[:arguments]['id'].to_i]
-                  end
-            @channel.display_tool_call("#{tc[:name]}(#{ids.join(', ')})")
-            expanded = expand_outputs_in_place(messages, ids)
-            tool_result = if expanded.any?
-                            "Expanded #{expanded.length} output(s) in conversation. The full content is now visible in the original message(s) above."
-                          else
-                            "No matching outputs found with id(s) #{ids.join(', ')}."
-                          end
-            @channel.display_status("     #{tool_result}")
-            tool_msg = provider.format_tool_result(tc[:id], tool_result)
-            messages << tool_msg
-            new_messages << tool_msg
-            next
-          end
 
           # Display any pending LLM text before executing the tool
           if last_thinking
@@ -1182,13 +1180,18 @@ module RailsConsoleAi
 
           tool_msg = provider.format_tool_result(tc[:id], tool_result)
           full_text = tool_result.to_s
-          output_id = @executor.store_output(full_text)
-          tool_msg[:output_id] = output_id
-          if full_text.length > LARGE_OUTPUT_THRESHOLD
-            truncated = full_text[0, LARGE_OUTPUT_PREVIEW_CHARS]
-            truncated += "\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{full_text.length} chars — use explore_output with output_id=#{output_id} for focused queries, or recall_output to expand in place]"
-            tool_msg = provider.format_tool_result(tc[:id], truncated)
+          # A recalled output is the model asking for the whole thing: it is
+          # neither truncated nor stored again under a second id, and with no
+          # output_id it is never collapsed later.
+          unless %w[recall_output recall_outputs].include?(tc[:name])
+            output_id = @executor.store_output(full_text)
             tool_msg[:output_id] = output_id
+            if full_text.length > LARGE_OUTPUT_THRESHOLD
+              truncated = full_text[0, LARGE_OUTPUT_PREVIEW_CHARS]
+              truncated += "\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{full_text.length} chars — use explore_output with output_id=#{output_id} for focused queries, or recall_output to read it in full]"
+              tool_msg = provider.format_tool_result(tc[:id], truncated)
+              tool_msg[:output_id] = output_id
+            end
           end
           tool_msg[:do_not_trim] = true if %w[recall_memory recall_memories activate_skill
                                                 describe_model describe_table list_models list_tables].include?(tc[:name])
@@ -1396,6 +1399,7 @@ module RailsConsoleAi
       when 'save_skill'     then "(\"#{args['name']}\")"
       when 'delete_skill'   then "(\"#{args['name']}\")"
       when 'recall_output'   then "(#{args['id']})"
+      when 'recall_outputs'  then "(#{Array(args['ids']).join(', ')})"
       when 'explore_output'
         task_preview = args['task'].to_s[0, 80]
         task_preview += '...' if args['task'].to_s.length > 80
@@ -1549,6 +1553,16 @@ module RailsConsoleAi
       block['type'] == 'tool_use' || block.key?(:tool_use)
     end
 
+    # Anthropic: { 'type' => 'thinking' } / { 'type' => 'redacted_thinking' }
+    # Bedrock:   { reasoning_content: { ... } }
+    # Keys are symbols throughout once a session has been restored from JSON.
+    def thinking_block?(block)
+      return false unless block.is_a?(Hash)
+      type = block['type'] || block[:type]
+      type == 'thinking' || type == 'redacted_thinking' ||
+        block.key?(:reasoning_content) || block.key?('reasoning_content')
+    end
+
     def tool_result_content(block)
       if block['type'] == 'tool_result'
         block['content'].to_s
@@ -1587,7 +1601,7 @@ module RailsConsoleAi
       messages.each do |msg|
         content_str = msg[:content].is_a?(Array) ? msg[:content].to_s : msg[:content].to_s
         total_content_chars += content_str.length
-        is_expanded = msg[:expanded] || (msg[:output_id] && @expanded_output_ids.include?(msg[:output_id]))
+        is_expanded = msg[:expanded]
 
         role = msg[:role].to_s
         if role == 'tool'
@@ -1688,6 +1702,8 @@ module RailsConsoleAi
             elsif tool_use_block?(block)
               has_tool_use = true
               parts << "tool_use: #{tool_use_name(block)}"
+            elsif thinking_block?(block)
+              parts << "thinking"
             elsif block['type'] == 'text' || block.key?(:text)
               text = block['text'] || block[:text]
               parts << "text(#{text.to_s.length} chars)" if text.to_s.length > 0
@@ -1735,7 +1751,7 @@ module RailsConsoleAi
     def debug_output_flags(content_text, msg)
       flags = []
       flags << "output ##{msg[:output_id]}" if msg[:output_id]
-      if msg[:expanded] || (msg[:output_id] && @expanded_output_ids.include?(msg[:output_id]))
+      if msg[:expanded]
         flags << "expanded"
       elsif content_text.include?('Output omitted')
         flags << "omitted"
@@ -1787,23 +1803,82 @@ module RailsConsoleAi
 
     # --- Conversation context management ---
 
+    # Thinking blocks are signed against the conversation that precedes them, so
+    # rewriting a message that has already been sent invalidates every thinking
+    # block after it — and the API rejects a request that replays one. Within a
+    # turn, then, the conversation only ever grows: a large output keeps the
+    # preview the model was first shown for as long as the tool loop runs.
+    #
+    # The start of a turn is the one point where earlier messages are rewritten.
+    # Large outputs from the turns before are collapsed to a one-line reference
+    # (the model can get them back with explore_output or recall_output), and
+    # the thinking that followed the first of them goes with it. By then that
+    # reasoning has done its work: the turn it belonged to has been answered.
+    #
+    # The decision is recorded on the message (:trimmed) rather than recomputed
+    # per request, so what is sent for a message never changes mid-turn.
+    def collapse_large_outputs!(history)
+      first = nil
+      history.each_with_index do |msg, i|
+        next if msg[:trimmed] || !collapsible?(msg)
+        msg[:trimmed] = true
+        first ||= i
+      end
+      strip_thinking!(history, after: first) if first
+    end
+
+    def collapsible?(msg)
+      return false unless msg[:output_id] && !msg[:do_not_trim] && !msg[:expanded]
+      stored = @executor.recall_output(msg[:output_id])
+      !stored.nil? && stored.length > LARGE_OUTPUT_THRESHOLD
+    end
+
+    # The conversation as it is sent: collapsed outputs rendered as references.
+    # An output that is no longer stored (a session restored in a new process)
+    # is sent as it stands, since the reference would lead nowhere.
     def trim_large_outputs(messages)
       messages.map do |msg|
-        next msg unless msg[:output_id] && !msg[:do_not_trim]
-        # Re-expand messages that were expanded in a prior turn but lost content
-        # (because trim_message creates new hashes, disconnecting from @history)
-        if @expanded_output_ids.include?(msg[:output_id]) && !msg[:expanded]
-          expand_message_in_place(msg)
-        end
-        next msg if msg[:expanded]
-        stored = @executor.recall_output(msg[:output_id])
-        next msg unless stored && stored.length > LARGE_OUTPUT_THRESHOLD
-        trim_message(msg)
+        msg[:trimmed] && @executor.recall_output(msg[:output_id]) ? trim_message(msg) : msg
       end
     end
 
+    # Removes thinking blocks from every message after index `after` (all of
+    # them by default). Mutates the message hashes, which the request array and
+    # the persisted history share.
+    def strip_thinking!(messages, after: -1)
+      messages.each_with_index do |msg, i|
+        next if i <= after || !msg[:content].is_a?(Array)
+        next unless msg[:content].any? { |block| thinking_block?(block) }
+        msg[:content] = msg[:content].reject { |block| thinking_block?(block) }
+      end
+    end
+
+    def without_thinking(content)
+      content.is_a?(Array) ? content.reject { |block| thinking_block?(block) } : content
+    end
+
+    # A provider turning down a request because of a thinking block it was sent
+    # back: a prefix this harness changed without noticing, a block from another
+    # account or model the provider won't quietly drop, a gateway that doesn't
+    # pass thinking through. Whatever the cause, the conversation is still good
+    # without the blocks.
+    def thinking_rejected?(error)
+      error.message.match?(/thinking|reasoning|signature/i)
+    end
+
+    # Strips thinking from the request and stops replaying it for the rest of
+    # the session. Returns false when there was none to strip — the error was
+    # about something else.
+    def drop_thinking_replay!(messages)
+      return false unless messages.any? { |m| m[:content].is_a?(Array) && m[:content].any? { |b| thinking_block?(b) } }
+
+      strip_thinking!(messages)
+      @thinking_replay_off = true
+      true
+    end
+
     def trim_message(msg)
-      ref = "[Output omitted — use explore_output with output_id=#{msg[:output_id]} for focused queries, or recall_output to expand in place]"
+      ref = "[Output omitted — use explore_output with output_id=#{msg[:output_id]} for focused queries, or recall_output to read it in full]"
 
       if msg[:content].is_a?(Array)
         trimmed_content = msg[:content].map do |block|
@@ -1826,46 +1901,6 @@ module RailsConsoleAi
         first_line = msg[:content].to_s.lines.first&.strip || msg[:content]
         msg.merge(content: "#{first_line}\n#{ref}")
       end
-    end
-
-    def expand_outputs_in_place(messages, ids)
-      expanded = []
-      messages.each do |msg|
-        next unless msg[:output_id] && ids.include?(msg[:output_id])
-        next unless expand_message_in_place(msg)
-        expanded << msg[:output_id]
-      end
-      expanded
-    end
-
-    def expand_message_in_place(msg)
-      full_output = @executor.recall_output(msg[:output_id])
-      return false unless full_output
-      # Replace content with full output (handle Anthropic, Bedrock, and user message formats)
-      if msg[:content].is_a?(Array)
-        msg[:content] = msg[:content].map do |block|
-          if block.is_a?(Hash) && tool_result_block?(block)
-            if block.key?(:tool_result)
-              # Bedrock format
-              block.merge(tool_result: block[:tool_result].merge(content: [{ text: full_output }]))
-            else
-              # Anthropic format
-              block.merge('content' => full_output)
-            end
-          else
-            block
-          end
-        end
-      elsif msg[:role].to_s == 'tool'
-        msg[:content] = full_output
-      else
-        # User messages (e.g., direct execution) — preserve first line, replace rest
-        first_line = msg[:content].to_s.lines.first&.chomp || ''
-        msg[:content] = "#{first_line}\n#{full_output}"
-      end
-      msg[:expanded] = true
-      @expanded_output_ids.add(msg[:output_id])
-      true
     end
 
     def extract_executed_code(history)

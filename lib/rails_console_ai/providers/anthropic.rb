@@ -13,6 +13,9 @@ module RailsConsoleAi
       end
 
       def format_assistant_message(result)
+        # A turn with thinking goes back exactly as it arrived (see ChatResult).
+        return { role: 'assistant', content: result.content_blocks } if result.content_blocks
+
         # Rebuild the assistant content blocks from the raw response
         content_blocks = []
         content_blocks << { 'type' => 'text', 'text' => result.text } if result.text && !result.text.empty?
@@ -85,8 +88,33 @@ module RailsConsoleAi
           cache_read_input_tokens: usage['cache_read_input_tokens'],
           cache_write_input_tokens: usage['cache_creation_input_tokens'],
           tool_calls: tool_calls,
-          stop_reason: stop
+          stop_reason: stop,
+          content_blocks: replay_blocks(data)
         )
+      end
+
+      THINKING_BLOCK_TYPES = %w[thinking redacted_thinking].freeze
+
+      # The turn's blocks in their original order, or nil when none of them is
+      # thinking. Thinking blocks are passed through untouched — the signature
+      # covers their content, and with thinking display omitted the `thinking`
+      # text is legitimately empty. Empty text blocks are dropped because the
+      # API rejects them on the way back in.
+      def replay_blocks(data)
+        content = data['content']
+        return nil unless content.is_a?(Array)
+        return nil unless content.any? { |c| THINKING_BLOCK_TYPES.include?(c['type']) }
+
+        content.map do |c|
+          case c['type']
+          when *THINKING_BLOCK_TYPES
+            c
+          when 'text'
+            { 'type' => 'text', 'text' => c['text'] } unless c['text'].to_s.empty?
+          when 'tool_use'
+            { 'type' => 'tool_use', 'id' => c['id'], 'name' => c['name'], 'input' => c['input'] || {} }
+          end
+        end.compact
       end
 
       # Text content is always rendered as a one-element block array, even though

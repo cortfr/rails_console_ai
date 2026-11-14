@@ -538,7 +538,7 @@ RSpec.describe RailsConsoleAi::Repl do
     end
   end
 
-  describe 'trim_large_outputs' do
+  describe 'collapsing large outputs' do
     let(:engine) { repl.instance_variable_get(:@engine) }
     let(:executor) { engine.instance_variable_get(:@executor) }
     let(:large_content) { 'x' * 21_000 }
@@ -551,6 +551,7 @@ RSpec.describe RailsConsoleAi::Repl do
         history << { role: :assistant, content: "Response #{i}" }
       end
 
+      engine.send(:collapse_large_outputs!, history)
       trimmed = engine.send(:trim_large_outputs, history)
 
       trimmed_user_msgs = trimmed.select { |m| m[:role] == :user }
@@ -567,6 +568,7 @@ RSpec.describe RailsConsoleAi::Repl do
         history << { role: :user, content: "Code was executed. Output:\ndata_#{i}", output_id: oid }
       end
 
+      engine.send(:collapse_large_outputs!, history)
       trimmed = engine.send(:trim_large_outputs, history)
       trimmed.each do |msg|
         expect(msg[:content]).not_to include('[Output omitted')
@@ -576,6 +578,7 @@ RSpec.describe RailsConsoleAi::Repl do
     it 'preserves output_id on trimmed messages' do
       oid = executor.store_output(large_content)
       history = [{ role: :user, content: "test", output_id: oid }]
+      engine.send(:collapse_large_outputs!, history)
       trimmed = engine.send(:trim_large_outputs, history)
       expect(trimmed.first[:output_id]).to eq(oid)
     end
@@ -592,6 +595,7 @@ RSpec.describe RailsConsoleAi::Repl do
         history << { role: 'assistant', content: "Response #{i}" }
       end
 
+      engine.send(:collapse_large_outputs!, history)
       trimmed = engine.send(:trim_large_outputs, history)
 
       trimmed_tool_msgs = trimmed.select { |m| m[:content].is_a?(Array) }
@@ -608,6 +612,7 @@ RSpec.describe RailsConsoleAi::Repl do
         history << { role: 'assistant', content: "Response #{i}" }
       end
 
+      engine.send(:collapse_large_outputs!, history)
       trimmed = engine.send(:trim_large_outputs, history)
       tool_msgs = trimmed.select { |m| m[:role].to_s == 'tool' }
       tool_msgs.each do |msg|
@@ -620,6 +625,7 @@ RSpec.describe RailsConsoleAi::Repl do
         { role: :user, content: "hello" },
         { role: :assistant, content: "hi" }
       ]
+      engine.send(:collapse_large_outputs!, history)
       trimmed = engine.send(:trim_large_outputs, history)
       expect(trimmed[0][:content]).to eq("hello")
       expect(trimmed[1][:content]).to eq("hi")
@@ -631,6 +637,7 @@ RSpec.describe RailsConsoleAi::Repl do
         { role: 'tool', content: "**Sharding**\nFull sharding details...", output_id: oid, do_not_trim: true }
       ]
 
+      engine.send(:collapse_large_outputs!, history)
       trimmed = engine.send(:trim_large_outputs, history)
       expect(trimmed[0][:content]).to include('Full sharding details')
       expect(trimmed[0][:content]).not_to include('[Output omitted')
@@ -642,77 +649,10 @@ RSpec.describe RailsConsoleAi::Repl do
         { role: 'tool', content: large_content, output_id: oid, expanded: true }
       ]
 
+      engine.send(:collapse_large_outputs!, history)
       trimmed = engine.send(:trim_large_outputs, history)
       expect(trimmed[0][:content]).to eq(large_content)
       expect(trimmed[0][:content]).not_to include('[Output omitted')
-    end
-  end
-
-  describe 'expand_outputs_in_place' do
-    let(:engine) { repl.instance_variable_get(:@engine) }
-    let(:executor) { engine.instance_variable_get(:@executor) }
-
-    it 'expands Anthropic tool_result messages in place' do
-      full_output = "full output data here"
-      output_id = executor.store_output(full_output)
-      messages = [
-        { role: 'user', content: [{ 'type' => 'tool_result', 'tool_use_id' => 'tool_1', 'content' => '[Output omitted]' }], output_id: output_id }
-      ]
-
-      expanded = engine.send(:expand_outputs_in_place, messages, [output_id])
-
-      expect(expanded).to eq([output_id])
-      expect(messages[0][:content][0]['content']).to eq(full_output)
-      expect(messages[0][:output_id]).to eq(output_id)
-      expect(messages[0][:expanded]).to eq(true)
-    end
-
-    it 'expands OpenAI tool messages in place' do
-      full_output = "openai full output"
-      output_id = executor.store_output(full_output)
-      messages = [
-        { role: 'tool', tool_call_id: 'tc_1', content: '[Output omitted]', output_id: output_id }
-      ]
-
-      expanded = engine.send(:expand_outputs_in_place, messages, [output_id])
-
-      expect(expanded).to eq([output_id])
-      expect(messages[0][:content]).to eq(full_output)
-      expect(messages[0][:output_id]).to eq(output_id)
-      expect(messages[0][:expanded]).to eq(true)
-    end
-
-    it 'expands user messages (direct execution) in place' do
-      full_output = "full direct execution output"
-      output_id = executor.store_output(full_output)
-      messages = [
-        { role: :user, content: "User directly executed code: `some_code`\ntruncated preview...", output_id: output_id }
-      ]
-
-      expanded = engine.send(:expand_outputs_in_place, messages, [output_id])
-
-      expect(expanded).to eq([output_id])
-      expect(messages[0][:content]).to eq("User directly executed code: `some_code`\n#{full_output}")
-      expect(messages[0][:expanded]).to eq(true)
-    end
-
-    it 'returns empty array when no matching ids found' do
-      messages = [
-        { role: 'tool', content: 'some content', output_id: 42 }
-      ]
-
-      expanded = engine.send(:expand_outputs_in_place, messages, [999])
-      expect(expanded).to be_empty
-    end
-
-    it 'skips messages where executor has no stored output' do
-      messages = [
-        { role: 'tool', content: '[Output omitted]', output_id: 999 }
-      ]
-
-      expanded = engine.send(:expand_outputs_in_place, messages, [999])
-      expect(expanded).to be_empty
-      expect(messages[0]).to have_key(:output_id)
     end
   end
 

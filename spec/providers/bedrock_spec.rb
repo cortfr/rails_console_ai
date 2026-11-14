@@ -182,4 +182,78 @@ RSpec.describe RailsConsoleAi::Providers::Bedrock do
       expect(tool_result_2[:content].length).to eq(1)
     end
   end
+
+  # Converse calls thinking "reasoning". The SDK returns union structs, which
+  # these stand in for: every member exists, and all but one is nil.
+  describe 'thinking replay' do
+    let(:block) { Struct.new(:text, :tool_use, :reasoning_content, keyword_init: true) }
+    let(:reasoning) { Struct.new(:reasoning_text, :redacted_content, keyword_init: true) }
+    let(:reasoning_text) { Struct.new(:text, :signature, keyword_init: true) }
+    let(:tool_use) { Struct.new(:tool_use_id, :name, :input, keyword_init: true) }
+    let(:messages) { [{ role: :user, content: 'Hello' }] }
+    let(:tools) { double('tools', to_bedrock_format: []) }
+
+    def thinking_block(signature)
+      block.new(reasoning_content: reasoning.new(reasoning_text: reasoning_text.new(text: '', signature: signature)))
+    end
+
+    def call_block
+      block.new(tool_use: tool_use.new(tool_use_id: 'tool_1', name: 'list_tables', input: {}))
+    end
+
+    it 'returns the turn block for block, reasoning first' do
+      response = build_response([thinking_block('sig-1'), block.new(text: 'Checking.'), call_block], stop_reason: 'tool_use')
+      allow(mock_client).to receive(:converse).and_return(response)
+
+      result = provider.chat_with_tools(messages, tools: tools)
+
+      expect(provider.format_assistant_message(result)).to eq(
+        role: 'assistant',
+        content: [
+          { reasoning_content: { reasoning_text: { text: '', signature: 'sig-1' } } },
+          { text: 'Checking.' },
+          { tool_use: { tool_use_id: 'tool_1', name: 'list_tables', input: {} } }
+        ]
+      )
+    end
+
+    it 'sends the reasoning back unchanged on the next request' do
+      response = build_response([thinking_block('sig-1'), call_block], stop_reason: 'tool_use')
+      sent = []
+      allow(mock_client).to receive(:converse) { |params| sent << params; response }
+
+      result = provider.chat_with_tools(messages, tools: tools)
+      history = messages + [provider.format_assistant_message(result), provider.format_tool_result('tool_1', 'users')]
+      provider.chat_with_tools(history, tools: tools)
+
+      expect(sent.last[:messages][1][:content].first)
+        .to eq(reasoning_content: { reasoning_text: { text: '', signature: 'sig-1' } })
+    end
+
+    it 'leaves a turn without reasoning in its usual shape' do
+      response = build_response([block.new(text: 'Checking.'), call_block], stop_reason: 'tool_use')
+      allow(mock_client).to receive(:converse).and_return(response)
+
+      result = provider.chat_with_tools(messages, tools: tools)
+
+      expect(result.content_blocks).to be_nil
+      expect(provider.format_assistant_message(result)[:content].first).to eq(text: 'Checking.')
+    end
+
+    # Redacted reasoning is raw bytes; the conversation is stored as JSON.
+    it 'carries redacted reasoning through a stored session and sends the original bytes' do
+      bytes = "\xFF\x00\xFEopaque".b
+      response = build_response([block.new(reasoning_content: reasoning.new(redacted_content: bytes)), call_block],
+                                stop_reason: 'tool_use')
+      sent = []
+      allow(mock_client).to receive(:converse) { |params| sent << params; response }
+
+      result = provider.chat_with_tools(messages, tools: tools)
+      history = messages + [provider.format_assistant_message(result), provider.format_tool_result('tool_1', 'users')]
+      restored = JSON.parse(history.to_json, symbolize_names: true)
+      provider.chat_with_tools(restored, tools: tools)
+
+      expect(sent.last[:messages][1][:content].first).to eq(reasoning_content: { redacted_content: bytes })
+    end
+  end
 end
