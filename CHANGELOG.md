@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.38.0]
+
+- Support the Claude Sonnet 5.5 model family
+- Show more detail in Bedrock error messages
+- Link Slack sessions to a session page showing the Slack thread
+
 ## [0.37.0]
 
 - Add artifacts for saving and viewing output in the browser
